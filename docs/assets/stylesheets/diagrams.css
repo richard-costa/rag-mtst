@@ -1,0 +1,10 @@
+.md-typeset .mermaid {
+  --md-mermaid-node-bg-color: color-mix(
+    in srgb,
+    var(--md-accent-fg-color) 10%,
+    var(--md-default-bg-color)
+  );
+  margin: 1.5em 0;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}

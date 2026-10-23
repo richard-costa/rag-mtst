@@ -1,0 +1,1 @@
+"""Managed local frontend for the real RAG HTTP API."""

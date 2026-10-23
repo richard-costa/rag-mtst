@@ -1,0 +1,12 @@
+.env
+.rag-data/
+.rag-guide-data/
+.rag-first-search/
+.venv/
+__pycache__/
+*.py[cod]
+site/
+.vscode
+.github/
+.pytest_cache/
+.ruff_cache/

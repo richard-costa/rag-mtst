@@ -1,0 +1,58 @@
+site_name: rag-mtst
+site_description: Document ingestion, retrieval, and answer generation
+docs_dir: docs
+site_dir: site
+not_in_nav: |
+  /assets/sample.md
+use_directory_urls: true
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    not_found: warn
+    unrecognized_links: warn
+    anchors: warn
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - tables
+theme:
+  name: material
+  language: en
+  palette:
+    primary: teal
+    accent: deep orange
+  features:
+    - navigation.sections
+    - content.code.copy
+plugins:
+  - search:
+      lang: en
+extra_css:
+  - assets/stylesheets/diagrams.css
+nav:
+  - Home: index.md
+  - Tutorials:
+      - Your First Search: tutorials/first-search.md
+  - How-to Guides:
+      - Run the Backend: how-to/run.md
+      - Choose Model Providers: how-to/providers.md
+      - Ingest and Reindex Documents: how-to/ingest.md
+      - Use Conversations: how-to/conversations.md
+      - Run Tests: how-to/test.md
+      - Maintain the Documentation: how-to/documentation.md
+  - Reference:
+      - Configuration: reference/configuration.md
+      - HTTP API: reference/http.md
+      - CLI: reference/cli.md
+      - Python API: reference/python.md
+      - Formats and Limits: reference/limits.md
+      - Troubleshooting: reference/troubleshooting.md
+  - Concepts:
+      - Architecture: explanation/architecture.md
+      - Extraction and Indexing: explanation/indexing.md
+      - Retrieval and Answers: explanation/retrieval.md
+      - Security and Data Lifecycle: explanation/security.md

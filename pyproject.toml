@@ -1,0 +1,56 @@
+[project]
+name = "rag-mtst"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "alembic==1.20.0",
+    "anthropic>=2.1.0",
+    "fastapi>=0.128.0",
+    "firecrawl-anydoc>=0.2.4",
+    "openai>=2.0.0",
+    "pgvector==0.5.1",
+    "python-multipart>=0.0.22",
+    "psycopg[binary]>=3.3.6",
+    "pydantic>=2.0.0",
+    "tiktoken>=0.12.0",
+    "unoserver==3.7",
+    "uvicorn>=0.40.0",
+]
+
+[project.optional-dependencies]
+local = ["sentence-transformers>=5.0.0", "torch>=2.10.0"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", extra = "local", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[project.scripts]
+rag = "app.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.28.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[dependency-groups]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.6,<10",
+]
+dev = [
+    "httpx>=0.28.1",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "testcontainers[postgres]>=4.15.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+asyncio_mode = "auto"
+testpaths = ["tests"]

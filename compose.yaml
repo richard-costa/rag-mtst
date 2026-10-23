@@ -1,0 +1,91 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: rag
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: app
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://rag:rag@db:5432/rag
+    depends_on:
+      db:
+        condition: service_healthy
+
+  office:
+    profiles: [office]
+    build:
+      context: .
+      target: office
+    ports:
+      - "127.0.0.1:2003:2003"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/opt/unoserver/bin/unoping", "--host", "127.0.0.1", "--port", "2003"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: &application-build
+      context: .
+      target: ${RAG_DOCKER_TARGET:-app}
+    ports:
+      - "8000:8000"
+    environment: &application-environment
+      DATABASE_URL: postgresql://rag:rag@db:5432/rag
+      RAG_DATA_DIR: /app/.rag-data
+      RAG_TENANT_ID: ${RAG_TENANT_ID:-default}
+      RAG_API_KEY: ${RAG_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      RAG_GENERATION_PROVIDER: ${RAG_GENERATION_PROVIDER:-openai}
+      RAG_GENERATION_MODEL: ${RAG_GENERATION_MODEL:-}
+      RAG_GENERATION_BASE_URL: ${RAG_GENERATION_BASE_URL:-}
+      RAG_VISUAL_PROVIDER: ${RAG_VISUAL_PROVIDER:-openai}
+      RAG_VISUAL_MODEL: ${RAG_VISUAL_MODEL:-}
+      RAG_VISUAL_BASE_URL: ${RAG_VISUAL_BASE_URL:-}
+      RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-openai}
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-}
+      RAG_OFFICE_HOST: office
+      RAG_OFFICE_PORT: 2003
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - rag-data:/app/.rag-data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: *application-build
+    command: ["python", "-m", "app.worker"]
+    environment: *application-environment
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - rag-data:/app/.rag-data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  rag-data:

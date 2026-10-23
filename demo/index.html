@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rag-mtst</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>rag-mtst</h1>
+    <a href="/docs" target="_blank" rel="noopener">API reference &#8599;</a>
+  </header>
+  <main>
+    <fieldset id="controls" aria-label="Demo controls">
+      <div class="access">
+        <label for="token">API access token</label>
+        <input id="token" type="password" autocomplete="off" spellcheck="false">
+      </div>
+
+      <section aria-labelledby="upload-title">
+        <h2 id="upload-title">Index a document</h2>
+        <form id="upload-form">
+          <label for="document">Document</label>
+          <input id="document" type="file" accept=".txt,.md,.pdf,.docx,.pptx" required>
+          <div class="options">
+            <fieldset class="segmented">
+              <legend>Extraction</legend>
+              <label><input type="radio" name="extraction" value="parser" checked><span>Fast parser</span></label>
+              <label><input type="radio" name="extraction" value="visual"><span>Visual</span></label>
+            </fieldset>
+            <label class="check"><input id="reindex" type="checkbox">Reindex unchanged content</label>
+          </div>
+          <button type="submit" class="primary">Index document</button>
+        </form>
+        <p id="upload-status" role="status" class="status">No document submitted.</p>
+        <progress id="progress" max="100" aria-label="Indexing progress" hidden></progress>
+        <p id="upload-source" class="metadata"></p>
+      </section>
+
+      <section aria-labelledby="query-title">
+        <h2 id="query-title">Search and ask</h2>
+        <form id="query-form">
+          <label for="query">Query or question</label>
+          <textarea id="query" rows="3" required></textarea>
+          <div class="model-options">
+            <div>
+              <label for="answer-provider">Answer provider</label>
+              <select id="answer-provider">
+                <option value="">Server default</option>
+                <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="ollama">Ollama</option>
+                <option value="anthropic">Anthropic</option>
+              </select>
+            </div>
+            <div>
+              <label for="answer-model">Answer model</label>
+              <input id="answer-model" type="text" placeholder="Server default" autocomplete="off" spellcheck="false">
+            </div>
+          </div>
+          <div class="actions">
+            <button type="submit" name="action" value="ask" class="primary">Ask</button>
+            <button type="submit" name="action" value="search">Search</button>
+          </div>
+        </form>
+        <p id="query-status" role="status" class="status"></p>
+        <div id="results"><p class="empty">No results yet.</p></div>
+      </section>
+    </fieldset>
+  </main>
+</body>
+</html>
