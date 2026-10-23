@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rag-mtst Desktop</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">◈</span><span>rag-mtst<small>DESKTOP</small></span></div>
+      <nav aria-label="Workspace">
+        <button type="button" class="nav active" data-view="chat"><span>⌕</span> Ask & Search</button>
+        <button type="button" class="nav" data-view="import"><span>⇧</span> Import documents</button>
+        <button type="button" class="nav" data-view="settings"><span>⚙</span> Settings</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="backend-indicator"><span id="status-dot" class="dot"></span><span id="backend-label">Checking backend</span></div>
+        <div class="sidebar-caption">Private local workspace<br>Powered by your RAG backend</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">WORKSPACE</div>
+          <h1 id="page-title">Ask & Search</h1>
+        </div>
+        <div class="top-actions">
+          <button class="secondary small" id="new-chat" type="button">New conversation</button>
+          <button class="secondary small" id="hide-window" type="button" title="Hide window; restore from system tray">Hide to tray</button>
+        </div>
+      </header>
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+      <section id="view-chat" class="view">
+        <div class="section-top">
+          <div>
+            <h2>Ask your documents</h2>
+            <p>Search indexed passages and generate source-cited answers.</p>
+          </div>
+          <span class="hint">Ctrl+K to focus</span>
+        </div>
+        <div id="messages" class="messages" aria-live="polite">
+          <div class="empty-message"><div class="empty-mark">⌕</div>
+            <h3>Your knowledge, one question away.</h3>
+            <p>Import documents, then ask a question or retrieve matching passages.</p>
+          </div>
+        </div>
+        <form id="query-form" class="composer">
+          <label for="query" class="sr-only">Question or query</label>
+          <textarea id="query" rows="3" placeholder="Ask something about your documents…" required></textarea>
+          <div class="composer-bottom">
+            <div class="inline-settings">
+              <label for="method">Retrieval</label>
+              <select id="method">
+                <option value="window">Window</option><option value="hybrid">Hybrid</option>
+                <option value="cosine">Cosine</option><option value="lexical">Lexical</option>
+              </select>
+            </div>
+            <div class="actions">
+              <button class="secondary" type="submit" name="action" value="search">Search only</button>
+              <button class="primary" type="submit" name="action" value="ask">Ask</button>
+            </div>
+          </div>
+        </form>
+        <div id="query-status" class="form-status" role="status"></div>
+      </section>
+
+      <section id="view-import" class="view" hidden>
+        <div class="section-top"><div>
+          <h2>Import documents</h2>
+          <p>TXT, Markdown, PDF, DOCX, and PPTX. Imported text becomes searchable when indexing finishes.</p>
+        </div></div>
+        <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Choose documents or drop them here">
+          <div class="drop-illustration">⇧</div>
+          <h3>Drop files anywhere in the window</h3>
+          <p>Or choose several files from your computer.</p>
+          <button type="button" class="primary" id="choose-files">Choose files</button>
+        </div>
+        <div class="import-options">
+          <label>Extraction mode
+            <select id="extraction">
+              <option value="parser">Fast parser (default)</option>
+              <option value="visual">Visual extraction (PDF / Office only)</option>
+            </select>
+          </label>
+          <label class="check"><input id="reindex" type="checkbox"> Explicitly reindex identical content</label>
+        </div>
+        <h3 class="list-title">Import activity <span class="hint">Current desktop session</span></h3>
+        <div id="imports" class="import-list"><p class="muted">No imports this session.</p></div>
+      </section>
+
+      <section id="view-settings" class="view" hidden>
+        <div class="section-top"><div>
+          <h2>Local backend</h2>
+          <p>The app starts your existing Docker Compose services automatically. No new database is created.</p>
+        </div></div>
+        <div class="settings-card">
+          <h3>Repository checkout</h3>
+          <p>Point to the directory containing your <code>compose.yaml</code> and private <code>.env</code> file.</p>
+          <div class="path-line"><code id="repo-path">Not configured</code>
+            <button class="secondary" type="button" id="choose-directory">Choose folder</button></div>
+        </div>
+        <div class="settings-card">
+          <h3>Backend control</h3>
+          <p id="backend-detail">Checking Docker and the API…</p>
+          <div class="actions align-left">
+            <button class="primary" type="button" id="start-backend">Start / reconnect</button>
+            <button class="secondary danger" type="button" id="stop-backend" disabled>Stop services started here</button>
+          </div>
+          <p class="note">Closing the window does not stop Docker. Stopping preserves your PostgreSQL volume and indexed documents.</p>
+        </div>
+        <div class="settings-card">
+          <h3>Generation defaults</h3>
+          <p>These overrides apply to your next question, not the server configuration.</p>
+          <div class="settings-grid">
+            <label>Provider
+              <select id="provider">
+                <option value="">Backend default</option><option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option>
+                <option value="ollama">Ollama</option>
+              </select>
+            </label>
+            <label>Model
+              <input id="model" autocomplete="off" spellcheck="false" placeholder="Backend default">
+            </label>
+          </div>
+          <p class="note">Selecting a different provider requires an explicit model name.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
