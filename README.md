@@ -14,108 +14,54 @@ token; public deployment needs additional network, TLS, and abuse controls.
 Original files are temporary inputs, not a permanent archive. Citations do not
 guarantee factual accuracy; representative answer/extraction quality is unproven.
 
-## Quick Start
+## Quick Start — Local CLI
 
-Use Docker only for PostgreSQL; run the CLI and ingestion worker locally.
-Requires Python 3.14+ with pip, Docker with Compose, and a source checkout.
-The commands below use a Linux or macOS shell. Run them from the repository root.
+Use Docker for PostgreSQL only. The CLI and its background ingestion worker run
+on your computer and share temporary input files directly. Requires Docker with
+Compose, [uv](https://docs.astral.sh/uv/getting-started/installation/), and a
+Linux/macOS or WSL shell. Run these commands from a source checkout.
 
-### 1. Install and Configure
-
-```bash
-pip install uv
-uv sync --locked --no-dev
-cp -n .env.example .env
-```
-
-If your Python installation prevents installing uv with pip, use the
-[alternative installation method](#install-uv).
-
-Set these values in your private `.env` file:
-
-```dotenv
-OPENAI_API_KEY=your-openai-api-key
-RAG_GENERATION_MODEL=your-chosen-openai-answer-model
-```
-
-Choose an answer model available to your OpenAI account. Do not commit credentials.
-The CLI uses the database directly and needs neither an HTTP server nor an app
-access token.
-
-### 2. Start the Database and Worker
-
-In the first terminal, start PostgreSQL and open a shell with the project
-environment and configuration loaded:
+Install the `rag` command once (ensure uv's tool directory is on your PATH):
 
 ```bash
-docker compose up -d --wait db
-uv run --env-file .env --no-dev "$SHELL"
+uv tool install --editable .
 ```
 
-Inside that new shell, initialize the database and start the worker:
+Start the local environment:
 
 ```bash
-alembic upgrade head
-python -m app.worker
+rag start
 ```
 
-Leave this terminal running. Initial migrations are a setup step, not something
-needed before every question.
+On the first run, `rag start` creates a private `.env` template if needed.
+Edit it to provide `OPENAI_API_KEY` and an available `RAG_GENERATION_MODEL`,
+then run `rag start` again. It validates configuration, starts a dedicated local
+PostgreSQL container, applies migrations, and starts the worker in the background.
+`RAG_API_KEY` is only needed if you also run the HTTP API.
 
-### 3. Add Your Document and Ask Questions
-
-Open another terminal at the repository root and prepare its environment once:
+Once ready:
 
 ```bash
-uv run --env-file .env --no-dev "$SHELL"
+rag add docs/assets/sample.md
+rag search "support hours"
+rag ask "When is the support desk open?"
 ```
 
-Inside that new shell, replace the example path with your own document:
+Indexing and hosted inference send document text to your configured provider and
+may incur charges. Original files are not archived; keep your own copies.
 
 ```bash
-rag add "/path/to/your/document.pdf"
-rag ask "What are the main points of this document?"
+rag status        # Show database and worker readiness
+rag stop          # Stop local services; preserve indexed data
+rag start         # Resume later
+rag reset         # Confirm permanent deletion of local indexed data
 ```
 
-`rag add` waits until indexing finishes. TXT, Markdown, DOCX, and PPTX are also
-supported. Answers can include source references; later questions search all
-indexed documents, not just the most recent upload.
-
-To retrieve passages without generating an answer:
-
-```bash
-rag search "deadlines"
-```
-
-Hosted indexing and answers send document text to the provider and may incur
-charges. Keep your original documents separately; inputs are deleted after
-processing.
-
-### Later Sessions and Other Setups
-
-For later sessions, keep the database and worker running and prepare each new
-CLI terminal with the shell command above. Installation and initial migrations
-do not need repeating. There is no single CLI command that starts the database,
-runs migrations, and launches the worker.
-
-For the complete Docker stack or detailed host setup, see
-[Run the backend](docs/how-to/run.md). For other model providers, see
-[Provider setup](docs/how-to/providers.md). The
-[first-search tutorial](docs/tutorials/first-search.md) offers a separate disposable
-local exercise without paid model calls.
-
-### Install uv
-
-Host Python workflows and local documentation previews need uv on your machine;
-the Compose stack already includes it. On Linux or macOS, use Astral's installer:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Open a new terminal so the updated `PATH` takes effect, then check `uv --version`.
-For Windows, package managers, or inspecting the installer before running it,
-see the [official installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+The local manager requires an editable source checkout and manages only the
+default local database. Other database setups, the full Docker stack, HTTP API,
+and alternative providers are documented in [Run the backend](docs/how-to/run.md)
+and [Provider setup](docs/how-to/providers.md). The optional
+[browser demo](demo/README.md) is not part of the CLI quickstart.
 
 ## Documentation
 

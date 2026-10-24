@@ -12,6 +12,29 @@ rag [--data-dir PATH] COMMAND
 It must resolve to the worker's shared input path; it is not an original-file
 archive. Run `rag --help` or `rag COMMAND --help` for installed argument help.
 
+## Local lifecycle
+
+Install from a source checkout with `uv tool install --editable .` to make `rag`
+available in your shell. The CLI automatically reads the checkout's `.env`,
+without overriding variables already exported in the shell. Relative staging
+paths are resolved against the checkout, so the local worker and CLI agree.
+
+| Command | Behavior |
+| --- | --- |
+| `rag start` | Check configuration, start only PostgreSQL in Docker, apply migrations, launch a host worker, and wait for readiness |
+| `rag status` | Report local PostgreSQL and background worker readiness |
+| `rag stop` | Stop the background worker and local PostgreSQL; keep database contents and model caches |
+| `rag reset` | Stop services and delete the local Compose project's database volumes after typing `RESET` |
+| `rag reset --yes` | Same destructive reset without prompting; use only deliberately |
+
+Local lifecycle management requires Docker Compose and Linux, macOS, or WSL. It
+manages the default database at `127.0.0.1:5432` and uses a dedicated Compose
+project name; it does not launch the HTTP API and it does not manage deployed
+services. The first `rag start` creates an `.env` template if missing and asks
+you to provide credentials/model settings before starting services. Worker logs
+are under `.rag-data/local-runtime/worker.log`. A noneditable wheel installation
+still supports ordinary CLI commands but cannot manage this checkout's services.
+
 ## Commands
 
 | Command | Purpose | Options |

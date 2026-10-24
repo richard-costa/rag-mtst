@@ -12,6 +12,7 @@ from uuid import UUID
 import psycopg
 
 from app.config import get_settings
+from app import local
 from app.embeddings import EmbeddingError
 from app.generation import GenerationError, answer
 from app.ingestion import enqueue_file
@@ -41,11 +42,20 @@ def main(arguments: list[str] | None = None) -> int:
 async def _run(arguments: list[str] | None = None) -> int:
     parser = _build_parser()
     namespace = parser.parse_args(arguments)
-    settings = get_settings()
-    if namespace.data_dir is not None:
-        settings = replace(settings, data_dir=namespace.data_dir)
-
     try:
+        local.load_environment()
+        if namespace.command == "start":
+            return local.start()
+        if namespace.command == "status":
+            return local.status()
+        if namespace.command == "stop":
+            return local.stop()
+        if namespace.command == "reset":
+            return local.reset(yes=namespace.yes)
+
+        settings = get_settings()
+        if namespace.data_dir is not None:
+            settings = replace(settings, data_dir=namespace.data_dir)
         if namespace.command == "add":
             result = await enqueue_file(
                 namespace.source, settings=settings, reindex=namespace.reindex,
@@ -111,7 +121,7 @@ async def _run(arguments: list[str] | None = None) -> int:
                         f"(chunk {citation.chunk_index}, source {citation.source_id})"
                     )
             return 0
-    except (OSError, ValueError, psycopg.Error, EmbeddingError, GenerationError) as error:
+    except (OSError, ValueError, psycopg.Error, EmbeddingError, GenerationError, local.LocalError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
@@ -129,9 +139,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-dir",
         type=Path,
-        help="Directory used for persisted source files.",
+        help="Directory for temporary staged ingestion inputs.",
     )
     commands = parser.add_subparsers(dest="command")
+    commands.add_parser("start", help="Start local PostgreSQL and the background ingestion worker.")
+    commands.add_parser("status", help="Check local PostgreSQL and worker readiness.")
+    commands.add_parser("stop", help="Stop local services while preserving indexed data.")
+    reset_parser = commands.add_parser("reset", help="Delete local indexed data (requires confirmation).")
+    reset_parser.add_argument("--yes", action="store_true", help="Confirm destructive local reset without prompting.")
 
     add_parser = commands.add_parser("add", help="Index a supported document file.")
     add_parser.add_argument("source", type=Path)
@@ -171,10 +186,7 @@ def _print_matches(matches: list[SearchResult]) -> None:
         print()
 
 
-    # ---------------------------------------------------------------------------
-    # Direct module execution
-    # ---------------------------------------------------------------------------
-    # This supports `python -m app.cli` in addition to the installed `rag` command.
+# Direct module execution also supports python -m app.cli.
 
 if __name__ == "__main__":
     raise SystemExit(main())
