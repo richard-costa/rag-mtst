@@ -218,4 +218,4 @@ of task cancellation: the server may still commit. Read history before retrying
 an uncertain request; see [conversation recovery](../how-to/conversations.md#handle-overlap-and-uncertain-outcomes).
 
 See [indexing](indexing.md), [retrieval and answers](retrieval.md), and
-[security and data lifecycle](security.md) for the behavior behind these boundaries.
+[security and data lifecycle](../operations.md) for the behavior behind these boundaries.

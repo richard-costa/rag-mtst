@@ -14,8 +14,10 @@ archive. Run `rag --help` or `rag COMMAND --help` for installed argument help.
 
 ## Local lifecycle
 
-Install from a source checkout with `uv tool install --editable .` to make `rag`
-available in your shell. The CLI automatically reads the checkout's `.env`,
+From a source checkout, use `uv run rag ...` directly; uv prepares the project
+environment automatically. Activating `.venv` or optionally installing with
+`uv tool install --editable .` also exposes plain `rag`. The CLI reads the
+checkout's `.env`,
 without overriding variables already exported in the shell. Relative staging
 paths are resolved against the checkout, so the local worker and CLI agree.
 
@@ -32,8 +34,8 @@ manages the default database at `127.0.0.1:5432` and uses a dedicated Compose
 project name; it does not launch the HTTP API and it does not manage deployed
 services. The first `rag start` creates an `.env` template if missing and asks
 you to provide credentials/model settings before starting services. Worker logs
-are under `.rag-data/local-runtime/worker.log`. A noneditable wheel installation
-still supports ordinary CLI commands but cannot manage this checkout's services.
+are under `.rag-data/local-runtime/worker.log`. The lifecycle manager requires a source checkout; installed wheels without a
+checkout can still use ordinary commands against a separately managed backend.
 
 ## Commands
 

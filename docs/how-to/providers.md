@@ -1,8 +1,9 @@
 # Choose Model Providers
 
 Embedding, answer generation, and visual extraction are independent choices.
-Set exported variables in each process that needs them, or use private Compose
-configuration. Exact defaults and endpoint precedence are in the
+For the CLI, set provider values in private `.env` (loaded automatically)
+or export them before starting the worker. Other host processes require
+explicit environment loading. Exact defaults and endpoint precedence are in the
 [configuration reference](../reference/configuration.md).
 
 ## Use OpenAI
@@ -22,7 +23,7 @@ with structured outputs; an endpoint override must support that API.
 ## Use Local Embeddings and Ollama Answers
 
 ```bash
-uv sync --locked --extra local
+uv sync --extra local
 export RAG_EMBEDDING_PROVIDER=local
 export RAG_GENERATION_PROVIDER=ollama
 export RAG_GENERATION_MODEL=qwen2.5:1.5b
@@ -35,7 +36,8 @@ Install/start Ollama separately and load a suitable model, for example:
 ollama pull qwen2.5:1.5b
 ```
 
-Keep `--extra local` on uv sync/run commands. Local embeddings download weights
+Use `uv run --extra local rag ...` for each CLI command in this configuration
+and restart the worker with that extra after changing providers. Local embeddings download weights
 on first use; Ollama manages its own model downloads and CPU/GPU use. The example
 model is not a quality or hardware guarantee. This combination avoids hosted
 inference, but initial downloads still use the network.

@@ -1,36 +1,29 @@
-# rag-mtst
+# RAG-MTST documentation
 
-rag-mtst turns documents into searchable passages and generates source-cited
-answers. It provides a Python API, command-line client, HTTP API, durable
-ingestion worker, and an optional local browser demo. PostgreSQL with pgvector
-stores documents, jobs, vectors, and conversations.
+RAG-MTST is a Python backend for indexing documents and building retrieval-
+augmented answers with inspectable source passages. It is designed to be
+integrated into other applications.
 
-The project is pre-release. Its shared-token API is intended for a trusted,
-single-tenant deployment, not a public multi-user service. Implemented workflows
-are not a guarantee of extraction accuracy, retrieval relevance, or answer quality.
+**New here?** Start with the [quickstart](quickstart.md). You need one local
+`rag start` command to bring up PostgreSQL and a background ingestion worker;
+the CLI lets you index, search, and ask without starting an HTTP server.
 
-## Start Here
-
-| Your goal | Read |
+| Where to go | What you'll learn |
 | --- | --- |
-| Learn by indexing and searching a sample | [Your first search](tutorials/first-search.md) |
-| Deploy, configure, or operate the backend | [How-to guides](how-to/run.md) |
-| Look up settings, endpoints, or limits | [Configuration](reference/configuration.md), [HTTP API](reference/http.md), [CLI](reference/cli.md), [formats and limits](reference/limits.md) |
-| Understand the design | [Architecture](explanation/architecture.md), [indexing](explanation/indexing.md), [retrieval](explanation/retrieval.md), [security](explanation/security.md) |
+| [Quickstart](quickstart.md) | First working search and cited answer |
+| [How it works](how-it-works.md) | Ingestion, retrieval, generation, persistence |
+| [Experiments](experiments.md) | Compare retrieval, change chunking and prompts |
+| [Development](development.md) | Code map, local development, tests, docs |
+| [Operations](operations.md) | Services, deployment contract, safety and recovery |
+| [CLI reference](reference/cli.md) | Exact commands and flags |
+| [HTTP API](reference/http.md) | Integrate other applications |
+| [Python API](reference/python.md) | Call feature functions directly |
+| [Configuration](reference/configuration.md) | Provider and runtime settings |
+| [Limits](reference/limits.md) | Format, extraction, worker, and model bounds |
 
-The documentation follows [Diataxis](https://diataxis.fr/map/): tutorials teach
-through a guided exercise; how-to guides solve specific tasks; reference records
-contracts; explanation describes why the system behaves as it does.
+An optional [browser demo](https://github.com/richard-costa/rag-mtst/blob/main/demo/README.md)
+provides a visual way to inspect the same backend, but is **not** required to
+use the CLI.
 
-## Capabilities
-
-- Extract TXT, Markdown, textual PDF, DOCX, and PPTX locally; optionally transcribe
-  PDF or Office page images through an explicitly selected vision model.
-- Search by cosine similarity, neighboring windows, lexical terms, or hybrid fusion.
-- Use OpenAI or local embeddings independently of OpenAI, DeepSeek, Ollama, or
-  Anthropic answer generation.
-- Keep successful conversation turns and their citation snapshots, with bounded
-  history supplied to subsequent answers.
-- Reindex atomically: failed replacement leaves previously indexed content searchable.
-
-For planned work, see the [roadmap](https://github.com/richard-costa/rag-mtst/blob/main/ROADMAP.md).
+The project is pre-release, trusted single-tenant software, not a production
+multi-user application. See [operations](operations.md) for its trust boundary.

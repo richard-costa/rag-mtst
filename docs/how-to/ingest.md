@@ -1,26 +1,24 @@
 # Ingest and Reindex Documents
 
-Start a [configured backend and worker](run.md) first. API, CLI, and worker must
-share the database, tenant, and staging path. Keep a separate copy of originals:
-the backend removes temporary inputs after completion or failure.
-
-The CLI examples load the private `.env` file from the run guide. If you followed
-the disposable tutorial and exported settings instead, omit `--env-file .env`.
-Keep `--extra local` on uv commands when using local embeddings. HTTP examples
-also need `RAG_API_KEY` set privately in the calling shell; a `.env` file alone
-does not export it.
+Start with the [CLI quickstart](../quickstart.md): `uv run rag start` brings up
+PostgreSQL and the background host worker. CLI, API, and worker must share the
+database, tenant, and staging directory. Keep originals: terminal staged inputs
+are removed after processing. The `rag` CLI loads `.env` automatically.
+For local embeddings use `uv run --extra local rag ...` consistently. HTTP
+curl examples require exported `RAG_API_KEY`; a private `.env` alone does not
+export variables for curl.
 
 ## Submit Through the CLI
 
 ```bash
-uv run --env-file .env rag add docs/assets/sample.md
+uv run rag add docs/assets/sample.md
 ```
 
 The command queues a durable job and waits for completion. To return immediately:
 
 ```bash
-uv run --env-file .env rag add docs/assets/sample.md --no-wait
-uv run --env-file .env rag job JOB_ID
+uv run rag add docs/assets/sample.md --no-wait
+uv run rag job JOB_ID
 ```
 
 Replace `JOB_ID` with the returned UUID. Ctrl+C stops waiting, not the queued
@@ -49,7 +47,7 @@ Changing a filename does not create a new identity; changing bytes does.
 ## Replace an Existing Index
 
 ```bash
-uv run --env-file .env rag add docs/assets/sample.md --reindex
+uv run rag add docs/assets/sample.md --reindex
 ```
 
 Or upload with `?reindex=true`. Reindexing retains the source ID and atomically
@@ -65,7 +63,7 @@ are rejected rather than running two incompatible jobs for the same source.
 After [configuring a visual provider](providers.md#enable-visual-extraction):
 
 ```bash
-uv run --env-file .env rag add document.pdf --extraction-method visual
+uv run rag add document.pdf --extraction-method visual
 ```
 
 For an already-indexed parser source, add `--reindex`. HTTP uses
@@ -76,9 +74,9 @@ trigger automatic visual extraction. See [formats and limits](../reference/limit
 ## Search and Ask
 
 ```bash
-uv run --env-file .env rag search "support hours" --method lexical --limit 3
-uv run --env-file .env rag search "When can I visit?" --method hybrid --limit 3
-uv run --env-file .env rag ask "When is the support desk open?" --method lexical --limit 3
+uv run rag search "support hours" --method lexical --limit 3
+uv run rag search "When can I visit?" --method hybrid --limit 3
+uv run rag ask "When is the support desk open?" --method lexical --limit 3
 ```
 
 Lexical search makes no embedding call. Cosine, window, and hybrid searches use

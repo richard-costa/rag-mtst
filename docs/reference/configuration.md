@@ -1,10 +1,10 @@
 # Configuration
 
-`Settings.from_environment()` reads the process environment. Compose loads `.env`
-for substitution; host commands can load the same file with
-`uv run --env-file .env`. Python does not load it automatically. Already-exported
-variables take precedence over the file. Environment parsing errors can prevent
-startup rather than produce an HTTP error.
+`Settings.from_environment()` reads the process environment. The **rag CLI**
+automatically loads the checkout's `.env` without overriding exported
+variables; other host Python processes (including uvicorn and Alembic) should
+load it with `uv run --env-file .env ...`. Compose uses `.env` for
+interpolation. Environment parsing errors can prevent startup.
 
 ## Starter Values
 
@@ -18,7 +18,7 @@ The default OpenAI workflow needs only the three entries in `.env.example`:
 
 The remaining environment settings are optional connection details, data scope,
 or model choices. Internal processing limits stay in code. See
-[Run the backend](../how-to/run.md) for startup commands and
+[quickstart](../quickstart.md) for startup commands and
 [provider setup](../how-to/providers.md) for alternatives to OpenAI.
 
 ## Core Settings
@@ -36,7 +36,7 @@ HTTP clients send `Authorization: Bearer <token>`. Swagger's **Authorize** accep
 the token alone. CLI/Python calls do not require the HTTP credential. The key
 grants read/write access to the one configured tenant, with no per-user roles.
 Rotate by replacing it, restarting the API, and updating all clients; there is no
-overlapping-key rotation. See [security](../explanation/security.md).
+overlapping-key rotation. See [security](../operations.md#security-boundary).
 
 ## Retrieval
 

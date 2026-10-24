@@ -6,7 +6,7 @@ streaming response, or per-user identity.
 
 The running application serves exact schemas at `/openapi.json`, Swagger UI at
 `/docs`, and ReDoc at `/redoc`. These schema routes are public; restrict them
-at the proxy if necessary. See [startup](../how-to/run.md) and
+at the proxy if necessary. See [running the API](../development.md#run-the-api-alongside-the-local-manager) and
 [configuration](configuration.md) for prerequisites.
 
 ## Endpoints
