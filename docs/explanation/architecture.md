@@ -16,18 +16,25 @@ ORM layer, or separate service/repository framework.
 ```mermaid
 ---
 config:
-  flowchart:
-    useMaxWidth: true
+    flowchart:
+        useMaxWidth: false
 ---
 flowchart TB
-    CLI[Local CLI] --> CORE[Shared feature modules]
-    CLIENT[HTTP client] --> API[FastAPI]
-    API --> CORE
-    CORE --> DB[(PostgreSQL)]
-    CORE --> FILES[Temporary staged files]
-    WORKER[Ingestion worker] --> DB
-    WORKER --> FILES
-    WORKER --> CORE
+    http[HTTP client] --> api[FastAPI]
+    cli[Local CLI] --> submission[Ingestion submission]
+    api --> submission
+    submission --> queue[(PostgreSQL job queue)]
+    submission --> staging[Shared input directory]
+    queue --> worker[Ingestion worker]
+    staging --> worker
+    worker --> indexing[Extraction, chunking, and embeddings]
+    indexing --> documents[(PostgreSQL + pgvector)]
+    api --> retrieval[Retrieval]
+    cli --> retrieval
+    documents -->|Ranked chunk windows| retrieval
+    retrieval --> context[Bounded context]
+    context --> generation[Answer generation]
+    generation --> answer[Answer + citations]
 ```
 
 **Local development:** `rag start` manages PostgreSQL in Docker and launches
@@ -49,15 +56,77 @@ The schema has six tables with four main relationships:
 ```mermaid
 ---
 config:
-  er:
-    useMaxWidth: true
+    er:
+        useMaxWidth: true
 ---
 erDiagram
     direction TB
     sources ||..o{ chunks : contains
     sources ||..o{ ingestion_jobs : tracks
-    ingestion_jobs ||--o| ingestion_job_inputs : stages
+    ingestion_jobs ||--o| ingestion_job_inputs : has
     conversations ||..o{ messages : contains
+
+    sources {
+        uuid id PK
+        text tenant_id
+        text type
+        text locator
+        text mime_type
+        text content_hash
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    chunks {
+        uuid id PK
+        text tenant_id
+        uuid source_id FK
+        integer chunk_index
+        integer page_number
+        text content
+        tsvector search_vector "generated"
+        vector embedding
+        jsonb metadata
+        timestamptz created_at
+    }
+    ingestion_jobs {
+        uuid id PK
+        uuid source_id FK
+        text status
+        text stage
+        integer progress
+        integer processed
+        integer total
+        integer attempts
+        text error
+        timestamptz created_at
+        timestamptz started_at
+        timestamptz heartbeat_at
+        timestamptz finished_at
+        uuid claim_token
+    }
+    ingestion_job_inputs {
+        uuid job_id PK, FK
+        text input_path "temporary file path"
+        text source_name
+        jsonb extraction_profile
+        jsonb configuration
+        boolean reindex
+    }
+    conversations {
+        uuid id PK
+        text tenant_id
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    messages {
+        uuid id PK
+        uuid conversation_id FK
+        integer sequence
+        text role
+        text content
+        jsonb citations "saved snapshots"
+        timestamptz created_at
+    }
 ```
 
 | Table | Purpose |
@@ -121,29 +190,26 @@ generation, so long provider calls also occupy a database connection.
 ```mermaid
 ---
 config:
-  sequence:
-    useMaxWidth: true
-    wrap: true
-    diagramMarginX: 8
-    actorMargin: 32
+    sequence:
+        useMaxWidth: false
 ---
 sequenceDiagram
     actor Client
     participant API
-    participant DB as Database
-    participant RAG as Retrieval + LLM
-    Client->>API: Ask in conversation
-    API->>DB: Lock row (NOWAIT)
-    Note over API,DB: 404 if missing; 409 if busy
-    DB-->>API: Recent history
-    Note over API,DB: Lock held through generation
-    API->>RAG: Question + history
-    alt Success
-        RAG-->>API: Answer + citations
-        API->>DB: Save both turns + commit
-        API-->>Client: Answer + references
-    else Failure or cancellation
-        API->>DB: Roll back
+    participant DB as PostgreSQL
+    participant Answer as Retrieval and generation
+    Client->>API: Submit conversation question
+    API->>DB: Begin transaction and lock conversation NOWAIT
+    Note over API,DB: Missing returns 404 and busy returns 409
+    DB-->>API: Recent message history
+    Note over API,DB: Connection and lock remain held
+    API->>Answer: Current question + recent history
+    alt Answer succeeds
+        Answer-->>API: Answer + citation snapshots
+        API->>DB: Insert both messages and commit
+        API-->>Client: Answer, matches, and citations
+    else Generation fails or task is cancelled
+        API->>DB: Roll back without saving either message
     end
 ```
 
