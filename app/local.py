@@ -256,8 +256,8 @@ def start() -> int:
                 raise LocalError("Worker did not become ready. See .rag-data/local-runtime/worker.log")
             print("Ingestion worker ready.")
     print("\nReady! Try:")
-    print("  rag add docs/assets/sample.md")
-    print('  rag ask "When is the support desk open?"')
+    print("  uv run rag add docs/assets/sample.md")
+    print('  uv run rag ask "When is the support desk open?"')
     return 0
 
 
@@ -327,7 +327,8 @@ def reset(*, yes: bool = False) -> int:
     print("PostgreSQL: stopped")
     print("Local database and indexed data: deleted")
     print("Preserved: original files, .env, model caches")
-    print("\\nReset complete. Run rag start to initialize a fresh database.")
+    print("")
+    print("Reset complete. Start again with: uv run rag start")
     return 0
 
 

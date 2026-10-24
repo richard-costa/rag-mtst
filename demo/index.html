@@ -20,7 +20,8 @@
       </div>
 
       <section aria-labelledby="upload-title">
-        <h2 id="upload-title">Index a document</h2>
+        <h2 id="upload-title">1. Index a document</h2>
+        <p class="metadata">Choose a local TXT, Markdown, PDF, DOCX, or PPTX file. Wait for indexing to finish before searching.</p>
         <form id="upload-form">
           <label for="document">Document</label>
           <input id="document" type="file" accept=".txt,.md,.pdf,.docx,.pptx" required>
@@ -40,10 +41,35 @@
       </section>
 
       <section aria-labelledby="query-title">
-        <h2 id="query-title">Search and ask</h2>
+        <h2 id="query-title">2. Search and ask</h2>
+        <p class="metadata">Search to inspect passages; Ask to generate an answer using retrieved evidence.</p>
         <form id="query-form">
           <label for="query">Query or question</label>
           <textarea id="query" rows="3" required></textarea>
+          <details class="retrieval-controls">
+            <summary>Retrieval settings (optional)</summary>
+            <div class="model-options">
+              <div>
+                <label for="search-method">Method</label>
+                <select id="search-method">
+                  <option value="">Server default</option>
+                  <option value="window">Window (similarity + neighbors)</option>
+                  <option value="cosine">Cosine (vector similarity)</option>
+                  <option value="lexical">Lexical (keywords)</option>
+                  <option value="hybrid">Hybrid (combined ranking)</option>
+                </select>
+              </div>
+              <div>
+                <label for="search-limit">Result limit (seed chunks for window)</label>
+                <input id="search-limit" type="number" min="1" step="1" placeholder="Server default">
+              </div>
+              <div>
+                <label for="search-window">Neighbors on each side (window only)</label>
+                <input id="search-window" type="number" min="0" step="1" placeholder="Server default">
+              </div>
+            </div>
+            <p class="metadata">Scores indicate method-specific ranking, not probabilities. Compare the source passages, not raw scores.</p>
+          </details>
           <div class="model-options">
             <div>
               <label for="answer-provider">Answer provider</label>

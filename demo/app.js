@@ -104,6 +104,12 @@ element("query-form").addEventListener("submit", (event) => {
     if (!query) throw new Error("Enter a query or question.");
     status("query-status", action === "search" ? "Searching..." : "Generating answer...");
     const payload = { query };
+    const method = element("search-method").value;
+    const limit = element("search-limit").value.trim();
+    const windowSize = element("search-window").value.trim();
+    if (method) payload.method = method;
+    if (limit !== "") payload.limit = Number(limit);
+    if (windowSize !== "") payload.window = Number(windowSize);
     if (action === "ask") {
       const provider = element("answer-provider").value;
       const model = element("answer-model").value.trim();
@@ -114,6 +120,7 @@ element("query-form").addEventListener("submit", (event) => {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     });
     if (action === "search") {
+      target.append(node("h3", "Retrieved passages"));
       matches(target, result);
       status("query-status", `${result.length} matches returned`);
       return;
