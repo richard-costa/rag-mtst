@@ -7,22 +7,30 @@ before modifying internals.
 
 ## Choose your entry point
 
-| Change or investigate | Start here |
+This is the **single code ownership map**. Conceptual pages explain behavior;
+this table tells you where to make a change.
+
+| Responsibility | Module(s) |
 | --- | --- |
 | CLI arguments and output | `app/cli.py` |
-| Local `start/status/stop/reset` supervisor | `app/local.py` |
-| Shared settings/defaults | `app/config.py` |
-| HTTP app/authentication and routes | `app/api/main.py`, `app/api/routes.py` |
-| File submission/content identity | `app/ingestion.py` |
-| Worker claims, supervision, cleanup | `app/worker.py` |
-| TXT/Markdown/PDF/Office extraction | `app/extraction/` |
-| Section-aware chunking | `app/chunking.py` |
-| Embedding providers/token fitting | `app/embeddings.py` |
-| Retrieval and ranked windows | `app/retrieval.py`, `app/storage/documents.py` |
-| Context budgets and citations | `app/generation.py` |
-| Generation provider adapters | `app/llm.py` |
-| SQL, jobs, transactions | `app/storage/`, `migrations/` |
-| Optional visual interface | `demo/` |
+| Local lifecycle (`start/status/stop/reset`) | `app/local.py` |
+| Defaults and environment parsing | `app/config.py` |
+| FastAPI factory, authentication and lifespan | `app/api/main.py` |
+| HTTP routing, requests and conversations | `app/api/routes.py`, `app/api/schemas.py` |
+| Ingestion submission, staging and deduplication | `app/ingestion.py` |
+| Job execution, child supervision and heartbeats | `app/worker.py` |
+| Native/visual document extraction | `app/extraction/` |
+| Section-aware chunking and provenance | `app/chunking.py` |
+| Hosted/local embeddings and input fitting | `app/embeddings.py` |
+| Retrieval strategies and windows | `app/retrieval.py` |
+| Prompt budgets, history and citation validation | `app/generation.py` |
+| Model client and provider-specific output | `app/llm.py` |
+| Database handle and shared records | `app/storage/database.py`, `app/storage/records.py` |
+| Chunk persistence, lexical/vector queries | `app/storage/documents.py` |
+| Job claims, fencing, atomic completion | `app/storage/jobs.py` |
+| Conversation history and transactions | `app/storage/conversations.py` |
+| PostgreSQL schema and migrations | `migrations/` |
+| Optional visual teaching interface | `demo/` |
 
 ## Local development workflow
 
@@ -91,31 +99,16 @@ live-model smoke tests are under `tests/integration/test_live_models.py`;
 inspect their environment flags and costs before running them. Do not add
 billable tests to default CI.
 
-## Deeper architecture constraints
+## Architecture constraints
 
-The code is intentionally a small set of feature modules and explicit SQL,
-not a framework of services/repositories or an additional queue server.
-
-- **Durable jobs:** job state, staged input identity, and nonsecret settings
-  are committed to PostgreSQL. The worker claims jobs with a token and
-  heartbeat. Stale jobs fail rather than automatically replay paid work.
-- **Atomic replacement:** full replacement chunks are prepared first;
-  committing indexed chunks and the owning job is atomic. A failed reindex
-  preserves previously searchable text.
-- **Tenant scoping:** source, job, conversation, and retrieval operations
-  use a configured tenant. This is **not** per-user authentication.
-- **Conversation transactions:** a turn holds a row lock while generating,
-  committing the question, response, and citation snapshots together.
-  A concurrent turn gets 409; a client timeout doesn't prove server cancellation.
-- **Citation snapshots:** previous conversation evidence is stored by value;
-  reindexing doesn't rewrite it.
-- **No permanent input archive:** stage files are removed when jobs terminate;
-  back up original files yourself.
-
-More precise implementation descriptions and diagrams are retained in
-[architecture internals](explanation/architecture.md),
-[indexing internals](explanation/indexing.md), and
-[retrieval internals](explanation/retrieval.md).
+Maintain the guarantees described in
+[architecture and transactions](explanation/architecture.md):
+worker ownership fencing, atomic reindexing, explicit tenant scope, and
+conversation transaction boundaries. See
+[indexing internals](explanation/indexing.md) and
+[retrieval internals](explanation/retrieval.md) before changing those workflows.
+These guides describe **why** the boundaries matter; the table above shows
+**where** to make changes.
 
 ## Documentation
 

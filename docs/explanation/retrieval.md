@@ -38,7 +38,7 @@ selectable strategies.
 ---
 config:
   flowchart:
-    useMaxWidth: false
+    useMaxWidth: true
 ---
 flowchart TB
 	question[Current question] --> config[Validate generation configuration]

@@ -64,7 +64,7 @@ matching sources need no new job. Credentials come from the worker at execution.
 ---
 config:
   state:
-    useMaxWidth: false
+    useMaxWidth: true
 ---
 stateDiagram-v2
 	[*] --> pending: Submission accepted

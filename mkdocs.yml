@@ -28,6 +28,8 @@ theme:
     accent: deep orange
   features:
     - navigation.sections
+    - toc.integrate
+    - toc.follow
     - content.code.copy
 plugins:
   - search:

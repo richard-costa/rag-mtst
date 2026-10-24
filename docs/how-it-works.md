@@ -104,17 +104,9 @@ and removed after a terminal job. The source locator is descriptive, not a
 permanent download link. Backups, retention, and external exposure are operator
 responsibilities; see [operations](operations.md).
 
-## Where is the implementation?
+## Next steps
 
-| Area | Code |
-| --- | --- |
-| CLI and local lifecycle | `app/cli.py`, `app/local.py` |
-| API | `app/api/` |
-| Staging and ingestion | `app/ingestion.py` |
-| Durable worker | `app/worker.py` |
-| Extraction/chunking | `app/extraction/`, `app/chunking.py` |
-| Embeddings/retrieval | `app/embeddings.py`, `app/retrieval.py` |
-| Prompt/context and providers | `app/generation.py`, `app/llm.py` |
-| Database operations | `app/storage/`, `migrations/` |
-
-Next: [experiments](experiments.md), then [development](development.md).
+Start with the [experiments](experiments.md), then use the
+[development code map](development.md#choose-your-entry-point) to locate the
+modules behind each part of the pipeline. For transactional and persistence
+details, see [architecture and transactions](explanation/architecture.md).

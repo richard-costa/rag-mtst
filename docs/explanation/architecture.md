@@ -1,221 +1,160 @@
-# Architecture
+# Architecture and Transactions
 
-rag-mtst is an async Python application with a PostgreSQL-backed ingestion queue.
-HTTP and CLI are adapters over the same feature modules; the CLI does not make
-HTTP requests. A separate worker performs durable ingestion. There is no external
-queue service, ORM model layer, or service/repository framework.
+This page documents the **implementation boundaries and consistency guarantees**
+behind the [conceptual overview](../how-it-works.md). For a directory-by-directory
+code map, use the [development guide](../development.md#choose-your-entry-point).
+For exact database columns and constraints, the authoritative definition is
+`migrations/versions/0001_initial.py`.
+
+## Component Boundaries
+
+The CLI calls application functions **directly**; HTTP clients use FastAPI.
+Both operate on the same feature modules and PostgreSQL database. A separate
+worker executes durable ingestion jobs. There is no external message broker,
+ORM layer, or separate service/repository framework.
 
 ```mermaid
 ---
 config:
-    flowchart:
-        useMaxWidth: false
+  flowchart:
+    useMaxWidth: true
 ---
 flowchart TB
-    http[HTTP client] --> api[FastAPI]
-    cli[Local CLI] --> submission[Ingestion submission]
-    api --> submission
-    submission --> queue[(PostgreSQL job queue)]
-    submission --> staging[Shared input directory]
-    queue --> worker[Ingestion worker]
-    staging --> worker
-    worker --> indexing[Extraction, chunking, and embeddings]
-    indexing --> documents[(PostgreSQL + pgvector)]
-    api --> retrieval[Retrieval]
-    cli --> retrieval
-    documents -->|Ranked chunk windows| retrieval
-    retrieval --> context[Bounded context]
-    context --> generation[Answer generation]
-    generation --> answer[Answer + citations]
+    CLI[Local CLI] --> CORE[Shared feature modules]
+    CLIENT[HTTP client] --> API[FastAPI]
+    API --> CORE
+    CORE --> DB[(PostgreSQL)]
+    CORE --> FILES[Temporary staged files]
+    WORKER[Ingestion worker] --> DB
+    WORKER --> FILES
+    WORKER --> CORE
 ```
 
-The API and worker must see the same staging directory at the same path. Only
-temporary inputs live there; indexed content lives in the database. Direct Python
-indexing functions can execute synchronously within an awaited workflow instead
-of submitting a job.
+**Local development:** `rag start` manages PostgreSQL in Docker and launches
+the worker on the host; they share a local temporary directory.
 
-## Ownership
+**Deployed backend:** The API and worker must see staged inputs at the **same
+filesystem path**. The infrastructure team owns that shared storage, database
+connectivity, process supervision, and ingress. The standard backend image
+does not include the educational browser demo.
 
-| Module | Responsibility |
-| --- | --- |
-| `app/api/main.py` | Application factory, authentication, lifespan, and router registration |
-| `app/api/routes.py` | HTTP endpoints, feature calls, status translation, and conversation orchestration |
-| `app/api/schemas.py` | HTTP request/response models |
-| `app/cli.py` | Arguments, direct feature calls, terminal output |
-| `app/config.py` | Immutable settings and environment parsing |
-| `app/ingestion.py` | Content identity, staging/submission, indexing orchestration |
-| `app/worker.py` | Atomic claims, child-process supervision, heartbeats, cleanup |
-| `app/extraction/` | Native parsing or explicit page-image transcription; Office conversion when needed |
-| `app/chunking.py` | Markdown blocks, sections, packing, provenance |
-| `app/embeddings.py` | Hosted/local inference and local token fitting |
-| `app/retrieval.py` | Strategy selection, neighboring windows, hybrid fusion |
-| `app/generation.py` | Bounded prompts, history, answer/citation validation |
-| `app/llm.py` | SDK clients and provider-specific structured-output paths |
-| `app/storage/database.py` | Database handle and connection lifecycle |
-| `app/storage/records.py` | Shared persistence dataclasses |
-| `app/storage/documents.py` | Source/chunk SQL, lexical/vector search, and chunk windows |
-| `app/storage/jobs.py` | Job SQL, ownership fencing, and atomic indexing completion |
-| `app/storage/conversations.py` | Conversation/history SQL and locked turn transactions |
-| `migrations/` | Explicit Alembic schema definitions |
+The worker executes ingestion in supervised child processes. Python callers
+can also invoke direct indexing functions without submitting an asynchronous
+job. See [indexing details](indexing.md).
 
-Storage operations are module functions taking a `Database` handle first, not
-methods on a shared SQL gateway. Transaction owners keep their boundaries explicit:
-job completion inserts chunks on its existing connection, and conversation turns
-hold their connection through answer generation. The package split adds no
-connection pool or persistence framework.
+## Data and Persistence
 
-## Persistence Model
-
-| Table | Stored information |
-| --- | --- |
-| `sources` | Tenant-scoped content hash, descriptive locator, source identity |
-| `chunks` | Indexed text, metadata, vector, generated lexical search vector |
-| `ingestion_jobs` | Durable state, progress, ownership, heartbeats, errors |
-| `ingestion_job_inputs` | Temporary input paths and nonsecret queued settings |
-| `conversations` | Tenant ownership and conversation timestamps |
-| `messages` | Ordered user/assistant text and immutable citation snapshots |
+The schema has six tables with four main relationships:
 
 ```mermaid
 ---
 config:
-    er:
-        useMaxWidth: true
+  er:
+    useMaxWidth: true
 ---
 erDiagram
     direction TB
     sources ||..o{ chunks : contains
     sources ||..o{ ingestion_jobs : tracks
-    ingestion_jobs ||--o| ingestion_job_inputs : has
+    ingestion_jobs ||--o| ingestion_job_inputs : stages
     conversations ||..o{ messages : contains
-
-    sources {
-        uuid id PK
-        text tenant_id
-        text type
-        text locator
-        text mime_type
-        text content_hash
-        timestamptz created_at
-        timestamptz updated_at
-    }
-    chunks {
-        uuid id PK
-        text tenant_id
-        uuid source_id FK
-        integer chunk_index
-        integer page_number
-        text content
-        tsvector search_vector "generated"
-        vector embedding
-        jsonb metadata
-        timestamptz created_at
-    }
-    ingestion_jobs {
-        uuid id PK
-        uuid source_id FK
-        text status
-        text stage
-        integer progress
-        integer processed
-        integer total
-        integer attempts
-        text error
-        timestamptz created_at
-        timestamptz started_at
-        timestamptz heartbeat_at
-        timestamptz finished_at
-        uuid claim_token
-    }
-    ingestion_job_inputs {
-        uuid job_id PK, FK
-        text input_path "temporary file path"
-        text source_name
-        jsonb extraction_profile
-        jsonb configuration
-        boolean reindex
-    }
-    conversations {
-        uuid id PK
-        text tenant_id
-        timestamptz created_at
-        timestamptz updated_at
-    }
-    messages {
-        uuid id PK
-        uuid conversation_id FK
-        integer sequence
-        text role
-        text content
-        jsonb citations "saved snapshots"
-        timestamptz created_at
-    }
 ```
 
-The diagram shows all tables and columns; `PK` marks primary keys and `FK`
-foreign keys. Each child row belongs to one parent, and all foreign keys use
-`ON DELETE CASCADE`. A job can have at most one input record, whose file path
-is cleared after terminal-input cleanup.
+| Table | Purpose |
+| --- | --- |
+| `sources` | Tenant-scoped source identity and original locator |
+| `chunks` | Extracted text, metadata, embeddings, and indexed search text |
+| `ingestion_jobs` | Durable status, progress, ownership, and heartbeats |
+| `ingestion_job_inputs` | Temporary file path and nonsecret queued configuration |
+| `conversations` | Tenant-owned conversation records |
+| `messages` | Ordered turns and saved citation snapshots |
 
-Composite uniqueness applies to `sources(tenant_id, content_hash)`,
-`chunks(source_id, chunk_index)`, and `messages(conversation_id, sequence)`.
-A partial unique index also permits only one pending or running job per source.
-Citation snapshots are JSONB, not foreign keys to current sources or chunks,
-so reindexing does not rewrite past evidence. Nullability, defaults, and check
-constraints are defined in `migrations/versions/0001_initial.py`.
+These relationships are backed by foreign keys with `ON DELETE CASCADE`.
+A job has at most one staged-input record, cleared after terminal input cleanup.
+Important uniqueness constraints include `sources(tenant_id, content_hash)`,
+`chunks(source_id, chunk_index)`, and
+`messages(conversation_id, sequence)`. A partial unique index prevents more
+than one pending/running job for a source.
 
-Original files are temporary filesystem inputs, not stored in PostgreSQL.
-The database stores extracted text chunks, embeddings, and metadata. A locator
-is descriptive, not a download endpoint or permanent file path. Unconstrained
-pgvector columns allow embeddings of different dimensions; provider/model tags
-in metadata separate vector spaces. There is no automatic model revision
-tracking or historical embedding index.
+Original file bytes are **not** archived in PostgreSQL. Source locators describe
+the input rather than acting as download URLs. Citation snapshots are JSONB
+rather than references to live chunk rows: reindexing does not rewrite
+previously recorded conversational evidence.
 
-`chunks.search_vector` uses PostgreSQL `pg_catalog.simple` and a GIN index;
-inserts/replacements update it automatically. Vector search is exact, with no
-approximate vector index. Connections are short-lived and unpooled, except that
-conversation turns retain a connection and transaction through generation.
+The vector column can hold different dimensions; provider/model tags separate
+embedding spaces. Model revisions or endpoint deployments are **not** tracked
+automatically. The generated `chunks.search_vector` uses PostgreSQL's
+`simple` text-search configuration with a GIN index. Vector search is exact,
+without an approximate-nearest-neighbor index.
 
-## Transaction Boundaries
+For precise fields, nullability, indexes, and constraints, inspect the
+[migration definition](https://github.com/richard-costa/rag-mtst/blob/main/migrations/versions/0001_initial.py)
+rather than maintaining a second copy of the SQL schema in a diagram.
 
-Indexing prepares the complete replacement before a transaction replaces chunks
-and completes the owned job. This protects old search results from failed
-reindexing. Claim tokens fence stale workers from committing another owner's job.
+## Ingestion Guarantees
 
-A conversation uses a tenant-scoped row lock with immediate conflict detection.
-It holds that lock through retrieval/generation and commits the question, answer,
-and citation snapshots together. Failures roll back both messages. This is simple
-cross-process coordination, but long provider requests also occupy a database
-connection and keep that conversation locked.
+Submission stages the complete file before committing the source and its
+durable job. A worker claims that job with an ownership token and uses
+heartbeats to detect lost execution. Stale workers cannot commit another
+worker's claimed job.
+
+The worker prepares the **entire replacement index** before a transaction
+inserts the replacement chunks and marks the owned job completed. A failed
+reindex preserves the earlier searchable chunks; failed or interrupted jobs
+are not automatically replayed, because provider calls can incur costs.
+
+Database operations receive a `Database` handle explicitly rather than
+using a central persistence gateway. Transactions are owned by the workflow
+that needs atomicity; the job-completion path writes through its existing
+connection. There is no application-wide connection pool.
+
+The [indexing internals](indexing.md) cover job stages, extraction profiles,
+chunk provenance, cleanup, and failure recovery in more detail.
+
+## Conversation Transactions
+
+Each conversation turn acquires a tenant-scoped row lock with `NOWAIT`.
+A missing or other-tenant conversation returns **404**; one already processing
+a turn returns **409**. The lock remains held through retrieval and model
+generation, so long provider calls also occupy a database connection.
 
 ```mermaid
 ---
 config:
-    sequence:
-        useMaxWidth: false
+  sequence:
+    useMaxWidth: true
+    wrap: true
+    diagramMarginX: 8
+    actorMargin: 32
 ---
 sequenceDiagram
     actor Client
     participant API
-    participant DB as PostgreSQL
-    participant Answer as Retrieval and generation
-    Client->>API: Submit conversation question
-    API->>DB: Begin transaction and lock conversation NOWAIT
-    Note over API,DB: Missing returns 404 and busy returns 409
-    DB-->>API: Recent message history
-    Note over API,DB: Connection and lock remain held
-    API->>Answer: Current question + recent history
-    alt Answer succeeds
-        Answer-->>API: Answer + citation snapshots
-        API->>DB: Insert both messages and commit
-        API-->>Client: Answer, matches, and citations
-    else Generation fails or task is cancelled
-        API->>DB: Roll back without saving either message
+    participant DB as Database
+    participant RAG as Retrieval + LLM
+    Client->>API: Ask in conversation
+    API->>DB: Lock row (NOWAIT)
+    Note over API,DB: 404 if missing; 409 if busy
+    DB-->>API: Recent history
+    Note over API,DB: Lock held through generation
+    API->>RAG: Question + history
+    alt Success
+        RAG-->>API: Answer + citations
+        API->>DB: Save both turns + commit
+        API-->>Client: Answer + references
+    else Failure or cancellation
+        API->>DB: Roll back
     end
 ```
 
-The diagram follows a turn that acquires the lock. A client timeout is not proof
-of task cancellation: the server may still commit. Read history before retrying
-an uncertain request; see [conversation recovery](../how-to/conversations.md#handle-overlap-and-uncertain-outcomes).
+Both user and assistant messages, including citation snapshots, commit
+together. Failure/cancellation rolls back **both**. The generation history is
+bounded context, not citation evidence; retrieval still searches only the
+current question.
 
-See [indexing](indexing.md), [retrieval and answers](retrieval.md), and
-[security and data lifecycle](../operations.md) for the behavior behind these boundaries.
+**A client timeout is not proof of server cancellation.** A turn may have
+committed after the client disconnected. Read history before retrying; see
+[conversation recovery](../how-to/conversations.md#handle-overlap-and-uncertain-outcomes).
+
+Continue with [retrieval and answers](retrieval.md) for context-budget and
+citation semantics, or [operations](../operations.md) for security and recovery.

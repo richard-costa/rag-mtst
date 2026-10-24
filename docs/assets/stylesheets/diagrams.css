@@ -1,10 +1,29 @@
+/* Mermaid's SVG is encapsulated in Material's shadow DOM. We cannot size
+   elements inside that shadow root from here; useMaxWidth + wrapped labels
+   in the diagrams make them fit. This scroll container is a fallback for
+   remaining overflow at narrow window sizes or high Firefox zoom. */
 .md-typeset .mermaid {
   --md-mermaid-node-bg-color: color-mix(
     in srgb,
     var(--md-accent-fg-color) 10%,
     var(--md-default-bg-color)
   );
+  box-sizing: border-box;
+  display: block;
+  max-width: 100%;
+  min-width: 0;
   margin: 1.5em 0;
+  padding: 0.25rem 0 0.75rem;
   overflow-x: auto;
-  padding-bottom: 0.5rem;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-default-fg-color--lighter) transparent;
+}
+
+/* The content column must be allowed to shrink when Firefox's effective
+   viewport changes with zoom or a tiling window manager. */
+.md-content,
+.md-content__inner {
+  min-width: 0;
 }
