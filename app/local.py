@@ -324,7 +324,10 @@ def reset(*, yes: bool = False) -> int:
             shutil.rmtree(safe, ignore_errors=True)
         else:
             print("Custom staging path was preserved; remove it manually if necessary.")
-    print("Local database reset. Run rag start to initialize a fresh one.")
+    print("PostgreSQL: stopped")
+    print("Local database and indexed data: deleted")
+    print("Preserved: original files, .env, model caches")
+    print("\\nReset complete. Run rag start to initialize a fresh database.")
     return 0
 
 
