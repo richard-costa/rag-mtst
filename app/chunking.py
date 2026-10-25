@@ -400,7 +400,7 @@ def _is_table(text: str) -> bool:
         text: Input text to process.
 
     Returns:
-        Whether the condition holds.
+        Whether the text begins with a Markdown table.
     """
     lines = text.splitlines()
     if len(lines) < 2 or "|" not in lines[0]:
@@ -418,6 +418,6 @@ def _word_count(text: str) -> int:
         text: Input text to process.
 
     Returns:
-        Computed count or status code.
+        Number of whitespace-delimited words.
     """
     return len(text.split())

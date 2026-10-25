@@ -15,7 +15,7 @@ def _positive_integer(name: str, default: int) -> int:
         default: Fallback value when the environment variable is unset.
 
     Returns:
-        Computed count or status code.
+        Positive integer read from the environment or default.
     """
     value = int(os.getenv(name, default))
     if value <= 0:
@@ -58,7 +58,7 @@ class Settings:
         """Return the directory used to stage uploaded source files.
 
         Returns:
-            Result of the operation.
+            Directory used to stage source files.
         """
         return self.data_dir / "sources"
 
@@ -67,7 +67,7 @@ class Settings:
         """Resolve the effective model identifier for the embedding provider.
 
         Returns:
-            Resolved text value.
+            Configured embedding model identifier.
         """
         if self.embedding_model:
             return self.embedding_model

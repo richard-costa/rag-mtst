@@ -154,7 +154,7 @@ def _build_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser and supported subcommands.
 
     Returns:
-        Result of the operation.
+        Parser with the supported CLI subcommands.
     """
     parser = argparse.ArgumentParser(prog="rag")
     parser.add_argument(

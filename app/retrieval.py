@@ -266,8 +266,8 @@ async def search_mmr(
         settings: Search or local runtime configuration.
         storage: Database handle used for retrieval.
 
-    Returns:
-        No result; raises ``NotImplementedError``.
+    Raises:
+        NotImplementedError: This retrieval strategy is not implemented.
     """
     raise NotImplementedError("MMR retrieval is not implemented yet")
 
@@ -283,8 +283,8 @@ async def search_multi_query(
         settings: Search or local runtime configuration.
         storage: Database handle used for retrieval.
 
-    Returns:
-        No result; raises ``NotImplementedError``.
+    Raises:
+        NotImplementedError: This retrieval strategy is not implemented.
     """
     raise NotImplementedError("Multi-query retrieval is not implemented yet")
 
