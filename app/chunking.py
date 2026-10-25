@@ -34,12 +34,16 @@ _SENTENCE_END_PATTERN = re.compile(r"[.!?][\"')\]]*$")
 
 @dataclass(frozen=True, slots=True)
 class _Heading:
+    """Heading level and title parsed from Markdown.
+    """
     level: int
     text: str
 
 
 @dataclass(frozen=True, slots=True)
 class _MarkdownBlock:
+    """A Markdown content block and its original line range.
+    """
     text: str
     start_line: int
     end_line: int
@@ -48,6 +52,8 @@ class _MarkdownBlock:
 
 @dataclass(frozen=True, slots=True)
 class _MarkdownSection:
+    """Blocks grouped under a shared heading hierarchy.
+    """
     headings: tuple[_Heading, ...]
     blocks: tuple[_MarkdownBlock, ...]
 
@@ -64,7 +70,17 @@ def chunk_markdown(
     group_adjacent: bool = True,
     pages: tuple[ExtractedPage, ...] = (),
 ) -> list[ChunkInput]:
-    """Group Markdown blocks by heading, then pack them to a soft word target."""
+    """Split Markdown into heading-aware chunks while preserving source provenance.
+
+    Args:
+        text: Input text to process.
+        chunk_size: Soft target number of words per chunk.
+        group_adjacent: Whether adjacent blocks may be packed together.
+        pages: Optional extracted-page metadata for provenance.
+
+    Returns:
+        Chunks containing text and provenance metadata.
+    """
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than zero")
     if pages and text != "\n\n".join(page.text for page in pages):
@@ -110,6 +126,14 @@ def chunk_markdown(
 # Blank lines and headings delimit text blocks; fenced code stays in one block.
 
 def _parse_blocks(text: str) -> list[_MarkdownBlock]:
+    """Parse Markdown into headings, prose blocks, and fenced code blocks.
+
+    Args:
+        text: Input text to process.
+
+    Returns:
+        Ordered Markdown blocks with source line ranges.
+    """
     blocks: list[_MarkdownBlock] = []
     lines: list[str] = []
     start_line: int | None = None
@@ -118,6 +142,11 @@ def _parse_blocks(text: str) -> list[_MarkdownBlock]:
     fence_start_line: int | None = None
 
     def flush_text_block(end_line: int) -> None:
+        """Append pending prose lines as a Markdown block.
+
+        Args:
+            end_line: Last source line of the pending block.
+        """
         nonlocal lines, start_line
         if lines and start_line is not None:
             blocks.append(_MarkdownBlock("\n".join(lines), start_line, end_line))
@@ -184,6 +213,14 @@ def _parse_blocks(text: str) -> list[_MarkdownBlock]:
 # Each heading updates the parent stack and starts a distinct section.
 
 def _group_sections(blocks: list[_MarkdownBlock]) -> list[_MarkdownSection]:
+    """Assign blocks to sections based on the active heading stack.
+
+    Args:
+        blocks: Parsed Markdown blocks.
+
+    Returns:
+        Ordered heading sections.
+    """
     sections: list[_MarkdownSection] = []
     headings: list[_Heading] = []
     current_blocks: list[_MarkdownBlock] = []
@@ -207,6 +244,14 @@ def _group_sections(blocks: list[_MarkdownBlock]) -> list[_MarkdownSection]:
 
 
 def _parse_heading(block: _MarkdownBlock) -> _Heading | None:
+    """Extract the heading level and normalized title from a block.
+
+    Args:
+        block: Markdown block to inspect.
+
+    Returns:
+        Parsed heading, or ``None`` when the block is not a heading.
+    """
     match = _HEADING_PATTERN.match(block.text)
     if match is None:
         return None
@@ -227,6 +272,16 @@ def _pack_section(
     *,
     group_adjacent: bool = True,
 ) -> list[ChunkInput]:
+    """Pack a section into word-limited chunks with heading metadata.
+
+    Args:
+        section: Heading section to pack.
+        chunk_size: Soft target number of words per chunk.
+        group_adjacent: Whether adjacent blocks may be packed together.
+
+    Returns:
+        Chunks packed from the section.
+    """
     heading_text = "\n".join(
         f"{'#' * heading.level} {heading.text}" for heading in section.headings
     )
@@ -236,6 +291,8 @@ def _pack_section(
     current_word_count = 0
 
     def flush_chunk() -> None:
+        """Finalize the accumulated blocks as one source chunk.
+        """
         nonlocal current_blocks, current_word_count
         if not current_blocks:
             return
@@ -274,6 +331,15 @@ def _pack_section(
 # Prose prefers sentence boundaries; list items, tables, and code retain their structure.
 
 def _split_block(block: _MarkdownBlock, word_limit: int) -> list[_MarkdownBlock]:
+    """Split oversized prose or lists while preserving line ranges.
+
+    Args:
+        block: Markdown block to inspect.
+        word_limit: Maximum number of words for a split block.
+
+    Returns:
+        Blocks covering the original content.
+    """
     if block.is_code or _word_count(block.text) <= word_limit or _is_table(block.text):
         return [block]
 
@@ -282,6 +348,15 @@ def _split_block(block: _MarkdownBlock, word_limit: int) -> list[_MarkdownBlock]
     line_starts = [0, *(match.end() for match in re.finditer(r"\n", block.text))]
 
     def slice_block(start: int, end: int) -> _MarkdownBlock:
+        """Create a sub-block with line offsets inherited from its parent.
+
+        Args:
+            start: Start offset in the original block.
+            end: Exclusive end offset in the original block.
+
+        Returns:
+            Sub-block with adjusted line numbers.
+        """
         return _MarkdownBlock(
             text=block.text[start:end],
             start_line=block.start_line + bisect_right(line_starts, start) - 1,
@@ -323,6 +398,14 @@ def _split_block(block: _MarkdownBlock, word_limit: int) -> list[_MarkdownBlock]
 
 
 def _is_table(text: str) -> bool:
+    """Identify a Markdown table by its separator row.
+
+    Args:
+        text: Input text to process.
+
+    Returns:
+        Whether the condition holds.
+    """
     lines = text.splitlines()
     if len(lines) < 2 or "|" not in lines[0]:
         return False
@@ -333,4 +416,12 @@ def _is_table(text: str) -> bool:
 
 
 def _word_count(text: str) -> int:
+    """Count whitespace-delimited words in text.
+
+    Args:
+        text: Input text to process.
+
+    Returns:
+        Computed count or status code.
+    """
     return len(text.split())

@@ -10,6 +10,8 @@ from app.retrieval import RetrievalMethod
 
 
 class SearchRequest(BaseModel):
+    """Search parameters accepted by the HTTP API.
+    """
     query: str = Field(min_length=1)
     limit: int | None = Field(default=None, ge=1)
     method: RetrievalMethod | None = None
@@ -17,23 +19,31 @@ class SearchRequest(BaseModel):
 
 
 class AskRequest(SearchRequest):
+    """Search parameters and optional generation-provider overrides.
+    """
     generation_provider: Literal["openai", "deepseek", "ollama", "anthropic"] | None = None
     generation_model: str | None = Field(default=None, min_length=1, pattern=r"\S")
 
 
 class ConversationTurnRequest(AskRequest):
+    """Strict request payload for a conversation turn.
+    """
     model_config = ConfigDict(extra="forbid")
 
     query: str = Field(min_length=1, pattern=r"\S")
 
 
 class ConversationResponse(BaseModel):
+    """Identifiers and timestamps for a conversation.
+    """
     id: UUID
     created_at: datetime
     updated_at: datetime
 
 
 class SourceResponse(BaseModel):
+    """Source identifier and the associated ingestion status.
+    """
     id: str
     status: Literal["pending", "running", "unchanged"]
     job_id: str | None
@@ -41,6 +51,8 @@ class SourceResponse(BaseModel):
 
 
 class JobResponse(BaseModel):
+    """Progress, timing, and status details of an ingestion job.
+    """
     id: str
     source_id: str
     status: Literal["pending", "running", "completed", "failed"]
@@ -57,6 +69,8 @@ class JobResponse(BaseModel):
 
 
 class SearchMatchResponse(BaseModel):
+    """A retrieved passage and its similarity score.
+    """
     source_id: str
     source_title: str
     chunk_index: int
@@ -65,6 +79,8 @@ class SearchMatchResponse(BaseModel):
 
 
 class CitationResponse(BaseModel):
+    """A numbered citation to a retrieved source passage.
+    """
     id: int
     source_id: str
     source_title: str
@@ -75,12 +91,16 @@ class CitationResponse(BaseModel):
 
 
 class AskResponse(BaseModel):
+    """Generated answer with supporting matches and citations.
+    """
     answer: str
     matches: list[SearchMatchResponse]
     citations: list[CitationResponse]
 
 
 class MessageResponse(BaseModel):
+    """A stored question or answer within a conversation.
+    """
     id: UUID
     sequence: int
     role: Literal["user", "assistant"]

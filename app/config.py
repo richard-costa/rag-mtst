@@ -8,6 +8,15 @@ from pathlib import Path
 
 
 def _positive_integer(name: str, default: int) -> int:
+    """Read and validate a positive integer environment setting.
+
+    Args:
+        name: Environment variable name.
+        default: Fallback value when the environment variable is unset.
+
+    Returns:
+        Computed count or status code.
+    """
     value = int(os.getenv(name, default))
     if value <= 0:
         raise ValueError(f"{name} must be greater than zero")
@@ -16,6 +25,8 @@ def _positive_integer(name: str, default: int) -> int:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
+    """Runtime configuration for storage, models, search, and local execution.
+    """
     data_dir: Path = Path(".rag-data")
     database_url: str = "postgresql://rag:rag@127.0.0.1:5432/rag"
     tenant_id: str = "default"
@@ -45,10 +56,20 @@ class Settings:
 
     @property
     def source_dir(self) -> Path:
+        """Return the directory used to stage uploaded source files.
+
+        Returns:
+            Result of the operation.
+        """
         return self.data_dir / "sources"
 
     @property
     def embedding_model_name(self) -> str:
+        """Resolve the effective model identifier for the embedding provider.
+
+        Returns:
+            Resolved text value.
+        """
         if self.embedding_model:
             return self.embedding_model
         if self.embedding_provider == "local":
@@ -57,6 +78,11 @@ class Settings:
 
     @classmethod
     def from_environment(cls) -> "Settings":
+        """Construct settings from environment variables and defaults.
+
+        Returns:
+            Validated runtime settings.
+        """
         defaults = cls()
         return cls(
             data_dir=Path(os.getenv("RAG_DATA_DIR", str(defaults.data_dir))).expanduser(),
@@ -81,4 +107,9 @@ class Settings:
 
 
 def get_settings() -> Settings:
+    """Load runtime settings from the current environment.
+
+    Returns:
+        Settings loaded from the environment.
+    """
     return Settings.from_environment()
