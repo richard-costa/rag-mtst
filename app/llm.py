@@ -24,8 +24,7 @@ Return a JSON object matching this schema, with no surrounding prose or code fen
 
 
 class StructuredOutputError(RuntimeError):
-    """A provider request failed or did not produce a complete typed record.
-    """
+    """A provider request failed or did not produce a complete typed record."""
 
 
 def endpoint(provider: str, settings: Settings, override: str | None) -> str:

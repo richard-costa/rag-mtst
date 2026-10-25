@@ -24,8 +24,7 @@ RetrievalMethod = Literal["cosine", "window", "lexical", "hybrid"]
 
 @dataclass(frozen=True, slots=True)
 class SearchResult:
-    """A retrieved source passage with its title, location, and optional score.
-    """
+    """A retrieved source passage with its title, location, and optional score."""
     source_id: str
     source_title: str
     source_locator: str
@@ -113,7 +112,7 @@ async def search_cosine(
         storage: Database handle used for retrieval.
 
     Returns:
-        Result of the operation.
+        Passages ranked by vector similarity.
     """
     chunks = await documents.vector_search(storage,
         tenant_id=settings.tenant_id,
@@ -144,7 +143,7 @@ async def search_with_windows(
         storage: Database handle used for retrieval.
 
     Returns:
-        Result of the operation.
+        Seed hits and adjacent passages, deduplicated by source span.
     """
     seeds = await search_cosine(embedding, limit=limit, settings=settings, storage=storage)
     if window == 0:
@@ -200,7 +199,7 @@ async def search_lexical(
         storage: Database handle used for retrieval.
 
     Returns:
-        Result of the operation.
+        Passages ranked by lexical relevance.
     """
     if not _terms(query):
         raise ValueError("The search query must contain at least one word")
@@ -227,7 +226,7 @@ async def search_hybrid(
         storage: Database handle used for retrieval.
 
     Returns:
-        Result of the operation.
+        Passages ranked by combined reciprocal rank.
     """
     if not _terms(query):
         raise ValueError("The search query must contain at least one word")
@@ -268,7 +267,7 @@ async def search_mmr(
         storage: Database handle used for retrieval.
 
     Returns:
-        Result of the operation.
+        No result; raises ``NotImplementedError``.
     """
     raise NotImplementedError("MMR retrieval is not implemented yet")
 
@@ -285,7 +284,7 @@ async def search_multi_query(
         storage: Database handle used for retrieval.
 
     Returns:
-        Result of the operation.
+        No result; raises ``NotImplementedError``.
     """
     raise NotImplementedError("Multi-query retrieval is not implemented yet")
 
@@ -303,7 +302,7 @@ def _search_result(chunk: StoredChunk, *, score: float | None) -> SearchResult:
         score: Retrieval score; absent for expanded context chunks.
 
     Returns:
-        Result of the operation.
+        Public retrieval result.
     """
     return SearchResult(
         source_id=str(chunk.source_id),
@@ -322,7 +321,7 @@ def _terms(text: str) -> list[str]:
         text: Text to tokenize into lexical search terms.
 
     Returns:
-        Result of the operation.
+        Normalized query terms.
     """
     # Example: "Access_token, please!" becomes ["access", "token", "please"].
     return re.findall(r"[^\W_]+", text.casefold())

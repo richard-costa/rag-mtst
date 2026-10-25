@@ -9,8 +9,7 @@ from psycopg.rows import dict_row
 
 
 class Database:
-    """Small wrapper providing tenant-safe asynchronous PostgreSQL connections.
-    """
+    """Small wrapper providing tenant-safe asynchronous PostgreSQL connections."""
     def __init__(self, database_url: str) -> None:
         """Store the PostgreSQL connection URL.
 
@@ -24,7 +23,7 @@ class Database:
         """Open and manage an asynchronous database connection.
 
         Yields:
-            Result of the operation.
+            Open PostgreSQL connection.
         """
         connection = await psycopg.AsyncConnection.connect(
             self.database_url,

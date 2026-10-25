@@ -12,13 +12,11 @@ from app.storage.records import Conversation, ConversationTurn, Message
 
 
 class ConversationNotFound(LookupError):
-    """The conversation does not exist in the requested tenant.
-    """
+    """The conversation does not exist in the requested tenant."""
 
 
 class ConversationBusy(RuntimeError):
-    """Another turn is already using the conversation.
-    """
+    """Another turn is already using the conversation."""
 
 
 async def create_conversation(database: Database, tenant_id: str) -> Conversation:
@@ -29,7 +27,7 @@ async def create_conversation(database: Database, tenant_id: str) -> Conversatio
         tenant_id: Tenant identifier used to scope the operation.
 
     Returns:
-        Result of the operation.
+        Newly created conversation record.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -61,7 +59,7 @@ async def conversation_turn(
         question: Question to record before generating a response.
 
     Yields:
-        Result of the operation.
+        Locked turn holding recent history and its pending reply.
     """
     async with database.connection() as connection:
         try:
@@ -107,7 +105,7 @@ async def list_messages(
         before: Sequence number used as an exclusive pagination cursor.
 
     Returns:
-        Result of the operation.
+        Stored messages in descending sequence order.
     """
     if not 1 <= limit <= 100:
         raise ValueError("History limit must be between 1 and 100")
@@ -134,7 +132,7 @@ async def _conversation_messages(
         before: Sequence number used as an exclusive pagination cursor.
 
     Returns:
-        Result of the operation.
+        Messages selected by the pagination cursor.
     """
     cursor = await connection.execute(
         """

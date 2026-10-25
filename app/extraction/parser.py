@@ -31,31 +31,27 @@ SUPPORTED_SUFFIXES = TEXT_SUFFIXES | OFFICE_SUFFIXES | {".pdf"}
 
 @dataclass(frozen=True, slots=True)
 class ExtractedPage:
-    """Text extracted from one numbered page or slide.
-    """
+    """Text extracted from one numbered page or slide."""
     number: int
     text: str
     kind: Literal["page", "slide"] = "page"
 
     def __post_init__(self) -> None:
-        """Validate the extracted page or document invariants.
-        """
+        """Validate the extracted page or document invariants."""
         if self.number < 1 or self.kind not in {"page", "slide"}:
             raise ValueError("Extraction pages need a positive number and a page or slide kind")
 
 
 @dataclass(frozen=True, slots=True)
 class ExtractedContent:
-    """Extracted document text with optional page or slide provenance.
-    """
+    """Extracted document text with optional page or slide provenance."""
     text: str
     format: str
     profile: dict[str, object] = field(default_factory=dict)
     pages: tuple[ExtractedPage, ...] = ()
 
     def __post_init__(self) -> None:
-        """Validate the extracted page or document invariants.
-        """
+        """Validate the extracted page or document invariants."""
         if self.pages:
             if [page.number for page in self.pages] != list(range(1, len(self.pages) + 1)):
                 raise ValueError("Extraction pages must be ordered and contiguous, including blank pages")

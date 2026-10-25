@@ -28,8 +28,7 @@ STOP_TIMEOUT = 20
 
 
 class LocalError(RuntimeError):
-    """A local environment failure requiring user action.
-    """
+    """A local environment failure requiring user action."""
 
 
 def _checkout(root: Path | None = None) -> Path:
@@ -39,7 +38,7 @@ def _checkout(root: Path | None = None) -> Path:
         root: Optional project root; defaults to the current checkout.
 
     Returns:
-        Result of the operation.
+        Validated project root.
     """
     root = root or ROOT
     if not (root / "compose.yaml").is_file() or not (root / "alembic.ini").is_file():
@@ -54,7 +53,7 @@ def _state_dir(root: Path | None = None) -> Path:
         root: Optional project root; defaults to the current checkout.
 
     Returns:
-        Result of the operation.
+        Directory containing local supervisor state.
     """
     root = root or ROOT
     return root / ".rag-data" / "local-runtime"
@@ -96,8 +95,7 @@ def load_environment(root: Path | None = None) -> None:
 
 
 def _verify_configuration() -> None:
-    """Validate the local configuration before starting services.
-    """
+    """Validate the local configuration before starting services."""
     from app.config import get_settings
 
     settings = get_settings()
@@ -146,7 +144,7 @@ def _docker(*arguments: str, capture: bool = True) -> subprocess.CompletedProces
         capture: Whether to capture command output.
 
     Returns:
-        Result of the operation.
+        Completed process result, including its output and status.
     """
     command = ["docker", "compose", "-p", PROJECT, "-f", str(_checkout() / "compose.yaml"), *arguments]
     try:
@@ -163,7 +161,7 @@ def _docker_ready() -> bool:
     """Check whether the database container is running and ready.
 
     Returns:
-        Whether the condition holds.
+        Whether the database service is ready.
     """
     listing = _docker("ps", "--status", "running", "-q", "db")
     if listing.returncode != 0 or not listing.stdout.strip():
@@ -186,7 +184,7 @@ def _worker_info(root: Path | None = None) -> tuple[int, str] | None:
         root: Optional project root; defaults to the current checkout.
 
     Returns:
-        Result of the operation.
+        Stored PID and ownership token, or ``None`` when missing.
     """
     try:
         record = json.loads((_state_dir(root) / "worker.json").read_text(encoding="utf-8"))
@@ -205,7 +203,7 @@ def _worker_alive(info: tuple[int, str] | None) -> bool:
         info: Recorded worker process identifier and token, if present.
 
     Returns:
-        Whether the condition holds.
+        Whether the recorded process is alive.
     """
     if info is None:
         return False
@@ -229,7 +227,7 @@ def _worker_ready(info: tuple[int, str] | None, root: Path | None = None) -> boo
         root: Optional project root; defaults to the current checkout.
 
     Returns:
-        Whether the condition holds.
+        Whether the worker reports ready.
     """
     if not _worker_alive(info):
         return False
@@ -275,7 +273,7 @@ def start() -> int:
     """Start the local database and managed ingestion worker.
 
     Returns:
-        Result of the operation.
+        Process exit code.
     """
     root = _checkout()
     if not (root / ".env").exists():
@@ -342,7 +340,7 @@ def status() -> int:
     """Report whether the local database and ingestion worker are running.
 
     Returns:
-        Result of the operation.
+        Process exit code.
     """
     _checkout()
     try:
@@ -356,8 +354,7 @@ def status() -> int:
 
 
 def _stop_worker() -> None:
-    """Stop the managed ingestion worker if it is still alive.
-    """
+    """Stop the managed ingestion worker if it is still alive."""
     info = _worker_info()
     if not _worker_alive(info):
         _clean_stale_record()
@@ -380,7 +377,7 @@ def stop() -> int:
     """Stop the local worker and database without clearing indexed data.
 
     Returns:
-        Result of the operation.
+        Process exit code.
     """
     _checkout()
     with _lock():
@@ -400,7 +397,7 @@ def reset(*, yes: bool = False) -> int:
         yes: Whether destructive reset has been explicitly confirmed.
 
     Returns:
-        Result of the operation.
+        Process exit code.
     """
     root = _checkout()
     if not yes:
@@ -430,8 +427,7 @@ def reset(*, yes: bool = False) -> int:
 
 
 async def _run_worker() -> None:
-    """Run the worker loop inside the supervisor's child process.
-    """
+    """Run the worker loop inside the supervisor's child process."""
     from app.worker import run_worker
 
     stop_event = asyncio.Event()
@@ -448,7 +444,7 @@ def worker_child(token: str) -> int:
         token: Worker ownership token from the supervisor.
 
     Returns:
-        Result of the operation.
+        Process exit code.
     """
     load_environment()
     try:

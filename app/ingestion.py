@@ -28,8 +28,7 @@ from app.storage import documents, jobs
 
 @dataclass(frozen=True, slots=True)
 class IngestionResult:
-    """Result of a completed ingestion, including source and chunk count.
-    """
+    """Result of a completed ingestion, including source and chunk count."""
     source: Source
     created: bool
     chunk_count: int
@@ -37,8 +36,7 @@ class IngestionResult:
 
 @dataclass(frozen=True, slots=True)
 class IngestionSubmission:
-    """Source and optional durable ingestion job returned at submission.
-    """
+    """Source and optional durable ingestion job returned at submission."""
     source: Source
     job: IngestionJob | None
 

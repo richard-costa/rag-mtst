@@ -68,8 +68,7 @@ visuals in markdown. Do not wrap the whole transcription in a code fence.
 
 
 class _PageResponse(BaseModel):
-    """Strict structured text returned for one visually interpreted page.
-    """
+    """Strict structured text returned for one visually interpreted page."""
     model_config = ConfigDict(extra="forbid", strict=True)
 
     markdown: str

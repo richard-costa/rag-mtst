@@ -22,14 +22,12 @@ from app.storage.records import Message
 # Citations map numeric references to the exact passage supplied to the model.
 
 class GenerationError(RuntimeError):
-    """A generation provider failed or returned an unusable answer.
-    """
+    """A generation provider failed or returned an unusable answer."""
 
 
 @dataclass(frozen=True, slots=True)
 class Citation:
-    """A citation connecting an answer marker to a retrieved passage.
-    """
+    """A citation connecting an answer marker to a retrieved passage."""
     id: int
     source_id: str
     source_title: str
@@ -40,16 +38,14 @@ class Citation:
 
 @dataclass(frozen=True, slots=True)
 class Answer:
-    """Generated answer text, supporting matches, and verified citations.
-    """
+    """Generated answer text, supporting matches, and verified citations."""
     text: str
     matches: list[SearchResult]
     citations: list[Citation]
 
 
 class _AnswerResponse(BaseModel):
-    """Strict schema for the model-generated answer and citations.
-    """
+    """Strict schema for the model-generated answer and citations."""
     model_config = ConfigDict(extra="forbid", strict=True)
 
     text: str
