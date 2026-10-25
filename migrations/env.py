@@ -23,6 +23,14 @@ if config.config_file_name is not None:
 # Alembic uses SQLAlchemy's psycopg dialect while the application uses psycopg URLs.
 
 def _sqlalchemy_url(url: str) -> str:
+    """Convert a psycopg PostgreSQL URL to the SQLAlchemy dialect form.
+
+    Args:
+        url: Database URL to adapt for SQLAlchemy.
+
+    Returns:
+        SQLAlchemy-compatible database URL.
+    """
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+psycopg://", 1)
     return url
@@ -41,6 +49,8 @@ target_metadata = None
 # SQL is generated without opening a database connection in offline mode.
 
 def run_migrations_offline() -> None:
+    """Emit schema migrations as SQL without opening a database connection.
+    """
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
@@ -57,6 +67,8 @@ def run_migrations_offline() -> None:
 # A temporary SQLAlchemy connection applies migrations to the configured database.
 
 def run_migrations_online() -> None:
+    """Apply schema migrations using a temporary database connection.
+    """
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
