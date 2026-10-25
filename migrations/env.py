@@ -1,3 +1,5 @@
+"""Alembic setup for offline and online database schema migrations."""
+
 from __future__ import annotations
 
 from logging.config import fileConfig
@@ -49,8 +51,7 @@ target_metadata = None
 # SQL is generated without opening a database connection in offline mode.
 
 def run_migrations_offline() -> None:
-    """Emit schema migrations as SQL without opening a database connection.
-    """
+    """Emit schema migrations as SQL without opening a database connection."""
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
@@ -67,8 +68,7 @@ def run_migrations_offline() -> None:
 # A temporary SQLAlchemy connection applies migrations to the configured database.
 
 def run_migrations_online() -> None:
-    """Apply schema migrations using a temporary database connection.
-    """
+    """Apply schema migrations using a temporary database connection."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

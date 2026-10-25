@@ -40,7 +40,7 @@ async def create_ingestion_job(
         job_id: UUID identifying the job; generated when omitted.
 
     Returns:
-        Result of the operation.
+        Source record and a new job, or ``None`` for an unchanged source.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -126,7 +126,7 @@ async def get_ingestion_job(database: Database, tenant_id: str, job_id: UUID) ->
         job_id: UUID identifying the job; generated when omitted.
 
     Returns:
-        Result of the operation.
+        Job record, or ``None`` if absent.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -150,7 +150,7 @@ async def get_ingestion_job_input(database: Database, tenant_id: str, job_id: UU
         job_id: UUID identifying the job; generated when omitted.
 
     Returns:
-        Result of the operation.
+        Staged input record, or ``None`` if absent.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -174,7 +174,7 @@ async def claim_ingestion_job(database: Database, tenant_id: str) -> IngestionJo
         tenant_id: Tenant scope restricting the query or write.
 
     Returns:
-        Result of the operation.
+        Claimed job with ownership token, or ``None`` if no job is pending.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -207,7 +207,7 @@ async def list_finished_ingestion_inputs(database: Database, tenant_id: str) -> 
         tenant_id: Tenant scope restricting the query or write.
 
     Returns:
-        Result of the operation.
+        Staged inputs belonging to completed or failed jobs.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -257,7 +257,7 @@ async def heartbeat_ingestion_job(database: Database, tenant_id: str, job_id: UU
         claim_token: Ownership token assigned when the worker claimed the job.
 
     Returns:
-        Result of the operation.
+        Whether the claim was still valid.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -287,7 +287,7 @@ async def update_ingestion_job_progress(
         total: Total number of items, if known.
 
     Returns:
-        Result of the operation.
+        Whether the owner successfully updated progress.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -315,7 +315,7 @@ async def fail_ingestion_job(
         error: User-readable failure reason.
 
     Returns:
-        Result of the operation.
+        Whether the current owner successfully recorded failure.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -339,7 +339,7 @@ async def fail_interrupted_ingestion_jobs(database: Database, tenant_id: str, *,
         stale_seconds: Maximum heartbeat age before an active job is considered stale.
 
     Returns:
-        Result of the operation.
+        Number of stale jobs marked failed.
     """
     if stale_seconds <= 0:
         raise ValueError("Stale heartbeat timeout must be greater than zero")
@@ -371,7 +371,7 @@ async def complete_ingestion_job(
         chunks: Prepared chunks and vectors to persist.
 
     Returns:
-        Result of the operation.
+        Whether the claim was valid and the completion committed.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(

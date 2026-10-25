@@ -35,8 +35,7 @@ ERROR_EXIT_CODES = {"unexpected": 1, "provider": 2, "database": 3, "input_or_con
 
 
 class JobExecutionError(RuntimeError):
-    """Failure of an ingestion child process with a categorized exit status.
-    """
+    """Failure of an ingestion child process with a categorized exit status."""
     def __init__(self, category: str) -> None:
         """Create a child-execution error for a known failure category.
 
@@ -201,8 +200,7 @@ async def run_once(*, settings: Settings, storage: Database) -> bool:
     category = "none"
 
     async def heartbeat() -> None:
-        """Renew the current job claim while the child is running.
-        """
+        """Renew the current job claim while the child is running."""
         while True:
             assert job.claim_token is not None
             async with asyncio.timeout(DATABASE_TIMEOUT_SECONDS):
@@ -287,8 +285,7 @@ async def run_worker(*, settings: Settings | None = None, stop_event: asyncio.Ev
 
 
 async def _main() -> None:
-    """Configure logging and start the worker process.
-    """
+    """Configure logging and start the worker process."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

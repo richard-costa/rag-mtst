@@ -24,7 +24,7 @@ async def get_source_by_content_hash(
         content_hash: Digest used to detect identical source content.
 
     Returns:
-        Result of the operation.
+        Matching source, or ``None`` if absent.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -51,7 +51,7 @@ async def get_source_extraction_profile(
         source_id: UUID identifying the source.
 
     Returns:
-        Result of the operation.
+        Stored extraction metadata, or ``None`` when unavailable.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -90,7 +90,7 @@ async def insert_source(
         content_hash: Digest used to detect identical source content.
 
     Returns:
-        Result of the operation.
+        Newly inserted source.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -129,7 +129,7 @@ async def insert_source_with_chunks(
         chunks: Prepared chunks and vectors to persist.
 
     Returns:
-        Result of the operation.
+        Source with its chunks committed.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -215,7 +215,7 @@ async def list_chunks(database: Database, tenant_id: str) -> list[StoredChunk]:
         tenant_id: Tenant scope restricting the query or write.
 
     Returns:
-        Result of the operation.
+        Indexed chunks for the tenant.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -259,7 +259,7 @@ async def full_text_search(
         limit: Maximum number of matching chunks.
 
     Returns:
-        Result of the operation.
+        Chunks with lexical relevance scores.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -311,7 +311,7 @@ async def vector_search(
         limit: Maximum number of matching chunks.
 
     Returns:
-        Result of the operation.
+        Compatible chunks with vector similarity scores.
     """
     vector = Vector(embedding)
     async with database.connection() as connection:
@@ -356,7 +356,7 @@ async def get_chunk_window(
         window: Number of adjacent chunks to include on each side.
 
     Returns:
-        Result of the operation.
+        Seed chunk and its neighboring chunks.
     """
     async with database.connection() as connection:
         cursor = await connection.execute(
