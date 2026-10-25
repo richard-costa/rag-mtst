@@ -31,23 +31,31 @@ SUPPORTED_SUFFIXES = TEXT_SUFFIXES | OFFICE_SUFFIXES | {".pdf"}
 
 @dataclass(frozen=True, slots=True)
 class ExtractedPage:
+    """Text extracted from one numbered page or slide.
+    """
     number: int
     text: str
     kind: Literal["page", "slide"] = "page"
 
     def __post_init__(self) -> None:
+        """Validate the extracted page or document invariants.
+        """
         if self.number < 1 or self.kind not in {"page", "slide"}:
             raise ValueError("Extraction pages need a positive number and a page or slide kind")
 
 
 @dataclass(frozen=True, slots=True)
 class ExtractedContent:
+    """Extracted document text with optional page or slide provenance.
+    """
     text: str
     format: str
     profile: dict[str, object] = field(default_factory=dict)
     pages: tuple[ExtractedPage, ...] = ()
 
     def __post_init__(self) -> None:
+        """Validate the extracted page or document invariants.
+        """
         if self.pages:
             if [page.number for page in self.pages] != list(range(1, len(self.pages) + 1)):
                 raise ValueError("Extraction pages must be ordered and contiguous, including blank pages")
@@ -60,12 +68,30 @@ class ExtractedContent:
     def from_pages(
         cls, pages: tuple[ExtractedPage, ...], *, format: str, profile: dict[str, object],
     ) -> Self:
+        """Assemble extracted document content from its individual pages.
+
+        Args:
+            pages: Extracted pages in source order.
+            format: Format label attached to the extracted document.
+            profile: Extractor metadata stored with the result.
+
+        Returns:
+            Combined extracted document and page provenance.
+        """
         if not pages:
             raise ValueError("At least one extraction page is required")
         return cls(text="\n\n".join(page.text for page in pages), format=format, profile=profile, pages=pages)
 
 
 def get_extraction_profile(suffix: str) -> dict[str, object]:
+    """Describe the native parser configuration for a file type.
+
+    Args:
+        suffix: Filename extension identifying the source format.
+
+    Returns:
+        Reproducible extractor configuration metadata.
+    """
     normalized_suffix = suffix.casefold()
     if normalized_suffix not in SUPPORTED_SUFFIXES:
         supported = ", ".join(sorted(SUPPORTED_SUFFIXES))
@@ -92,6 +118,17 @@ def extract_with_parser(
     office_host: str,
     office_port: int,
 ) -> ExtractedContent:
+    """Parse a source document using native parsing or Office conversion.
+
+    Args:
+        content: Original document bytes to extract or index.
+        suffix: Filename extension identifying the source format.
+        office_host: Host of the Office conversion service.
+        office_port: Port of the Office conversion service.
+
+    Returns:
+        Parsed document text and provenance.
+    """
     normalized_suffix = suffix.casefold()
     profile = get_extraction_profile(normalized_suffix)
 
@@ -121,6 +158,15 @@ def extract_with_parser(
 # AnyDoc returns Markdown-like text and surfaces format-specific failures.
 
 def _extract_document(content: bytes, source_format: str) -> str:
+    """Read text from a supported document through the extraction adapter.
+
+    Args:
+        content: Original document bytes to extract or index.
+        source_format: File format understood by the document adapter.
+
+    Returns:
+        Text extracted from the document.
+    """
     try:
         text = anydoc.to_markdown_bytes(content, source_format).strip()
     except anydoc.NeedsOcrError as error:
@@ -145,6 +191,17 @@ def _convert_office_to_pdf(
     host: str,
     port: int,
 ) -> bytes:
+    """Convert an Office document to PDF through the conversion service.
+
+    Args:
+        content: Original document bytes to extract or index.
+        suffix: Filename extension identifying the source format.
+        host: Office conversion service host.
+        port: Office conversion service port.
+
+    Returns:
+        PDF bytes produced by the converter.
+    """
     with tempfile.TemporaryDirectory() as temporary_directory:
         directory = Path(temporary_directory)
         source = directory / f"source{suffix}"

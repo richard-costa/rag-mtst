@@ -28,6 +28,8 @@ from app.storage import documents, jobs
 
 @dataclass(frozen=True, slots=True)
 class IngestionResult:
+    """Result of a completed ingestion, including source and chunk count.
+    """
     source: Source
     created: bool
     chunk_count: int
@@ -35,6 +37,8 @@ class IngestionResult:
 
 @dataclass(frozen=True, slots=True)
 class IngestionSubmission:
+    """Source and optional durable ingestion job returned at submission.
+    """
     source: Source
     job: IngestionJob | None
 
@@ -47,6 +51,18 @@ async def enqueue_file(
     reindex: bool = False,
     extraction_method: str = "parser",
 ) -> IngestionSubmission:
+    """Read a local file and submit it for durable background ingestion.
+
+    Args:
+        path: Input file path or staged input path.
+        settings: Runtime settings for extraction, storage, or models.
+        storage: Database handle; uses configured storage when omitted.
+        reindex: Whether to replace content already indexed.
+        extraction_method: Selected extraction strategy (parser or visual).
+
+    Returns:
+        Submitted source and optional queued job.
+    """
     validate_extraction_method(extraction_method)
     source_path = Path(path)
     content = await asyncio.to_thread(source_path.read_bytes)
@@ -65,6 +81,19 @@ async def enqueue_bytes(
     reindex: bool = False,
     extraction_method: str = "parser",
 ) -> IngestionSubmission:
+    """Stage source bytes and enqueue an ingestion job when needed.
+
+    Args:
+        content: Original document bytes to extract or index.
+        source_name: Original filename used to infer source type and title.
+        settings: Runtime settings for extraction, storage, or models.
+        storage: Database handle; uses configured storage when omitted.
+        reindex: Whether to replace content already indexed.
+        extraction_method: Selected extraction strategy (parser or visual).
+
+    Returns:
+        Submitted source and optional queued job.
+    """
     validate_extraction_method(extraction_method)
     safe_name = Path(source_name).name
     if not safe_name.strip() or safe_name in {".", ".."}:
@@ -130,6 +159,18 @@ async def add_file(
     reindex: bool = False,
     extraction_method: str = "parser",
 ) -> IngestionResult:
+    """Read and index a local file synchronously within the caller.
+
+    Args:
+        path: Input file path or staged input path.
+        settings: Runtime settings for extraction, storage, or models.
+        storage: Database handle; uses configured storage when omitted.
+        reindex: Whether to replace content already indexed.
+        extraction_method: Selected extraction strategy (parser or visual).
+
+    Returns:
+        Persisted source and indexed-chunk count.
+    """
     validate_extraction_method(extraction_method)
     source_path = Path(path)
     content = await asyncio.to_thread(source_path.read_bytes)
@@ -152,6 +193,19 @@ async def add_bytes(
     reindex: bool = False,
     extraction_method: str = "parser",
 ) -> IngestionResult:
+    """Extract, embed, and persist supplied document bytes immediately.
+
+    Args:
+        content: Original document bytes to extract or index.
+        source_name: Original filename used to infer source type and title.
+        settings: Runtime settings for extraction, storage, or models.
+        storage: Database handle; uses configured storage when omitted.
+        reindex: Whether to replace content already indexed.
+        extraction_method: Selected extraction strategy (parser or visual).
+
+    Returns:
+        Persisted source and indexed-chunk count.
+    """
     validate_extraction_method(extraction_method)
     if not source_name:
         raise ValueError("A source name is required")
@@ -205,6 +259,18 @@ async def _prepare_chunks(
     content: bytes, *, source_name: str, settings: Settings, extraction_method: str,
     progress: Callable[[str, int | None, int | None], Awaitable[None]] | None = None,
 ) -> list[ChunkInput]:
+    """Extract, split, and embed source content with progress notifications.
+
+    Args:
+        content: Original document bytes to extract or index.
+        source_name: Original filename used to infer source type and title.
+        settings: Runtime settings for extraction, storage, or models.
+        extraction_method: Selected extraction strategy (parser or visual).
+        progress: Optional callback receiving stage, processed count, and total count.
+
+    Returns:
+        Extracted, chunked, and embedded source passages.
+    """
     suffix = Path(source_name).suffix
     requested_profile = get_extraction_profile(suffix, extraction_method=extraction_method, settings=settings)
     if progress is not None:
@@ -246,6 +312,13 @@ async def _prepare_chunks(
 
 
 async def process_ingestion_job(job: IngestionJob, *, settings: Settings, storage: Database) -> None:
+    """Process a claimed job and atomically persist its indexed chunks.
+
+    Args:
+        job: Claimed ingestion job with its configuration and input.
+        settings: Runtime settings for extraction, storage, or models.
+        storage: Database handle; uses configured storage when omitted.
+    """
     if job.claim_token is None:
         raise ValueError("The ingestion job has not been claimed")
     queued = await jobs.get_ingestion_job_input(storage, settings.tenant_id, job.id)
@@ -281,6 +354,13 @@ async def process_ingestion_job(job: IngestionJob, *, settings: Settings, storag
         raise ValueError("The queued source identity does not match its original bytes")
 
     async def progress(stage: str, processed: int | None, total: int | None) -> None:
+        """Report extraction or embedding progress for the active job claim.
+
+        Args:
+            stage: Current ingestion pipeline stage.
+            processed: Number of items completed, if known.
+            total: Total number of items, if known.
+        """
         assert job.claim_token is not None
         if not await jobs.update_ingestion_job_progress(storage,
             settings.tenant_id, job.id, job.claim_token, stage=stage, processed=processed, total=total,
@@ -301,6 +381,12 @@ async def process_ingestion_job(job: IngestionJob, *, settings: Settings, storag
 # Inputs remain available only until their job reaches a terminal state.
 
 def _write_input(path: Path, content: bytes) -> None:
+    """Persist staged upload bytes with restricted filesystem permissions.
+
+    Args:
+        path: Input file path or staged input path.
+        content: Original document bytes to extract or index.
+    """
     path.parent.mkdir(parents=True, mode=0o700)
     with path.open("xb") as stream:
         stream.write(content)
@@ -309,6 +395,12 @@ def _write_input(path: Path, content: bytes) -> None:
 
 
 def _remove_input(path: Path, settings: Settings) -> None:
+    """Remove a staged upload only when it is inside the ingestion directory.
+
+    Args:
+        path: Input file path or staged input path.
+        settings: Runtime settings for extraction, storage, or models.
+    """
     if path.resolve().parent.parent != (settings.data_dir / "ingestion").resolve():
         raise ValueError("The ingestion input is outside the staging directory")
     UUID(path.parent.name)
@@ -319,6 +411,12 @@ def _remove_input(path: Path, settings: Settings) -> None:
 
 
 async def cleanup_ingestion_inputs(*, settings: Settings, storage: Database) -> None:
+    """Remove staged files for jobs already finished.
+
+    Args:
+        settings: Runtime settings for extraction, storage, or models.
+        storage: Database handle; uses configured storage when omitted.
+    """
     for queued in await jobs.list_finished_ingestion_inputs(storage, settings.tenant_id):
         assert queued.input_path is not None
         await asyncio.to_thread(_remove_input, Path(queued.input_path), settings)

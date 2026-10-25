@@ -24,10 +24,21 @@ Return a JSON object matching this schema, with no surrounding prose or code fen
 
 
 class StructuredOutputError(RuntimeError):
-    """A provider request failed or did not produce a complete typed record."""
+    """A provider request failed or did not produce a complete typed record.
+    """
 
 
 def endpoint(provider: str, settings: Settings, override: str | None) -> str:
+    """Resolve the provider API endpoint, honoring an explicit override.
+
+    Args:
+        provider: Generation or extraction service provider name.
+        settings: Runtime settings for extraction, storage, or models.
+        override: Optional endpoint override.
+
+    Returns:
+        Resolved API endpoint.
+    """
     if provider not in PROVIDERS:
         raise ValueError("Unsupported model provider")
     return override or {
@@ -39,6 +50,15 @@ def endpoint(provider: str, settings: Settings, override: str | None) -> str:
 
 
 def api_key(provider: str, settings: Settings) -> str:
+    """Select the API key used for a given generation provider.
+
+    Args:
+        provider: Generation or extraction service provider name.
+        settings: Runtime settings for extraction, storage, or models.
+
+    Returns:
+        Credential for the selected provider.
+    """
     if provider == "ollama":
         return "ollama"
     name, value = {
@@ -52,6 +72,17 @@ def api_key(provider: str, settings: Settings) -> str:
 
 
 def create_client(provider: str, *, api_key: str, base_url: str, timeout: int) -> AsyncOpenAI | AsyncAnthropic:
+    """Instantiate the matching asynchronous model-provider client.
+
+    Args:
+        provider: Generation or extraction service provider name.
+        api_key: Credential used to authenticate with the provider.
+        base_url: Provider API base URL.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Configured asynchronous model client.
+    """
     if provider == "anthropic":
         return AsyncAnthropic(api_key=api_key, base_url=base_url, timeout=timeout, max_retries=0)
     return AsyncOpenAI(
@@ -61,6 +92,16 @@ def create_client(provider: str, *, api_key: str, base_url: str, timeout: int) -
 
 
 def system_prompt(prompt: str, response_model: type[BaseModel], provider: str) -> str:
+    """Adjust the system instructions for provider-specific structured output.
+
+    Args:
+        prompt: Base system instruction text.
+        response_model: Pydantic schema used to validate structured output.
+        provider: Generation or extraction service provider name.
+
+    Returns:
+        Provider-adjusted system prompt.
+    """
     if provider == "deepseek":
         return prompt + _JSON_INSTRUCTION + json.dumps(response_model.model_json_schema(), ensure_ascii=False)
     return prompt
@@ -77,6 +118,21 @@ async def generate_structured_response[ResponseModel: BaseModel](
     max_tokens: int,
     image: bytes | None = None,
 ) -> tuple[ResponseModel, int | None]:
+    """Request a typed model response and report observed token usage.
+
+    Args:
+        client: Asynchronous model-provider client.
+        provider: Generation or extraction service provider name.
+        model: Generation model identifier.
+        response_model: Pydantic schema used to validate structured output.
+        system: System instruction text for the model.
+        user: User prompt sent to the provider.
+        max_tokens: Maximum output tokens requested.
+        image: Optional image supplied alongside the user prompt.
+
+    Returns:
+        Validated response and reported output token usage.
+    """
     try:
         if provider == "anthropic":
             content: list[TextBlockParam | ImageBlockParam] = [{"type": "text", "text": user}]

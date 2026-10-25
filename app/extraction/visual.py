@@ -68,6 +68,8 @@ visuals in markdown. Do not wrap the whole transcription in a code fence.
 
 
 class _PageResponse(BaseModel):
+    """Strict structured text returned for one visually interpreted page.
+    """
     model_config = ConfigDict(extra="forbid", strict=True)
 
     markdown: str
@@ -75,6 +77,15 @@ class _PageResponse(BaseModel):
 
 
 def get_extraction_profile(suffix: str, settings: Settings) -> dict[str, object]:
+    """Build the visual extraction profile for a source format.
+
+    Args:
+        suffix: Filename extension identifying the source format.
+        settings: Runtime settings for extraction, storage, or models.
+
+    Returns:
+        Reproducible extractor configuration metadata.
+    """
     normalized = suffix.casefold()
     if normalized not in OFFICE_SUFFIXES | {".pdf"}:
         raise ValueError("Visual extraction supports only PDF, DOCX, and PPTX")
@@ -105,6 +116,15 @@ def get_extraction_profile(suffix: str, settings: Settings) -> dict[str, object]
 
 
 def _read_page(page: _PageResponse, tokens: int | None) -> tuple[str, int]:
+    """Validate and normalize one model-extracted page and token count.
+
+    Args:
+        page: Validated model response for a rendered page.
+        tokens: Model-reported token usage for that page.
+
+    Returns:
+        Extracted text and the validated token count.
+    """
     if tokens is None or not 0 < tokens <= MAX_OUTPUT_TOKENS:
         raise ValueError("Visual extraction returned invalid content or missing output-token usage")
     markdown = page.markdown.strip()
@@ -114,6 +134,16 @@ def _read_page(page: _PageResponse, tokens: int | None) -> tuple[str, int]:
 
 
 async def extract_with_visual(content: bytes, suffix: str, *, settings: Settings) -> ExtractedContent:
+    """Render document pages and extract their content with a vision model.
+
+    Args:
+        content: Original document bytes to extract or index.
+        suffix: Filename extension identifying the source format.
+        settings: Runtime settings for extraction, storage, or models.
+
+    Returns:
+        Model-extracted document content and page metadata.
+    """
     profile = get_extraction_profile(suffix, settings)
     api_key = llm.api_key(settings.visual_provider, settings)
     if not content or len(content) > MAX_SOURCE_BYTES:
@@ -173,6 +203,14 @@ async def extract_with_visual(content: bytes, suffix: str, *, settings: Settings
 
 
 async def _run_tool(*arguments: str) -> bytes:
+    """Execute an external document utility and return its output.
+
+    Args:
+        arguments: Executable and its command-line arguments.
+
+    Returns:
+        Raw standard output from the external process.
+    """
     try:
         process = await asyncio.create_subprocess_exec(
             *arguments, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
@@ -194,6 +232,14 @@ async def _run_tool(*arguments: str) -> bytes:
 
 
 async def _page_count(source: Path) -> int:
+    """Read the number of pages from PDF metadata.
+
+    Args:
+        source: PDF file whose metadata or page is inspected.
+
+    Returns:
+        Number of pages in the PDF.
+    """
     metadata = await _run_tool("pdfinfo", str(source))
     match = re.search(rb"(?m)^Pages:\s+([0-9]+)\s*$", metadata)
     if len(metadata) > 65536 or match is None:
@@ -205,6 +251,16 @@ async def _page_count(source: Path) -> int:
 
 
 async def _render_page(source: Path, number: int, directory: Path) -> bytes:
+    """Render one PDF page as an image for visual extraction.
+
+    Args:
+        source: PDF file whose metadata or page is inspected.
+        number: One-based page number to render.
+        directory: Temporary directory for rendered page assets.
+
+    Returns:
+        Encoded image bytes for the requested page.
+    """
     prefix = directory / "page"
     image_path = prefix.with_suffix(".png")
     try:
