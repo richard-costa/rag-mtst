@@ -22,8 +22,7 @@ from app.storage.records import ChunkInput
 # Both providers return one finite, nonzero vector per input, in input order.
 
 class EmbeddingError(RuntimeError):
-    """An embedding provider could not complete the request.
-    """
+    """An embedding provider could not complete the request."""
 
 
 def embedding_endpoint(settings: Settings) -> str | None:

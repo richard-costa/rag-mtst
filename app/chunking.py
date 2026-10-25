@@ -34,16 +34,14 @@ _SENTENCE_END_PATTERN = re.compile(r"[.!?][\"')\]]*$")
 
 @dataclass(frozen=True, slots=True)
 class _Heading:
-    """Heading level and title parsed from Markdown.
-    """
+    """Heading level and title parsed from Markdown."""
     level: int
     text: str
 
 
 @dataclass(frozen=True, slots=True)
 class _MarkdownBlock:
-    """A Markdown content block and its original line range.
-    """
+    """A Markdown content block and its original line range."""
     text: str
     start_line: int
     end_line: int
@@ -52,8 +50,7 @@ class _MarkdownBlock:
 
 @dataclass(frozen=True, slots=True)
 class _MarkdownSection:
-    """Blocks grouped under a shared heading hierarchy.
-    """
+    """Blocks grouped under a shared heading hierarchy."""
     headings: tuple[_Heading, ...]
     blocks: tuple[_MarkdownBlock, ...]
 
@@ -291,8 +288,7 @@ def _pack_section(
     current_word_count = 0
 
     def flush_chunk() -> None:
-        """Finalize the accumulated blocks as one source chunk.
-        """
+        """Finalize the accumulated blocks as one source chunk."""
         nonlocal current_blocks, current_word_count
         if not current_blocks:
             return

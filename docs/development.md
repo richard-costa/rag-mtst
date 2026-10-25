@@ -124,3 +124,10 @@ uv run --group docs mkdocs build --strict
 The strict build checks navigation and links. Preview Mermaid diagrams in a
 browser: MkDocs does not execute Mermaid at build time. Keep synthetic samples
 and never commit provider keys or source documents with private content.
+
+## Docstring conventions
+
+Use Google-style Python docstrings for application functions, classes, and helpers.
+Document relevant parameters and return values with `Args:`, `Returns:`, or
+`Yields:` sections. FastAPI route handlers are the exception: write their
+docstrings in Markdown so the endpoint descriptions render in OpenAPI (`/docs`).

@@ -25,8 +25,7 @@ def _positive_integer(name: str, default: int) -> int:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    """Runtime configuration for storage, models, search, and local execution.
-    """
+    """Runtime configuration for storage, models, search, and local execution."""
     data_dir: Path = Path(".rag-data")
     database_url: str = "postgresql://rag:rag@127.0.0.1:5432/rag"
     tenant_id: str = "default"
