@@ -12,14 +12,25 @@ from app.storage.records import Conversation, ConversationTurn, Message
 
 
 class ConversationNotFound(LookupError):
-    """The conversation does not exist in the requested tenant."""
+    """The conversation does not exist in the requested tenant.
+    """
 
 
 class ConversationBusy(RuntimeError):
-    """Another turn is already using the conversation."""
+    """Another turn is already using the conversation.
+    """
 
 
 async def create_conversation(database: Database, tenant_id: str) -> Conversation:
+    """Insert a new tenant-scoped conversation.
+
+    Args:
+        database: PostgreSQL database handle.
+        tenant_id: Tenant identifier used to scope the operation.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -41,7 +52,17 @@ async def conversation_turn(
     conversation_id: UUID,
     question: str,
 ) -> AsyncGenerator[ConversationTurn]:
-    """Lock one conversation and atomically save a successful question/reply pair."""
+    """Lock one conversation and commit a successful question-and-answer pair.
+
+    Args:
+        database: PostgreSQL database handle.
+        tenant_id: Tenant identifier used to scope the operation.
+        conversation_id: Identifier of the conversation.
+        question: Question to record before generating a response.
+
+    Yields:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         try:
             cursor = await connection.execute(
@@ -76,6 +97,18 @@ async def conversation_turn(
 async def list_messages(
     database: Database, tenant_id: str, conversation_id: UUID, *, limit: int = 50, before: int | None = None,
 ) -> list[Message]:
+    """Retrieve conversation messages using a descending sequence cursor.
+
+    Args:
+        database: PostgreSQL database handle.
+        tenant_id: Tenant identifier used to scope the operation.
+        conversation_id: Identifier of the conversation.
+        limit: Maximum number of matching passages.
+        before: Sequence number used as an exclusive pagination cursor.
+
+    Returns:
+        Result of the operation.
+    """
     if not 1 <= limit <= 100:
         raise ValueError("History limit must be between 1 and 100")
     async with database.connection() as connection:
@@ -92,6 +125,17 @@ async def _conversation_messages(
     connection: psycopg.AsyncConnection[dict[str, Any]], conversation_id: UUID,
     *, limit: int, before: int | None = None,
 ) -> list[Message]:
+    """Read the requested message page using an existing connection.
+
+    Args:
+        connection: Existing asynchronous PostgreSQL connection.
+        conversation_id: Identifier of the conversation.
+        limit: Maximum number of matching passages.
+        before: Sequence number used as an exclusive pagination cursor.
+
+    Returns:
+        Result of the operation.
+    """
     cursor = await connection.execute(
         """
         SELECT * FROM messages
