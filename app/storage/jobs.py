@@ -24,6 +24,24 @@ async def create_ingestion_job(
     reindex: bool,
     job_id: UUID | None = None,
 ) -> tuple[Source, IngestionJob | None]:
+    """Create or deduplicate a source and queue its durable ingestion job.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        content_hash: Digest used to detect identical source content.
+        locator: Source path or URL stored for display and provenance.
+        mime_type: Optional detected media type.
+        input_path: Path to the temporarily staged source file.
+        source_name: Original document filename.
+        extraction_profile: Extractor settings associated with the job.
+        configuration: Frozen ingestion configuration stored with the job.
+        reindex: Whether previously indexed chunks should be replaced.
+        job_id: UUID identifying the job; generated when omitted.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -100,6 +118,16 @@ async def create_ingestion_job(
 
 
 async def get_ingestion_job(database: Database, tenant_id: str, job_id: UUID) -> IngestionJob | None:
+    """Load a tenant-scoped ingestion job by UUID.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        job_id: UUID identifying the job; generated when omitted.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -114,6 +142,16 @@ async def get_ingestion_job(database: Database, tenant_id: str, job_id: UUID) ->
 
 
 async def get_ingestion_job_input(database: Database, tenant_id: str, job_id: UUID) -> IngestionJobInput | None:
+    """Read the staged input metadata of an ingestion job.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        job_id: UUID identifying the job; generated when omitted.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -129,6 +167,15 @@ async def get_ingestion_job_input(database: Database, tenant_id: str, job_id: UU
 
 
 async def claim_ingestion_job(database: Database, tenant_id: str) -> IngestionJob | None:
+    """Claim the next available queued job with an ownership token.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -153,6 +200,15 @@ async def claim_ingestion_job(database: Database, tenant_id: str) -> IngestionJo
 
 
 async def list_finished_ingestion_inputs(database: Database, tenant_id: str) -> list[IngestionJobInput]:
+    """Find staged files left behind by terminal ingestion jobs.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -170,6 +226,14 @@ async def list_finished_ingestion_inputs(database: Database, tenant_id: str) -> 
 
 
 async def clear_ingestion_input_path(database: Database, tenant_id: str, job_id: UUID, input_path: str) -> None:
+    """Clear a job's staged file reference after cleanup.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        job_id: UUID identifying the job; generated when omitted.
+        input_path: Path to the temporarily staged source file.
+    """
     async with database.connection() as connection:
         await connection.execute(
             """
@@ -184,6 +248,17 @@ async def clear_ingestion_input_path(database: Database, tenant_id: str, job_id:
 
 
 async def heartbeat_ingestion_job(database: Database, tenant_id: str, job_id: UUID, claim_token: UUID) -> bool:
+    """Renew the heartbeat only for the current job claim.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        job_id: UUID identifying the job; generated when omitted.
+        claim_token: Ownership token assigned when the worker claimed the job.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -200,6 +275,20 @@ async def update_ingestion_job_progress(
     database: Database, tenant_id: str, job_id: UUID, claim_token: UUID,
     *, stage: str, processed: int | None = None, total: int | None = None,
 ) -> bool:
+    """Update progress if the caller still owns the job.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        job_id: UUID identifying the job; generated when omitted.
+        claim_token: Ownership token assigned when the worker claimed the job.
+        stage: Current stage of ingestion.
+        processed: Number of items completed, if known.
+        total: Total number of items, if known.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -216,6 +305,18 @@ async def update_ingestion_job_progress(
 async def fail_ingestion_job(
     database: Database, tenant_id: str, job_id: UUID, claim_token: UUID, *, error: str,
 ) -> bool:
+    """Record a claimed job's failure when its ownership token matches.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        job_id: UUID identifying the job; generated when omitted.
+        claim_token: Ownership token assigned when the worker claimed the job.
+        error: User-readable failure reason.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -230,6 +331,16 @@ async def fail_ingestion_job(
 
 
 async def fail_interrupted_ingestion_jobs(database: Database, tenant_id: str, *, stale_seconds: int) -> int:
+    """Mark stale in-progress jobs failed after worker interruption.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        stale_seconds: Maximum heartbeat age before an active job is considered stale.
+
+    Returns:
+        Result of the operation.
+    """
     if stale_seconds <= 0:
         raise ValueError("Stale heartbeat timeout must be greater than zero")
     async with database.connection() as connection:
@@ -250,6 +361,18 @@ async def fail_interrupted_ingestion_jobs(database: Database, tenant_id: str, *,
 async def complete_ingestion_job(
     database: Database, tenant_id: str, job: IngestionJob, *, locator: str, chunks: list[ChunkInput],
 ) -> bool:
+    """Atomically commit indexed chunks and finish the claimed job.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        job: Claimed ingestion job carrying its ownership token.
+        locator: Source path or URL stored for display and provenance.
+        chunks: Prepared chunks and vectors to persist.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             "SELECT id FROM sources WHERE tenant_id = %s AND id = %s FOR UPDATE",

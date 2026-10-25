@@ -16,6 +16,16 @@ async def get_source_by_content_hash(
     tenant_id: str,
     content_hash: str,
 ) -> Source | None:
+    """Find a tenant's source by its original content hash.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        content_hash: Digest used to detect identical source content.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -33,6 +43,16 @@ async def get_source_by_content_hash(
 async def get_source_extraction_profile(
     database: Database, tenant_id: str, source_id: UUID,
 ) -> dict[str, Any] | None:
+    """Read the stored extraction profile for a source.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        source_id: UUID identifying the source.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -59,6 +79,19 @@ async def insert_source(
     mime_type: str | None,
     content_hash: str,
 ) -> Source:
+    """Create a source record without attaching chunks.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        source_type: Whether the source is a file or URL.
+        locator: Source path or URL stored for display and provenance.
+        mime_type: Optional detected media type.
+        content_hash: Digest used to detect identical source content.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -84,6 +117,20 @@ async def insert_source_with_chunks(
     content_hash: str,
     chunks: list[ChunkInput],
 ) -> Source:
+    """Insert a source and all of its chunks in a single transaction.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        source_type: Whether the source is a file or URL.
+        locator: Source path or URL stored for display and provenance.
+        mime_type: Optional detected media type.
+        content_hash: Digest used to detect identical source content.
+        chunks: Prepared chunks and vectors to persist.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -108,6 +155,14 @@ async def replace_chunks(
     source_id: UUID,
     chunks: list[ChunkInput],
 ) -> None:
+    """Atomically replace the indexed chunks of a source.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        source_id: UUID identifying the source.
+        chunks: Prepared chunks and vectors to persist.
+    """
     async with database.connection() as connection:
         await connection.execute(
             "DELETE FROM chunks WHERE source_id = %s",
@@ -122,6 +177,14 @@ async def _insert_chunks(
     source_id: UUID,
     chunks: list[ChunkInput],
 ) -> None:
+    """Insert chunks and their embeddings using the active transaction.
+
+    Args:
+        connection: Database connection or transaction supplied by the caller.
+        tenant_id: Tenant scope restricting the query or write.
+        source_id: UUID identifying the source.
+        chunks: Prepared chunks and vectors to persist.
+    """
     for index, chunk in enumerate(chunks):
         await connection.execute(
             """
@@ -145,6 +208,15 @@ async def _insert_chunks(
 
 
 async def list_chunks(database: Database, tenant_id: str) -> list[StoredChunk]:
+    """List all chunks indexed for a tenant.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -178,6 +250,17 @@ async def full_text_search(
     query: str,
     limit: int,
 ) -> list[ScoredChunk]:
+    """Rank tenant chunks with PostgreSQL full-text search.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        query: Lexical search query.
+        limit: Maximum number of matching chunks.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -217,6 +300,19 @@ async def vector_search(
     embedding_model: str,
     limit: int,
 ) -> list[ScoredChunk]:
+    """Rank compatible tenant chunks by cosine distance to a query embedding.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        embedding: Query vector used for cosine search.
+        embedding_provider: Provider associated with the indexed vectors.
+        embedding_model: Model associated with the indexed vectors.
+        limit: Maximum number of matching chunks.
+
+    Returns:
+        Result of the operation.
+    """
     vector = Vector(embedding)
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -250,6 +346,18 @@ async def get_chunk_window(
     chunk_index: int,
     window: int,
 ) -> list[StoredChunk]:
+    """Fetch chunks surrounding a seed index within the same source.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        source_id: UUID identifying the source.
+        chunk_index: Index of the seed chunk in its source.
+        window: Number of adjacent chunks to include on each side.
+
+    Returns:
+        Result of the operation.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """

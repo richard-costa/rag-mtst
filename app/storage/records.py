@@ -11,6 +11,8 @@ from uuid import UUID
 
 @dataclass(frozen=True, slots=True)
 class Source:
+    """Persisted source identity, origin, and extraction metadata.
+    """
     id: UUID
     tenant_id: str
     source_type: str
@@ -22,11 +24,18 @@ class Source:
 
     @property
     def title(self) -> str:
+        """Display name derived from the source locator.
+
+        Returns:
+            Result of the operation.
+        """
         return Path(self.locator).name
 
 
 @dataclass(frozen=True, slots=True)
 class Chunk:
+    """Persisted source chunk with embedding and metadata.
+    """
     id: UUID
     tenant_id: str
     source_id: UUID
@@ -40,6 +49,8 @@ class Chunk:
 
 @dataclass(frozen=True, slots=True)
 class ChunkInput:
+    """New chunk content, optional vector, and provenance metadata.
+    """
     content: str
     metadata: dict[str, Any]
     page_number: int | None = None
@@ -48,6 +59,8 @@ class ChunkInput:
 
 @dataclass(frozen=True, slots=True)
 class StoredChunk:
+    """Retrieved chunk joined to its source metadata.
+    """
     id: UUID
     source_id: UUID
     source_locator: str
@@ -57,16 +70,25 @@ class StoredChunk:
 
     @property
     def source_title(self) -> str:
+        """Display name derived from the stored source locator.
+
+        Returns:
+            Result of the operation.
+        """
         return Path(self.source_locator).name
 
 
 @dataclass(frozen=True, slots=True)
 class ScoredChunk(StoredChunk):
+    """Stored chunk with a retrieval relevance score.
+    """
     score: float
 
 
 @dataclass(frozen=True, slots=True)
 class IngestionJob:
+    """Durable ingestion job and its ownership and progress fields.
+    """
     id: UUID
     source_id: UUID
     status: str
@@ -85,6 +107,8 @@ class IngestionJob:
 
 @dataclass(frozen=True, slots=True)
 class IngestionJobInput:
+    """Staged input file metadata for an ingestion job.
+    """
     job_id: UUID
     input_path: str | None
     source_name: str
@@ -95,6 +119,8 @@ class IngestionJobInput:
 
 @dataclass(frozen=True, slots=True)
 class Conversation:
+    """Persisted conversation identifier and timestamps.
+    """
     id: UUID
     tenant_id: str
     created_at: datetime
@@ -103,6 +129,8 @@ class Conversation:
 
 @dataclass(frozen=True, slots=True)
 class Message:
+    """Persisted conversation message with sequence information.
+    """
     id: UUID
     conversation_id: UUID
     sequence: int
@@ -114,7 +142,8 @@ class Message:
 
 @dataclass(slots=True)
 class ConversationTurn:
-    """Recent history and the reply to commit when the turn succeeds."""
+    """Recent history and the reply to commit when the turn succeeds.
+    """
 
     history: list[Message]
     answer: str | None = None
