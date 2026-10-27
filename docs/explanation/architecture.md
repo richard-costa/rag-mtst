@@ -20,15 +20,21 @@ config:
         useMaxWidth: false
 ---
 flowchart TB
-    http[HTTP client] --> api[FastAPI]
+    subgraph db["db: PostgreSQL + pgvector"]
+        queue[(Ingestion job queue)]
+        documents[(Indexed sources and chunks)]
+    end
+    migrate["migrate: One-shot schema setup"] -.->|Applies schema| db
+    http[HTTP client] --> api["app: FastAPI"]
     cli[Local CLI] --> submission[Ingestion submission]
     api --> submission
-    submission --> queue[(PostgreSQL job queue)]
+    submission --> queue
     submission --> staging[Shared input directory]
-    queue --> worker[Ingestion worker]
+    queue --> worker["worker: Ingestion supervisor"]
     staging --> worker
-    worker --> indexing[Extraction, chunking, and embeddings]
-    indexing --> documents[(PostgreSQL + pgvector)]
+    worker --> indexing["Per-job child: extraction, chunking, embeddings"]
+    indexing --> documents
+    indexing -.->|Visual DOCX/PPTX conversion only| office["office: Optional converter"]
     api --> retrieval[Retrieval]
     cli --> retrieval
     documents -->|Ranked chunk windows| retrieval
@@ -38,16 +44,32 @@ flowchart TB
 ```
 
 **Local development:** `rag start` manages PostgreSQL in Docker and launches
-the worker on the host; they share a local temporary directory.
+the worker on the host. Its per-job child processes also run on the host.
+The API, when needed, is started separately on the host. The CLI, API, and
+worker share the local staging directory.
+
+**Compose reference setup:** `app` (the API) and `worker` run in separate
+containers using the same application build configuration. The long-running
+worker starts a supervised child process for each claimed ingestion job;
+those children run inside the worker container, not the API container.
+The API submits durable jobs to PostgreSQL, and both containers access staged
+inputs through the `rag-data` volume mounted at `/app/.rag-data`.
+
+The `db` service stores both the job queue and indexed data in the persistent
+`postgres-data` volume. The one-shot `migrate` service waits for a healthy
+database and applies the schema before `app` and `worker` start. The optional
+`office` service provides unoserver/LibreOffice conversion for explicit visual
+DOCX/PPTX extraction; it is enabled through the `office` profile and is not
+needed for native parsing. See [Compose services](../operations.md#compose-services)
+for the service inventory and startup order.
 
 **Deployed backend:** The API and worker must see staged inputs at the **same
 filesystem path**. The infrastructure team owns that shared storage, database
 connectivity, process supervision, and ingress. The standard backend image
 does not include the educational browser demo.
 
-The worker executes ingestion in supervised child processes. Python callers
-can also invoke direct indexing functions without submitting an asynchronous
-job. See [indexing details](indexing.md).
+Python callers can also invoke direct indexing functions without submitting
+an asynchronous job. See [indexing details](indexing.md).
 
 ## Data and Persistence
 

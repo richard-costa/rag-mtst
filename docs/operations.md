@@ -34,6 +34,29 @@ Within a container the API can listen on `0.0.0.0`; public access, reverse
 proxy, HTTPS, and firewall policy are independent deployment decisions. This
 repository does not prescribe them.
 
+## Compose services
+
+The reference Compose setup defines five services:
+
+| Service | Role | Lifecycle |
+| --- | --- | --- |
+| `db` | PostgreSQL + pgvector, including the durable ingestion job queue | Long-running; stores database data in `postgres-data` |
+| `migrate` | Runs `alembic upgrade head` | One-shot; waits for a healthy `db`, then exits after applying migrations |
+| `app` | FastAPI HTTP API | Long-running; starts after `migrate` completes successfully |
+| `worker` | Claims ingestion jobs and supervises per-job subprocesses | Long-running; starts after `migrate` completes successfully, in a separate container from `app` |
+| `office` | unoserver/LibreOffice conversion for explicit visual DOCX/PPTX extraction | Optional long-running service; enabled through the `office` profile, not started by default |
+
+Startup order is **healthy database -> successful migrations -> API and worker**.
+The API and worker do not wait for each other. They share the application build
+configuration and mount the `rag-data` volume at `/app/.rag-data` so both can
+access staged inputs at the same path. Database data is stored separately in
+`postgres-data`.
+
+This differs from `rag start`, which starts only the Compose `db` service and
+runs migrations and the worker on the host. See
+[component boundaries](explanation/architecture.md#component-boundaries) for
+the worker's process and container boundaries.
+
 ## Security boundary
 
 The HTTP API accepts a **single shared bearer token** with access to one
