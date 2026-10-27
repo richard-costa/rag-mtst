@@ -1,12 +1,25 @@
+# Environment variables
 .env
+
+# RAG data
 .rag-data/
 .rag-guide-data/
 .rag-first-search/
+
+# Python environment and cache
 .venv/
 __pycache__/
 *.py[cod]
-site/
-.vscode
-.github/
 .pytest_cache/
 .ruff_cache/
+
+# Generated documentation
+site/
+
+# Editor and GitHub configuration
+.vscode
+.github/
+
+# Tauri build artifacts and generated files
+/desktop/src-tauri/target/
+/desktop/src-tauri/gen/
