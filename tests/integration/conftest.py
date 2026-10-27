@@ -150,7 +150,7 @@ def store_vectors(storage, settings):
     async def store(vectors, *, tenant_id=None, model=None):
         tenant_id = tenant_id or settings.tenant_id
         source = await documents.insert_source(storage,
-            tenant_id=tenant_id, source_type="file", locator="/tmp/vectors.md",
+            tenant_id=tenant_id, source_type="file", reference="/tmp/vectors.md",
             mime_type="text/markdown", content_hash=str(uuid4()),
         )
         await documents.replace_chunks(storage,

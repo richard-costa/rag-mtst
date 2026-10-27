@@ -26,7 +26,7 @@ RetrievalMethod = Literal["cosine", "window", "lexical", "hybrid"]
 class SearchResult:
     source_id: str
     source_title: str
-    source_locator: str
+    source_reference: str
     chunk_index: int
     content: str
     score: float | None
@@ -220,7 +220,7 @@ def _search_result(chunk: StoredChunk, *, score: float | None) -> SearchResult:
     return SearchResult(
         source_id=str(chunk.source_id),
         source_title=chunk.source_title,
-        source_locator=chunk.source_locator,
+        source_reference=chunk.source_reference,
         chunk_index=chunk.chunk_index,
         content=chunk.content,
         score=score,

@@ -12,6 +12,31 @@ from app.storage.records import ChunkInput
 pytestmark = pytest.mark.usefixtures('deterministic_embeddings')
 
 
+@pytest.mark.parametrize("method", ["cosine", "window", "lexical", "hybrid"])
+async def test_retrieval_preserves_non_file_references(settings, storage, method):
+    reference = "https://example.org/policies/handbook?lang=en#section"
+    metadata = {
+        "embedding_provider": settings.embedding_provider,
+        "embedding_model": settings.embedding_model_name,
+    }
+    source = await documents.insert_source_with_chunks(storage,
+        tenant_id=settings.tenant_id, source_type="url", reference=reference,
+        mime_type="text/plain", content_hash="url-reference",
+        chunks=[
+            ChunkInput("token", metadata, embedding=[1.0, 1.0, 0.0]),
+            ChunkInput("Neighboring context", metadata, embedding=[1.0, 0.0, 0.0]),
+        ],
+    )
+
+    matches = await search("token", method=method, limit=1, window=1, settings=settings, storage=storage)
+
+    assert len(matches) == (2 if method == "window" else 1)
+    assert all(match.source_id == str(source.id) for match in matches)
+    assert all(match.source_reference == reference and match.source_title == reference for match in matches)
+    if method == "window":
+        assert matches[1].score is None
+
+
 async def test_cosine_uses_direction_not_vector_length_and_filters_models(store_vectors, settings, storage):
     source = await store_vectors([
         [100.0, 0.0, 0.0], [1.0, 1.0, 0.0], [-1.0, -1.0, 0.0],
@@ -112,7 +137,7 @@ async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_cross
         "embedding_model": settings.embedding_model_name,
     }
     source = await documents.insert_source_with_chunks(storage,
-        tenant_id=settings.tenant_id, source_type="file", locator="/tmp/hybrid.md",
+        tenant_id=settings.tenant_id, source_type="file", reference="/tmp/hybrid.md",
         mime_type="text/markdown", content_hash="hybrid",
         chunks=[
             ChunkInput("token", metadata, embedding=[1.0, 0.0, 0.0]),
@@ -121,7 +146,7 @@ async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_cross
         ],
     )
     await documents.insert_source_with_chunks(storage,
-        tenant_id="another-tenant", source_type="file", locator="/tmp/private.md",
+        tenant_id="another-tenant", source_type="file", reference="/tmp/private.md",
         mime_type="text/markdown", content_hash="private",
         chunks=[ChunkInput("token", metadata, embedding=[1.0, 1.0, 0.0])],
     )
@@ -140,7 +165,7 @@ async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_cross
 
 async def test_lexical_does_not_embed_or_scan_chunks_in_python(settings, storage, monkeypatch):
     await documents.insert_source_with_chunks(storage,
-        tenant_id=settings.tenant_id, source_type="file", locator="/tmp/lexical.md",
+        tenant_id=settings.tenant_id, source_type="file", reference="/tmp/lexical.md",
         mime_type="text/markdown", content_hash="lexical",
         chunks=[ChunkInput("Moradia and housing support", {})],
     )

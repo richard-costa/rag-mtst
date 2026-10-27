@@ -31,7 +31,7 @@ async def test_generation_routes_providers_and_preserves_citation_provenance(
         (1, "source-a", 0), (2, "source-b", 3),
     ]
     assert result.citations[0].content == passages[0].content
-    assert result.citations[0].source_locator == "/tmp/housing.md"
+    assert result.citations[0].source_reference == "/tmp/housing.md"
     assert result.citations[0].truncated is False
     assert len(requests) == 1
     assert str(requests[0].url) == url

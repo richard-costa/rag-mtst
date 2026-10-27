@@ -99,7 +99,7 @@ async def test_enqueue_existing_source_requires_explicit_profile_change_and_pres
     assert submitted.source == indexed.source
     assert submitted.job is not None and submitted.job.status == "pending"
     assert await documents.list_chunks(storage, settings.tenant_id) == before_reindex
-    assert indexed.source.locator == "existing.md"
+    assert indexed.source.reference == "existing.md"
     assert original_chunks[0].source_id == before_reindex[0].source_id
 
 
@@ -116,7 +116,7 @@ async def test_ingests_deduplicates_and_searches_a_markdown_file(settings, stora
 
     assert first.created is True
     assert first.chunk_count == 1
-    assert first.source.locator == "handbook.md"
+    assert first.source.reference == "handbook.md"
     assert duplicate.created is False
     assert duplicate.source.id == first.source.id
     assert len(results) == 1

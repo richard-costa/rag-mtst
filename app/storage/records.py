@@ -11,10 +11,12 @@ from uuid import UUID
 
 @dataclass(frozen=True, slots=True)
 class Source:
+    """Indexed source with descriptive origin metadata, not a fetch address."""
+
     id: UUID
     tenant_id: str
     source_type: str
-    locator: str
+    reference: str
     mime_type: str | None
     content_hash: str
     created_at: datetime
@@ -22,7 +24,7 @@ class Source:
 
     @property
     def title(self) -> str:
-        return Path(self.locator).name
+        return Path(self.reference).name if self.source_type == "file" else self.reference
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,14 +52,15 @@ class ChunkInput:
 class StoredChunk:
     id: UUID
     source_id: UUID
-    source_locator: str
+    source_type: str
+    source_reference: str
     chunk_index: int
     content: str
     metadata: dict[str, Any]
 
     @property
     def source_title(self) -> str:
-        return Path(self.source_locator).name
+        return Path(self.source_reference).name if self.source_type == "file" else self.source_reference
 
 
 @dataclass(frozen=True, slots=True)

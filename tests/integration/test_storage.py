@@ -79,6 +79,8 @@ def test_offline_migrations_accept_encoded_database_passwords(monkeypatch, schem
     command.upgrade(config, "head", sql=True)
 
     sql = output.getvalue()
+    assert "reference text NOT NULL" in sql
+    assert "locator text" not in sql
     assert "CREATE TABLE chunks" in sql
     assert "embedding vector" in sql
     assert "metadata jsonb" in sql
@@ -95,11 +97,17 @@ def test_offline_migrations_accept_encoded_database_passwords(monkeypatch, schem
 # ---------------------------------------------------------------------------
 # Source and chunk metadata round-trip through PostgreSQL records.
 
-async def test_document_records_preserve_metadata(storage) -> None:
+@pytest.mark.parametrize(("source_type", "reference", "title"), [
+    ("file", "/tmp/handbook.md", "handbook.md"),
+    ("file", "handbook.md", "handbook.md"),
+    ("url", "https://example.org/policies/handbook?lang=en#section", "https://example.org/policies/handbook?lang=en#section"),
+    ("url", "https://example.org/policies/", "https://example.org/policies/"),
+])
+async def test_document_records_preserve_metadata(storage, source_type, reference, title) -> None:
     source = await documents.insert_source(storage,
         tenant_id="test-tenant",
-        source_type="file",
-        locator="/tmp/handbook.md",
+        source_type=source_type,
+        reference=reference,
         mime_type="text/markdown",
         content_hash="abc123",
     )
@@ -119,7 +127,10 @@ async def test_document_records_preserve_metadata(storage) -> None:
     )
     chunks = await documents.list_chunks(storage, "test-tenant")
 
-    assert source.title == "handbook.md"
+    assert source.reference == reference
+    assert source.title == title
+    assert all(chunk.source_reference == reference and chunk.source_title == title for chunk in chunks)
+    assert all(chunk.source_type == source_type for chunk in chunks)
     assert [chunk.content for chunk in chunks] == ["first chunk", "second chunk"]
     assert chunks[0].metadata == {
         "headings": ["Setup"],
@@ -192,7 +203,7 @@ async def test_conversation_turn_history_is_bounded_without_reusing_sequence_num
 
 async def test_ingestion_job_inputs_are_atomic_durable_and_tenant_scoped(storage):
     source, job = await jobs.create_ingestion_job(storage,
-        tenant_id="test-tenant", content_hash="queued", locator="queued.md",
+        tenant_id="test-tenant", content_hash="queued", reference="queued.md",
         mime_type="text/markdown", input_path="/tmp/queued.md", source_name="queued.md",
         extraction_profile={"method": "parser"}, configuration={"chunk_size": 180},
         reindex=False,
@@ -210,7 +221,7 @@ async def test_ingestion_job_inputs_are_atomic_durable_and_tenant_scoped(storage
 
     with pytest.raises(psycopg.errors.CheckViolation):
         await jobs.create_ingestion_job(storage,
-            tenant_id="test-tenant", content_hash="rollback", locator="bad.md",
+            tenant_id="test-tenant", content_hash="rollback", reference="bad.md",
             mime_type="text/markdown", input_path="/tmp/bad.md", source_name="",
             extraction_profile={}, configuration={}, reindex=False,
         )
@@ -219,7 +230,7 @@ async def test_ingestion_job_inputs_are_atomic_durable_and_tenant_scoped(storage
 
 async def test_ingestion_job_submissions_serialize_duplicates_and_reject_conflicts(storage):
     arguments = dict(
-        tenant_id="test-tenant", content_hash="concurrent", locator="queued.md",
+        tenant_id="test-tenant", content_hash="concurrent", reference="queued.md",
         mime_type="text/markdown", input_path="/tmp/queued.md", source_name="queued.md",
         extraction_profile={"method": "parser"}, configuration={"chunk_size": 180},
         reindex=False,
@@ -241,7 +252,7 @@ async def test_ingestion_job_submissions_serialize_duplicates_and_reject_conflic
 
 async def test_ingestion_job_active_constraint_and_new_submission_after_failure(storage):
     arguments = dict(
-        tenant_id="test-tenant", content_hash="retry", locator="queued.md",
+        tenant_id="test-tenant", content_hash="retry", reference="queued.md",
         mime_type="text/markdown", input_path="/tmp/queued.md", source_name="queued.md",
         extraction_profile={"method": "parser"}, configuration={"chunk_size": 180},
         reindex=False,
@@ -272,7 +283,7 @@ async def test_ingestion_job_active_constraint_and_new_submission_after_failure(
 
 async def test_worker_claims_are_exclusive_and_stale_workers_cannot_commit(storage):
     source, submitted = await jobs.create_ingestion_job(storage,
-        tenant_id="test-tenant", content_hash="claim", locator="claim.md",
+        tenant_id="test-tenant", content_hash="claim", reference="claim.md",
         mime_type="text/markdown", input_path="/tmp/claim.md", source_name="claim.md",
         extraction_profile={"method": "parser"}, configuration={}, reindex=False,
     )
@@ -298,7 +309,7 @@ async def test_worker_claims_are_exclusive_and_stale_workers_cannot_commit(stora
     assert await jobs.fail_interrupted_ingestion_jobs(storage, "other-tenant", stale_seconds=60) == 0
     assert await jobs.fail_interrupted_ingestion_jobs(storage, "test-tenant", stale_seconds=60) == 1
     assert not await jobs.complete_ingestion_job(storage,
-        "test-tenant", job, locator="stale.md", chunks=[ChunkInput("stale content", {})],
+        "test-tenant", job, reference="stale.md", chunks=[ChunkInput("stale content", {})],
     )
     assert not await jobs.fail_ingestion_job(storage, "test-tenant", job.id, job.claim_token, error="late")
     assert await documents.list_chunks(storage, "test-tenant") == []
@@ -311,7 +322,7 @@ async def test_worker_claims_are_exclusive_and_stale_workers_cannot_commit(stora
 
 async def test_worker_completion_is_atomic_with_chunk_replacement(storage, monkeypatch):
     source, submitted = await jobs.create_ingestion_job(storage,
-        tenant_id="test-tenant", content_hash="completion", locator="old.md",
+        tenant_id="test-tenant", content_hash="completion", reference="old.md",
         mime_type="text/markdown", input_path="/tmp/new.md", source_name="new.md",
         extraction_profile={"method": "parser"}, configuration={}, reindex=True,
     )
@@ -329,25 +340,25 @@ async def test_worker_completion_is_atomic_with_chunk_replacement(storage, monke
         failed.setattr(documents, "_insert_chunks", failed_insert)
         with pytest.raises(RuntimeError, match="synthetic storage failure"):
             await jobs.complete_ingestion_job(storage,
-                "test-tenant", job, locator="new.md", chunks=[ChunkInput("new content", {})],
+                "test-tenant", job, reference="new.md", chunks=[ChunkInput("new content", {})],
             )
     assert await documents.list_chunks(storage, "test-tenant") == old_chunks
     running = await jobs.get_ingestion_job(storage, "test-tenant", job.id)
     assert running is not None and running.status == "running"
     assert await jobs.complete_ingestion_job(storage,
-        "test-tenant", job, locator="new.md", chunks=[ChunkInput("new content", {})],
+        "test-tenant", job, reference="new.md", chunks=[ChunkInput("new content", {})],
     )
     completed = await jobs.get_ingestion_job(storage, "test-tenant", job.id)
     assert completed is not None and completed.status == "completed" and completed.progress == 100
     assert completed.processed == completed.total == 1
     assert [chunk.content for chunk in await documents.list_chunks(storage, "test-tenant")] == ["new content"]
-    assert not await jobs.complete_ingestion_job(storage, "test-tenant", job, locator="late.md", chunks=[])
+    assert not await jobs.complete_ingestion_job(storage, "test-tenant", job, reference="late.md", chunks=[])
 
 
 async def test_source_extraction_profile_is_consistent_and_tenant_scoped(storage):
     profile = {"method": "parser", "engine": "utf-8"}
     source = await documents.insert_source_with_chunks(storage,
-        tenant_id="test-tenant", source_type="file", locator="profile.md", mime_type="text/markdown",
+        tenant_id="test-tenant", source_type="file", reference="profile.md", mime_type="text/markdown",
         content_hash="profile", chunks=[ChunkInput("first", {"extraction": profile}), ChunkInput("second", {"extraction": profile})],
     )
     assert await documents.get_source_extraction_profile(storage, "test-tenant", source.id) == profile
@@ -376,7 +387,7 @@ async def test_source_extraction_profile_is_consistent_and_tenant_scoped(storage
 ])
 async def test_full_text_search_matches_without_language_detection(content, query, matches, storage):
     source = await documents.insert_source_with_chunks(storage,
-        tenant_id="test-tenant", source_type="file", locator="/tmp/multilingual.md",
+        tenant_id="test-tenant", source_type="file", reference="/tmp/multilingual.md",
         mime_type="text/markdown", content_hash="multilingual",
         chunks=[ChunkInput(content=content, metadata={"heading": "Original"})],
     )
@@ -393,7 +404,7 @@ async def test_full_text_search_matches_without_language_detection(content, quer
 
 async def test_full_text_search_ranks_limits_filters_tenants_and_updates_generated_text(storage):
     source = await documents.insert_source_with_chunks(storage,
-        tenant_id="test-tenant", source_type="file", locator="/tmp/ranking.md",
+        tenant_id="test-tenant", source_type="file", reference="/tmp/ranking.md",
         mime_type="text/markdown", content_hash="ranking",
         chunks=[
             ChunkInput("housing " + "unrelated " * 50, {}),
@@ -402,7 +413,7 @@ async def test_full_text_search_ranks_limits_filters_tenants_and_updates_generat
         ],
     )
     await documents.insert_source_with_chunks(storage,
-        tenant_id="another-tenant", source_type="file", locator="/tmp/private.md",
+        tenant_id="another-tenant", source_type="file", reference="/tmp/private.md",
         mime_type="text/markdown", content_hash="private",
         chunks=[ChunkInput("housing", {})],
     )
@@ -440,14 +451,14 @@ async def test_initial_migration_can_be_reversed_and_recreated(database_url, sto
         await asyncio.to_thread(command.upgrade, config, "head")
 
     source = await documents.insert_source_with_chunks(storage,
-        tenant_id="test-tenant", source_type="file", locator="/tmp/recreated.md",
+        tenant_id="test-tenant", source_type="file", reference="/tmp/recreated.md",
         mime_type="text/markdown", content_hash="recreated",
         chunks=[ChunkInput("Recreated housing content", {})],
     )
     results = await documents.full_text_search(storage, tenant_id="test-tenant", query="housing", limit=5)
     assert [chunk.source_id for chunk in results] == [source.id]
     queued_source, job = await jobs.create_ingestion_job(storage,
-        tenant_id="test-tenant", content_hash="recreated", locator=source.locator,
+        tenant_id="test-tenant", content_hash="recreated", reference=source.reference,
         mime_type="text/markdown", input_path="/tmp/recreated.md", source_name="recreated.md",
         extraction_profile={"method": "parser"}, configuration={}, reindex=True,
     )

@@ -47,7 +47,7 @@ async def test_hybrid_fuses_ranks_not_raw_scores(cosine_ids, lexical_ids, expect
 
     def matches(identities, scale):
         return [SearchResult(
-            source_id=source_id, source_title="same.md", source_locator="/tmp/same.md",
+            source_id=source_id, source_title="same.md", source_reference="/tmp/same.md",
             chunk_index=chunk_index, content="Identical text from separate chunks",
             score=scale * (index + 1),
         ) for index, (source_id, chunk_index) in enumerate(identities)]

@@ -91,7 +91,13 @@ class CitationResponse(BaseModel):
     id: int
     source_id: str
     source_title: str
-    source_locator: str
+    source_reference: str = Field(
+        description=(
+            "Descriptive reference to the source's origin, such as a filename, URL, or external record identifier. "
+            "Not necessarily unique or accessible; not used to fetch the source. "
+            "File ingestion currently stores the filename."
+        ),
+    )
     chunk_index: int
     content: str
     truncated: bool

@@ -25,7 +25,7 @@ def upgrade() -> None:
             id uuid PRIMARY KEY,
             tenant_id text NOT NULL,
             type text NOT NULL CHECK (type IN ('file', 'url')),
-            locator text NOT NULL,
+            reference text NOT NULL,
             mime_type text,
             content_hash text NOT NULL,
             created_at timestamptz NOT NULL DEFAULT now(),

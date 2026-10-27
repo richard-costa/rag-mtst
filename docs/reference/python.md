@@ -45,10 +45,16 @@ async def inspect_sources():
     return matches, result
 ```
 
-`SearchResult` contains `source_id`, `source_title`, `chunk_index`, `content`, and
-nullable `score`. `Answer` contains `text`, `matches`, and `citations`; HTTP names
+`SearchResult` contains `source_id`, `source_title`, `source_reference`,
+`chunk_index`, `content`, and nullable `score`. `source_reference` is descriptive
+origin metadata, currently a filename for ingested files. It is not necessarily
+unique or accessible and does not instruct the backend to fetch a source.
+File titles use the reference's basename; non-file titles retain the full
+reference without filesystem parsing.
+
+`Answer` contains `text`, `matches`, and `citations`; HTTP names
 `text` as `answer`. `Citation` records the supplied passage and its source identity,
-locator, chunk index, and truncation flag. `EmbeddingError` and `GenerationError`
+reference (`source_reference`), chunk index, and truncation flag. `EmbeddingError` and `GenerationError`
 report handled provider failures.
 
 `answer(..., history=messages)` accepts ordered `Message` records for bounded

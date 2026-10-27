@@ -70,7 +70,7 @@ erDiagram
         uuid id PK
         text tenant_id
         text type
-        text locator
+        text reference
         text mime_type
         text content_hash
         timestamptz created_at
@@ -131,7 +131,7 @@ erDiagram
 
 | Table | Purpose |
 | --- | --- |
-| `sources` | Tenant-scoped source identity and original locator |
+| `sources` | Tenant-scoped source identity and descriptive origin reference |
 | `chunks` | Extracted text, metadata, embeddings, and indexed search text |
 | `ingestion_jobs` | Durable status, progress, ownership, and heartbeats |
 | `ingestion_job_inputs` | Temporary file path and nonsecret queued configuration |
@@ -145,8 +145,13 @@ Important uniqueness constraints include `sources(tenant_id, content_hash)`,
 `messages(conversation_id, sequence)`. A partial unique index prevents more
 than one pending/running job for a source.
 
-Original file bytes are **not** archived in PostgreSQL. Source locators describe
-the input rather than acting as download URLs. Citation snapshots are JSONB
+Original file bytes are **not** archived in PostgreSQL. `sources.reference` is
+descriptive origin metadata, not a unique identifier or an instruction to fetch
+the original. File ingestion stores the filename. A future acquisition pipeline
+can supply a URL or external record identifier without adding a source-specific
+column; URL acquisition itself is not implemented. References are not necessarily
+accessible. File titles use the reference's basename; non-file titles preserve
+the full reference without filesystem parsing. Citation snapshots are JSONB
 rather than references to live chunk rows: reindexing does not rewrite
 previously recorded conversational evidence.
 

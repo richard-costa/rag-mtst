@@ -15,7 +15,7 @@ async def create_ingestion_job(
     *,
     tenant_id: str,
     content_hash: str,
-    locator: str,
+    reference: str,
     mime_type: str | None,
     input_path: str,
     source_name: str,
@@ -27,15 +27,15 @@ async def create_ingestion_job(
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            INSERT INTO sources (id, tenant_id, type, locator, mime_type, content_hash)
+            INSERT INTO sources (id, tenant_id, type, reference, mime_type, content_hash)
             VALUES (%s, %s, 'file', %s, %s, %s)
             ON CONFLICT (tenant_id, content_hash) DO NOTHING
             """,
-            (uuid4(), tenant_id, locator, mime_type, content_hash),
+            (uuid4(), tenant_id, reference, mime_type, content_hash),
         )
         cursor = await connection.execute(
             """
-            SELECT id, tenant_id, type AS source_type, locator, mime_type,
+            SELECT id, tenant_id, type AS source_type, reference, mime_type,
                    content_hash, created_at, updated_at
             FROM sources
             WHERE tenant_id = %s AND content_hash = %s
@@ -248,7 +248,7 @@ async def fail_interrupted_ingestion_jobs(database: Database, tenant_id: str, *,
 
 
 async def complete_ingestion_job(
-    database: Database, tenant_id: str, job: IngestionJob, *, locator: str, chunks: list[ChunkInput],
+    database: Database, tenant_id: str, job: IngestionJob, *, reference: str, chunks: list[ChunkInput],
 ) -> bool:
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -270,8 +270,8 @@ async def complete_ingestion_job(
         await connection.execute("DELETE FROM chunks WHERE source_id = %s", (job.source_id,))
         await documents._insert_chunks(connection, tenant_id, job.source_id, chunks)
         await connection.execute(
-            "UPDATE sources SET locator = %s, updated_at = now() WHERE id = %s",
-            (locator, job.source_id),
+            "UPDATE sources SET reference = %s, updated_at = now() WHERE id = %s",
+            (reference, job.source_id),
         )
         await connection.execute(
             """

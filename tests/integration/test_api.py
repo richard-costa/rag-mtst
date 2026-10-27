@@ -48,6 +48,8 @@ async def test_api_upload_status_search_and_ask_are_tenant_scoped(settings, stor
         assert answer.json()["answer"] == "Generated grounded answer [1]."
         assert "access token" in answer.json()["citations"][0]["content"]
         assert answer.json()["citations"][0]["source_id"] == submission["id"]
+        assert answer.json()["citations"][0]["source_reference"] == "queued.md"
+        assert "source_locator" not in answer.json()["citations"][0]
         duplicate = await client.post("/sources/file", files=files)
         assert duplicate.status_code == 200 and duplicate.json() == {
             "id": submission["id"], "status": "unchanged", "job_id": None, "status_url": None,

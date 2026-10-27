@@ -30,7 +30,7 @@ class Citation:
     id: int
     source_id: str
     source_title: str
-    source_locator: str
+    source_reference: str
     chunk_index: int
     content: str
     truncated: bool
@@ -185,7 +185,7 @@ def _build_context(
         sources.append({"id": source_id, "content": content})
         citations.append(Citation(
             id=source_id, source_id=match.source_id, source_title=match.source_title,
-            source_locator=match.source_locator, chunk_index=match.chunk_index,
+            source_reference=match.source_reference, chunk_index=match.chunk_index,
             content=content, truncated=lower < len(match.content),
         ))
         if lower < len(match.content):

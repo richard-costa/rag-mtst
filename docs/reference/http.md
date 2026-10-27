@@ -125,7 +125,14 @@ best-ranked seed. Scores from different methods are not comparable probabilities
 `AskResponse` contains `answer` (text), `matches` (all original retrieval results),
 and `citations` (recognized references to passages actually supplied to the model).
 Each `CitationResponse` contains `id`, `source_id`, `source_title`,
-`source_locator`, `chunk_index`, `content`, and `truncated`.
+`source_reference`, `chunk_index`, `content`, and `truncated`.
+
+`source_reference` is descriptive origin metadata, such as a filename, URL, or
+external record identifier. It is not necessarily unique or accessible, and the
+backend does not use it to fetch the source. Current file ingestion supplies the
+filename. `source_title` is a computed display label: file references use their
+basename, while non-file references are preserved in full. This metadata contract
+does not imply URL or other connector ingestion is implemented.
 
 Citation IDs must refer to supplied passages. Unknown IDs or empty answer text
 cause 502. The structured citation list is authoritative; inline references are

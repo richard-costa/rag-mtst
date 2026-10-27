@@ -89,6 +89,11 @@ def test_api_schema_documents_search_semantics() -> None:
     assert "added as window context" in score_schema["description"]
     assert "not a probability" in score_schema["description"]
 
+    citation_schema = models["CitationResponse"]
+    assert "source_reference" in citation_schema["required"]
+    assert "source_locator" not in citation_schema["properties"]
+    assert "Not necessarily unique or accessible" in citation_schema["properties"]["source_reference"]["description"]
+
     search_schema = schema["paths"]["/search"]["post"]
     assert "groups are ranked by their best seed" in search_schema["description"]
     assert "Chunks within each group follow document order" in search_schema["description"]

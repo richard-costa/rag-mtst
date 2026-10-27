@@ -30,7 +30,7 @@ async def test_worker_indexes_durable_input_using_saved_settings(settings, stora
     assert completed is not None and completed.status == "completed" and completed.attempts == 1
     chunks = await documents.list_chunks(storage, settings.tenant_id)
     assert chunks and all(chunk.metadata["embedding_model"] == settings.embedding_model_name for chunk in chunks)
-    assert chunks[0].source_locator == "worker.md"
+    assert chunks[0].source_reference == "worker.md"
     queued_input = await jobs.get_ingestion_job_input(storage, settings.tenant_id, submitted.job.id)
     assert queued_input is not None and queued_input.input_path is None
     assert not list((settings.data_dir / "ingestion").iterdir())

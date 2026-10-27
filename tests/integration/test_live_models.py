@@ -38,7 +38,7 @@ async def test_hosted_generation_workflow(
         openai_api_key=os.getenv("OPENAI_API_KEY"), deepseek_api_key=os.getenv("DEEPSEEK_API_KEY"),
     )
     source = await documents.insert_source_with_chunks(storage,
-        tenant_id=settings.tenant_id, source_type="file", locator="/synthetic/hosted-smoke.md",
+        tenant_id=settings.tenant_id, source_type="file", reference="/synthetic/hosted-smoke.md",
         mime_type="text/markdown", content_hash="hosted-smoke",
         chunks=[ChunkInput(
             "Documents / Documentos: Bring an identity document and proof of address. "

@@ -98,7 +98,7 @@ async def enqueue_bytes(
     try:
         source, job = await jobs.create_ingestion_job(active_storage,
             tenant_id=active_settings.tenant_id, content_hash=content_hash,
-            locator=safe_name, mime_type=mimetypes.guess_type(safe_name)[0],
+            reference=safe_name, mime_type=mimetypes.guess_type(safe_name)[0],
             input_path=str(input_path), source_name=safe_name,
             extraction_profile=profile, configuration=configuration, reindex=reindex, job_id=job_id,
         )
@@ -187,7 +187,7 @@ async def add_bytes(
         source = await documents.insert_source_with_chunks(active_storage,
             tenant_id=active_settings.tenant_id,
             source_type="file",
-            locator=Path(source_name).name,
+            reference=Path(source_name).name,
             mime_type=mimetypes.guess_type(source_name)[0],
             content_hash=content_hash,
             chunks=embedded_chunks,
@@ -291,7 +291,7 @@ async def process_ingestion_job(job: IngestionJob, *, settings: Settings, storag
         content, source_name=queued.source_name, settings=restored,
         extraction_method=method, progress=progress,
     )
-    if not await jobs.complete_ingestion_job(storage, settings.tenant_id, job, locator=queued.source_name, chunks=chunks):
+    if not await jobs.complete_ingestion_job(storage, settings.tenant_id, job, reference=queued.source_name, chunks=chunks):
         raise RuntimeError("Ingestion job ownership was lost")
 
 

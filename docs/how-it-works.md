@@ -100,8 +100,9 @@ The CLI and demo are stateless for answers. See the
 
 PostgreSQL stores source metadata, extracted chunks, embeddings, ingestion jobs,
 conversations, and citation snapshots. Temporary upload bytes are staged on disk
-and removed after a terminal job. The source locator is descriptive, not a
-permanent download link. Backups, retention, and external exposure are operator
+and removed after a terminal job. The source reference is descriptive origin
+metadata, currently a filename, not a permanent download link or unique identity.
+Backups, retention, and external exposure are operator
 responsibilities; see [operations](operations.md).
 
 ## Next steps

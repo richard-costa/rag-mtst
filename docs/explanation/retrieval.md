@@ -74,10 +74,12 @@ citation list is authoritative. Inline references in the answer are optional,
 are not parsed, and do not need to duplicate that list. Empty citation lists are
 valid, but leave the answer uncited.
 
-Citations expose the exact supplied passage, source locator, chunk index, and
-truncation flag. They let a reader inspect what was available, not prove that the
-answer follows from it. JSON encoding and source-boundary instructions also do
-not guarantee resistance to prompt injection.
+Citations expose the exact supplied passage, `source_reference`, chunk index,
+and truncation flag. The reference is descriptive origin metadata; file ingestion
+currently supplies a filename, not a retained original or download link. It is
+not necessarily unique or accessible. Citations let a reader inspect what was
+available, not prove that the answer follows from it. JSON encoding and
+source-boundary instructions also do not guarantee resistance to prompt injection.
 
 ## Conversations Share the Same Budget
 

@@ -130,7 +130,7 @@ element("query-form").addEventListener("submit", (event) => {
     for (const citation of result.citations) {
       const entry = node("details");
       entry.append(node("summary", `[${citation.id}] ${citation.source_title} | chunk ${citation.chunk_index}`));
-      entry.append(node("p", `Source ${citation.source_id} | ${citation.source_locator}${citation.truncated ? " | Truncated" : ""}`, "metadata"));
+      entry.append(node("p", `Source ${citation.source_id} | ${citation.source_reference}${citation.truncated ? " | Truncated" : ""}`, "metadata"));
       entry.append(node("div", citation.content, "passage"));
       target.append(entry);
     }

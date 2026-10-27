@@ -19,7 +19,7 @@ async def get_source_by_content_hash(
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            SELECT id, tenant_id, type AS source_type, locator, mime_type,
+            SELECT id, tenant_id, type AS source_type, reference, mime_type,
                    content_hash, created_at, updated_at
             FROM sources
             WHERE tenant_id = %s AND content_hash = %s
@@ -55,19 +55,19 @@ async def insert_source(
     *,
     tenant_id: str,
     source_type: Literal["file", "url"],
-    locator: str,
+    reference: str,
     mime_type: str | None,
     content_hash: str,
 ) -> Source:
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            INSERT INTO sources (id, tenant_id, type, locator, mime_type, content_hash)
+            INSERT INTO sources (id, tenant_id, type, reference, mime_type, content_hash)
             VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, tenant_id, type AS source_type, locator, mime_type,
+            RETURNING id, tenant_id, type AS source_type, reference, mime_type,
                       content_hash, created_at, updated_at
             """,
-            (uuid4(), tenant_id, source_type, locator, mime_type, content_hash),
+            (uuid4(), tenant_id, source_type, reference, mime_type, content_hash),
         )
         row = await cursor.fetchone()
     assert row is not None
@@ -79,7 +79,7 @@ async def insert_source_with_chunks(
     *,
     tenant_id: str,
     source_type: Literal["file", "url"],
-    locator: str,
+    reference: str,
     mime_type: str | None,
     content_hash: str,
     chunks: list[ChunkInput],
@@ -87,12 +87,12 @@ async def insert_source_with_chunks(
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            INSERT INTO sources (id, tenant_id, type, locator, mime_type, content_hash)
+            INSERT INTO sources (id, tenant_id, type, reference, mime_type, content_hash)
             VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, tenant_id, type AS source_type, locator, mime_type,
+            RETURNING id, tenant_id, type AS source_type, reference, mime_type,
                       content_hash, created_at, updated_at
             """,
-            (uuid4(), tenant_id, source_type, locator, mime_type, content_hash),
+            (uuid4(), tenant_id, source_type, reference, mime_type, content_hash),
         )
         row = await cursor.fetchone()
         assert row is not None
@@ -148,7 +148,8 @@ async def list_chunks(database: Database, tenant_id: str) -> list[StoredChunk]:
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-              SELECT chunks.id, chunks.source_id, sources.locator AS source_locator,
+              SELECT chunks.id, chunks.source_id, sources.type AS source_type,
+                  sources.reference AS source_reference,
                   chunks.chunk_index, chunks.content, chunks.metadata
             FROM chunks
             JOIN sources ON sources.id = chunks.source_id
@@ -162,7 +163,8 @@ async def list_chunks(database: Database, tenant_id: str) -> list[StoredChunk]:
         StoredChunk(
             id=row["id"],
             source_id=row["source_id"],
-            source_locator=row["source_locator"],
+            source_type=row["source_type"],
+            source_reference=row["source_reference"],
             chunk_index=row["chunk_index"],
             content=row["content"],
             metadata=row["metadata"],
@@ -190,7 +192,8 @@ async def full_text_search(
                     to_tsvector('pg_catalog.simple'::regconfig, %s)
                 )) AS parsed(term)
             )
-            SELECT chunks.id, chunks.source_id, sources.locator AS source_locator,
+                 SELECT chunks.id, chunks.source_id, sources.type AS source_type,
+                     sources.reference AS source_reference,
                    chunks.chunk_index, chunks.content, chunks.metadata,
                    ts_rank_cd(chunks.search_vector, search_query.terms, 2) AS score
             FROM chunks
@@ -221,7 +224,8 @@ async def vector_search(
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            SELECT chunks.id, chunks.source_id, sources.locator AS source_locator,
+                 SELECT chunks.id, chunks.source_id, sources.type AS source_type,
+                     sources.reference AS source_reference,
                    chunks.chunk_index, chunks.content, chunks.metadata,
                    1 - (chunks.embedding <=> %s::vector) AS score
             FROM chunks
@@ -253,7 +257,8 @@ async def get_chunk_window(
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            SELECT chunks.id, chunks.source_id, sources.locator AS source_locator,
+                 SELECT chunks.id, chunks.source_id, sources.type AS source_type,
+                     sources.reference AS source_reference,
                    chunks.chunk_index, chunks.content, chunks.metadata
             FROM chunks
             JOIN sources ON sources.id = chunks.source_id

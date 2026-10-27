@@ -131,7 +131,7 @@ async def test_native_office_upload_persists_searchable_chunks(settings, storage
         chunks = await documents.list_chunks(storage, settings.tenant_id)
         assert any("| Bricks | 42 |" in chunk.content for chunk in chunks)
         assert any(chunk.metadata["headings"] == ["Native heading"] for chunk in chunks)
-        assert chunks[0].source_locator == source_name
+        assert chunks[0].source_reference == source_name
         assert not list((settings.data_dir / "ingestion").iterdir())
 
         matches = await client.post("/search", json={"query": "Bricks", "method": "lexical"})
@@ -159,7 +159,7 @@ async def test_extraction_profile_conflict_requires_explicit_reindex(settings, s
         with pytest.raises(ValueError, match="explicit reindexing is required"):
             await ingestion.add_bytes(content, source_name="profile.md", settings=settings, storage=storage)
     assert await documents.list_chunks(storage, settings.tenant_id) == old_chunks
-    assert original.source.locator == "profile.md"
+    assert original.source.reference == "profile.md"
 
     reindexed = await ingestion.add_bytes(
         content, source_name="profile.md", settings=settings, storage=storage, reindex=True,
