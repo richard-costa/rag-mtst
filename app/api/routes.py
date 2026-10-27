@@ -76,7 +76,14 @@ def create_router(settings: Settings, storage: Database) -> APIRouter:
         fields["source_id"] = str(job.source_id)
         return JobResponse(**fields)
 
-    @router.post("/search", response_model=list[SearchMatchResponse])
+    @router.post(
+        "/search", response_model=list[SearchMatchResponse],
+        description=(
+            "Return matching source chunks. In window mode, overlapping same-source windows are merged. "
+            "Chunks within each group follow document order; groups are ranked by their best seed. "
+            "Preserve this order rather than sorting individual chunks by score."
+        ),
+    )
     async def search_sources(request: SearchRequest) -> list[SearchMatchResponse]:
         try:
             matches = await search(

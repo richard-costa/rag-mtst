@@ -72,6 +72,30 @@ def test_api_schema_is_public_and_documents_bearer_authentication() -> None:
     assert schema["paths"]["/jobs/{job_id}"]["get"]["security"] == [{"HTTPBearer": []}]
 
 
+def test_api_schema_documents_search_semantics() -> None:
+    schema = create_app(Settings(api_key="test-key")).openapi()
+    models = schema["components"]["schemas"]
+    for model_name in ("SearchRequest", "AskRequest", "ConversationTurnRequest"):
+        properties = models[model_name]["properties"]
+        assert "counts seed matches before context expansion" in properties["limit"]["description"]
+        assert "server-configured method" in properties["method"]["description"]
+        assert "used only by the window method" in properties["window"]["description"]
+
+    match_schema = models["SearchMatchResponse"]
+    score_schema = match_schema["properties"]["score"]
+    assert "score" in match_schema["required"]
+    assert {option["type"] for option in score_schema["anyOf"]} == {"number", "null"}
+    assert "not comparable across methods" in score_schema["description"]
+    assert "added as window context" in score_schema["description"]
+    assert "not a probability" in score_schema["description"]
+
+    search_schema = schema["paths"]["/search"]["post"]
+    assert "groups are ranked by their best seed" in search_schema["description"]
+    assert "Chunks within each group follow document order" in search_schema["description"]
+    assert "rather than sorting individual chunks by score" in search_schema["description"]
+    assert search_schema["responses"]["200"]["content"]["application/json"]["schema"]["type"] == "array"
+
+
 def test_job_status_requires_authentication_before_database_access(monkeypatch) -> None:
     lookup = AsyncMock(side_effect=AssertionError("Status lookup must not execute"))
     monkeypatch.setattr("app.api.routes.jobs.get_ingestion_job", lookup)
