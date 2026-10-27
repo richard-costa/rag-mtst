@@ -24,7 +24,9 @@ class Source:
 
     @property
     def title(self) -> str:
-        return Path(self.reference).name if self.source_type == "file" else self.reference
+        return (
+            Path(self.reference).name if self.source_type == "file" else self.reference
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +62,11 @@ class StoredChunk:
 
     @property
     def source_title(self) -> str:
-        return Path(self.source_reference).name if self.source_type == "file" else self.source_reference
+        return (
+            Path(self.source_reference).name
+            if self.source_type == "file"
+            else self.source_reference
+        )
 
 
 @dataclass(frozen=True, slots=True)

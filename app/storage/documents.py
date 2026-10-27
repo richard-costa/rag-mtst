@@ -31,7 +31,9 @@ async def get_source_by_content_hash(
 
 
 async def get_source_extraction_profile(
-    database: Database, tenant_id: str, source_id: UUID,
+    database: Database,
+    tenant_id: str,
+    source_id: UUID,
 ) -> dict[str, Any] | None:
     async with database.connection() as connection:
         cursor = await connection.execute(

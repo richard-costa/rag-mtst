@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from logging.config import fileConfig
 import os
+from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-
 
 # ---------------------------------------------------------------------------
 # Alembic configuration
@@ -22,6 +21,7 @@ if config.config_file_name is not None:
 # ---------------------------------------------------------------------------
 # Alembic uses SQLAlchemy's psycopg dialect while the application uses psycopg URLs.
 
+
 def _sqlalchemy_url(url: str) -> str:
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+psycopg://", 1)
@@ -30,7 +30,9 @@ def _sqlalchemy_url(url: str) -> str:
 
 database_url = os.getenv("DATABASE_URL")
 if database_url:
-    config.set_main_option("sqlalchemy.url", _sqlalchemy_url(database_url).replace("%", "%%"))
+    config.set_main_option(
+        "sqlalchemy.url", _sqlalchemy_url(database_url).replace("%", "%%")
+    )
 
 target_metadata = None
 
@@ -39,6 +41,7 @@ target_metadata = None
 # Offline migration execution
 # ---------------------------------------------------------------------------
 # SQL is generated without opening a database connection in offline mode.
+
 
 def run_migrations_offline() -> None:
     context.configure(
@@ -55,6 +58,7 @@ def run_migrations_offline() -> None:
 # Online migration execution
 # ---------------------------------------------------------------------------
 # A temporary SQLAlchemy connection applies migrations to the configured database.
+
 
 def run_migrations_online() -> None:
     connectable = engine_from_config(

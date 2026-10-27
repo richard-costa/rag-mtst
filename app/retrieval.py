@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import re
+from dataclasses import dataclass, replace
 from typing import Literal
 from uuid import UUID
 
 from app.config import Settings, get_settings
 from app.embeddings import embed_texts
+from app.storage import documents
 from app.storage.database import Database
 from app.storage.records import StoredChunk
-from app.storage import documents
-
 
 RetrievalMethod = Literal["cosine", "window", "lexical", "hybrid"]
 
@@ -21,6 +20,7 @@ RetrievalMethod = Literal["cosine", "window", "lexical", "hybrid"]
 # Retrieval result
 # ---------------------------------------------------------------------------
 # This value exposes the chunk fields needed by generation and transport adapters.
+
 
 @dataclass(frozen=True, slots=True)
 class SearchResult:
@@ -36,6 +36,7 @@ class SearchResult:
 # Retrieval entry point
 # ---------------------------------------------------------------------------
 # Adapters select a strategy here; query embeddings are generated only for vector search.
+
 
 async def search(
     query: str,
@@ -73,11 +74,17 @@ async def search(
     vectors = await embed_texts([query], settings=active_settings)
     if selected_method == "cosine":
         return await search_cosine(
-            vectors[0], limit=result_limit, settings=active_settings, storage=active_storage
+            vectors[0],
+            limit=result_limit,
+            settings=active_settings,
+            storage=active_storage,
         )
     return await search_with_windows(
-        vectors[0], limit=result_limit, window=context_window,
-        settings=active_settings, storage=active_storage,
+        vectors[0],
+        limit=result_limit,
+        window=context_window,
+        settings=active_settings,
+        storage=active_storage,
     )
 
 
@@ -86,10 +93,12 @@ async def search(
 # ---------------------------------------------------------------------------
 # Postgres ranks only the current tenant's vectors from the configured embedding space.
 
+
 async def search_cosine(
     embedding: list[float], *, limit: int, settings: Settings, storage: Database
 ) -> list[SearchResult]:
-    chunks = await documents.vector_search(storage,
+    chunks = await documents.vector_search(
+        storage,
         tenant_id=settings.tenant_id,
         embedding=embedding,
         embedding_provider=settings.embedding_provider,
@@ -104,19 +113,29 @@ async def search_cosine(
 # ---------------------------------------------------------------------------
 # Rank windows by their best seed and keep merged same-source context in document order.
 
+
 async def search_with_windows(
-    embedding: list[float], *, limit: int, window: int,
-    settings: Settings, storage: Database,
+    embedding: list[float],
+    *,
+    limit: int,
+    window: int,
+    settings: Settings,
+    storage: Database,
 ) -> list[SearchResult]:
-    seeds = await search_cosine(embedding, limit=limit, settings=settings, storage=storage)
+    seeds = await search_cosine(
+        embedding, limit=limit, settings=settings, storage=storage
+    )
     if window == 0:
         return seeds
 
     matches = {(seed.source_id, seed.chunk_index): seed for seed in seeds}
     windows = []
     for rank, seed in enumerate(seeds):
-        windows.append((seed.source_id, seed.chunk_index - window, seed.chunk_index + window, rank))
-        neighbors = await documents.get_chunk_window(storage,
+        windows.append(
+            (seed.source_id, seed.chunk_index - window, seed.chunk_index + window, rank)
+        )
+        neighbors = await documents.get_chunk_window(
+            storage,
             tenant_id=settings.tenant_id,
             source_id=UUID(seed.source_id),
             chunk_index=seed.chunk_index,
@@ -131,15 +150,23 @@ async def search_with_windows(
     for source_id, start, end, rank in sorted(windows):
         if merged and merged[-1][0] == source_id and start <= merged[-1][2]:
             previous = merged[-1]
-            merged[-1] = (source_id, previous[1], max(end, previous[2]), min(rank, previous[3]))
+            merged[-1] = (
+                source_id,
+                previous[1],
+                max(end, previous[2]),
+                min(rank, previous[3]),
+            )
         else:
             merged.append((source_id, start, end, rank))
     return [
         match
         for source_id, start, end, rank in sorted(merged, key=lambda group: group[3])
         for match in sorted(
-            (match for match in matches.values()
-             if match.source_id == source_id and start <= match.chunk_index <= end),
+            (
+                match
+                for match in matches.values()
+                if match.source_id == source_id and start <= match.chunk_index <= end
+            ),
             key=lambda match: match.chunk_index,
         )
     ]
@@ -150,13 +177,17 @@ async def search_with_windows(
 # ---------------------------------------------------------------------------
 # Indexed language-neutral word matching needs no embedding provider.
 
+
 async def search_lexical(
     query: str, *, limit: int, settings: Settings, storage: Database
 ) -> list[SearchResult]:
     if not _terms(query):
         raise ValueError("The search query must contain at least one word")
-    chunks = await documents.full_text_search(storage,
-        tenant_id=settings.tenant_id, query=query, limit=limit,
+    chunks = await documents.full_text_search(
+        storage,
+        tenant_id=settings.tenant_id,
+        query=query,
+        limit=limit,
     )
     return [_search_result(chunk, score=chunk.score) for chunk in chunks]
 
@@ -165,6 +196,7 @@ async def search_lexical(
 # Hybrid retrieval
 # ---------------------------------------------------------------------------
 # Fuse rank positions; lexical and cosine scores do not share a meaningful scale.
+
 
 async def search_hybrid(
     query: str, *, limit: int, settings: Settings, storage: Database
@@ -175,10 +207,16 @@ async def search_hybrid(
     candidate_limit = max(20, 4 * limit)
     vectors = await embed_texts([query], settings=settings)
     cosine = await search_cosine(
-        vectors[0], limit=candidate_limit, settings=settings, storage=storage,
+        vectors[0],
+        limit=candidate_limit,
+        settings=settings,
+        storage=storage,
     )
     lexical = await search_lexical(
-        query, limit=candidate_limit, settings=settings, storage=storage,
+        query,
+        limit=candidate_limit,
+        settings=settings,
+        storage=storage,
     )
     scores: dict[tuple[str, int], float] = {}
     matches: dict[tuple[str, int], SearchResult] = {}
@@ -188,7 +226,10 @@ async def search_hybrid(
             scores[identity] = scores.get(identity, 0.0) + 1 / (60 + rank)
             matches.setdefault(identity, match)
     ordered = sorted(scores, key=lambda identity: (-scores[identity], *identity))
-    return [replace(matches[identity], score=scores[identity]) for identity in ordered[:limit]]
+    return [
+        replace(matches[identity], score=scores[identity])
+        for identity in ordered[:limit]
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +256,7 @@ async def search_multi_query(
 # Result conversion and text normalization
 # ---------------------------------------------------------------------------
 # Context chunks deliberately have no relevance score; lexical terms ignore punctuation.
+
 
 def _search_result(chunk: StoredChunk, *, score: float | None) -> SearchResult:
     return SearchResult(

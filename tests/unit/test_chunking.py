@@ -8,22 +8,38 @@ from app.extraction import ExtractedContent, ExtractedPage
 
 @pytest.mark.parametrize("group_adjacent", [False, True])
 @pytest.mark.parametrize("kind", ["page", "slide"])
-def test_source_page_ranges_include_blank_pages_without_fabricating_text(group_adjacent, kind):
-    extracted = ExtractedContent.from_pages((
-        ExtractedPage(1, "# Shared title\n\nFirst body.", kind),
-        ExtractedPage(2, "", kind),
-        ExtractedPage(3, "Second body.", kind),
-    ), format="pdf", profile={"method": "test"})
-    chunks = chunk_markdown(extracted.text, 100, group_adjacent=group_adjacent, pages=extracted.pages)
+def test_source_page_ranges_include_blank_pages_without_fabricating_text(
+    group_adjacent, kind
+):
+    extracted = ExtractedContent.from_pages(
+        (
+            ExtractedPage(1, "# Shared title\n\nFirst body.", kind),
+            ExtractedPage(2, "", kind),
+            ExtractedPage(3, "Second body.", kind),
+        ),
+        format="pdf",
+        profile={"method": "test"},
+    )
+    chunks = chunk_markdown(
+        extracted.text, 100, group_adjacent=group_adjacent, pages=extracted.pages
+    )
 
     assert len(chunks) == (1 if group_adjacent else 2)
     assert all(chunk.metadata["headings"] == ["Shared title"] for chunk in chunks)
     assert all("page 2" not in chunk.content.casefold() for chunk in chunks)
     assert chunks[0].metadata["source_pages"] == {
-        "kind": kind, "start": 1, "end": 3 if group_adjacent else 1, "scope": "body",
+        "kind": kind,
+        "start": 1,
+        "end": 3 if group_adjacent else 1,
+        "scope": "body",
     }
     if not group_adjacent:
-        assert chunks[1].metadata["source_pages"] == {"kind": kind, "start": 3, "end": 3, "scope": "body"}
+        assert chunks[1].metadata["source_pages"] == {
+            "kind": kind,
+            "start": 3,
+            "end": 3,
+            "scope": "body",
+        }
         assert chunks[1].content == "# Shared title\n\nSecond body."
         assert chunks[1].page_number == (3 if kind == "page" else None)
 
@@ -37,6 +53,7 @@ def test_page_provenance_rejects_text_mismatch():
 # Markdown provenance
 # ---------------------------------------------------------------------------
 # Heading hierarchy and source line ranges must travel with each chunk.
+
 
 def test_markdown_chunks_include_heading_context_and_provenance() -> None:
     chunks = chunk_markdown(
@@ -67,6 +84,7 @@ def test_markdown_chunks_include_heading_context_and_provenance() -> None:
 # ---------------------------------------------------------------------------
 # Sections remain separate and fenced code blocks stay intact even when oversized.
 
+
 def test_markdown_chunks_do_not_cross_sections_or_split_code_fences() -> None:
     chunks = chunk_markdown(
         "# First\n\nOne two three.\n\n# Second\n\n```python\nalpha beta gamma delta\n```",
@@ -93,21 +111,21 @@ def test_long_sentence_splits_at_words_with_actual_line_ranges() -> None:
 
     assert [chunk.content for chunk in chunks] == ["one two", "three four", "five six"]
     assert [
-        (chunk.metadata["start_line"], chunk.metadata["end_line"])
-        for chunk in chunks
+        (chunk.metadata["start_line"], chunk.metadata["end_line"]) for chunk in chunks
     ] == [(1, 1), (2, 2), (3, 3)]
 
 
 def test_split_prose_preserves_whitespace_and_tracks_multiline_sentences() -> None:
-    chunks = chunk_markdown("First  sentence\nends here.\nNext sentence ends.", chunk_size=4)
+    chunks = chunk_markdown(
+        "First  sentence\nends here.\nNext sentence ends.", chunk_size=4
+    )
 
     assert [chunk.content for chunk in chunks] == [
         "First  sentence\nends here.",
         "Next sentence ends.",
     ]
     assert [
-        (chunk.metadata["start_line"], chunk.metadata["end_line"])
-        for chunk in chunks
+        (chunk.metadata["start_line"], chunk.metadata["end_line"]) for chunk in chunks
     ] == [(1, 2), (3, 3)]
 
 
@@ -159,8 +177,7 @@ def test_list_splits_between_items_without_losing_nested_indentation() -> None:
         "- second item",
     ]
     assert [
-        (chunk.metadata["start_line"], chunk.metadata["end_line"])
-        for chunk in chunks
+        (chunk.metadata["start_line"], chunk.metadata["end_line"]) for chunk in chunks
     ] == [(1, 2), (3, 3)]
 
 
@@ -185,6 +202,7 @@ def test_chunk_size_must_be_positive(chunk_size: int) -> None:
 # Documented regex examples
 # ---------------------------------------------------------------------------
 # Public chunker results verify the syntax examples beside the patterns.
+
 
 @pytest.mark.parametrize(
     "heading, title, rendered_heading",

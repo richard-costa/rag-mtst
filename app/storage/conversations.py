@@ -1,7 +1,8 @@
 """Conversation history and atomic question/reply transactions."""
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from typing import Any
 from uuid import UUID, uuid4
 
 import psycopg
@@ -49,7 +50,9 @@ async def conversation_turn(
                 (tenant_id, conversation_id),
             )
         except psycopg.errors.LockNotAvailable as error:
-            raise ConversationBusy("A turn is already active for this conversation") from error
+            raise ConversationBusy(
+                "A turn is already active for this conversation"
+            ) from error
         if await cursor.fetchone() is None:
             raise ConversationNotFound("Conversation not found")
         history = await _conversation_messages(connection, conversation_id, limit=20)
@@ -64,8 +67,17 @@ async def conversation_turn(
             VALUES (%s, %s, %s, 'user', %s, '[]'::jsonb),
                    (%s, %s, %s, 'assistant', %s, %s)
             """,
-            (uuid4(), conversation_id, sequence, question,
-             uuid4(), conversation_id, sequence + 1, turn.answer, Jsonb(turn.citations)),
+            (
+                uuid4(),
+                conversation_id,
+                sequence,
+                question,
+                uuid4(),
+                conversation_id,
+                sequence + 1,
+                turn.answer,
+                Jsonb(turn.citations),
+            ),
         )
         await connection.execute(
             "UPDATE conversations SET updated_at = clock_timestamp() WHERE id = %s",
@@ -74,7 +86,12 @@ async def conversation_turn(
 
 
 async def list_messages(
-    database: Database, tenant_id: str, conversation_id: UUID, *, limit: int = 50, before: int | None = None,
+    database: Database,
+    tenant_id: str,
+    conversation_id: UUID,
+    *,
+    limit: int = 50,
+    before: int | None = None,
 ) -> list[Message]:
     if not 1 <= limit <= 100:
         raise ValueError("History limit must be between 1 and 100")
@@ -85,12 +102,17 @@ async def list_messages(
         )
         if await cursor.fetchone() is None:
             raise ConversationNotFound("Conversation not found")
-        return await _conversation_messages(connection, conversation_id, limit=limit, before=before)
+        return await _conversation_messages(
+            connection, conversation_id, limit=limit, before=before
+        )
 
 
 async def _conversation_messages(
-    connection: psycopg.AsyncConnection[dict[str, Any]], conversation_id: UUID,
-    *, limit: int, before: int | None = None,
+    connection: psycopg.AsyncConnection[dict[str, Any]],
+    conversation_id: UUID,
+    *,
+    limit: int,
+    before: int | None = None,
 ) -> list[Message]:
     cursor = await connection.execute(
         """

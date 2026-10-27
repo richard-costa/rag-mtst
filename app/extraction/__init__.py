@@ -7,7 +7,6 @@ import asyncio
 from app.config import Settings, get_settings
 from app.extraction import parser, visual
 
-
 # ---------------------------------------------------------------------------
 # Parser contract re-exports
 # ---------------------------------------------------------------------------
@@ -20,11 +19,16 @@ SUPPORTED_SUFFIXES = parser.SUPPORTED_SUFFIXES
 
 def validate_extraction_method(method: str) -> None:
     if method not in {"parser", "visual"}:
-        raise ValueError(f"Unsupported extraction method {method!r}; choose parser or visual")
+        raise ValueError(
+            f"Unsupported extraction method {method!r}; choose parser or visual"
+        )
 
 
 def get_extraction_profile(
-    suffix: str, *, extraction_method: str = "parser", settings: Settings | None = None,
+    suffix: str,
+    *,
+    extraction_method: str = "parser",
+    settings: Settings | None = None,
 ) -> dict[str, object]:
     validate_extraction_method(extraction_method)
     if extraction_method == "visual":
@@ -37,6 +41,7 @@ def get_extraction_profile(
 # ---------------------------------------------------------------------------
 # Parser work runs in a thread so async API and ingestion code do not block.
 
+
 async def extract_source(
     content: bytes,
     suffix: str,
@@ -47,7 +52,9 @@ async def extract_source(
     validate_extraction_method(extraction_method)
     active_settings = settings or get_settings()
     if extraction_method == "visual":
-        return await visual.extract_with_visual(content, suffix, settings=active_settings)
+        return await visual.extract_with_visual(
+            content, suffix, settings=active_settings
+        )
     return await asyncio.to_thread(
         parser.extract_with_parser,
         content,

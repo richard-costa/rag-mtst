@@ -1,0 +1,28 @@
+minimum_pre_commit_version: "4.0.0"
+default_install_hook_types: [pre-push]
+default_stages: [pre-push]
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-imports
+        name: Ruff import fixes
+        entry: ruff check --select I001 --fix --force-exclude
+        language: python
+        additional_dependencies: [ruff==0.17.1]
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: Ruff formatting
+        entry: ruff format --force-exclude
+        language: python
+        additional_dependencies: [ruff==0.17.1]
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-check
+        name: Ruff lint check
+        entry: ruff check .
+        language: python
+        additional_dependencies: [ruff==0.17.1]
+        pass_filenames: false
+        always_run: true

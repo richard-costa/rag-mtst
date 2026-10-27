@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-import json
 
-from pydantic import BaseModel, ConfigDict
 import tiktoken
+from pydantic import BaseModel, ConfigDict
 
 from app import llm
 from app.config import Settings, get_settings
@@ -15,11 +15,11 @@ from app.retrieval import RetrievalMethod, SearchResult, search
 from app.storage.database import Database
 from app.storage.records import Message
 
-
 # ---------------------------------------------------------------------------
 # Answer records
 # ---------------------------------------------------------------------------
 # Citations map numeric references to the exact passage supplied to the model.
+
 
 class GenerationError(RuntimeError):
     """A generation provider failed or returned an unusable answer."""
@@ -34,6 +34,7 @@ class Citation:
     chunk_index: int
     content: str
     truncated: bool
+
 
 @dataclass(frozen=True, slots=True)
 class Answer:
@@ -68,6 +69,7 @@ no supplied passage supports the answer. Never use unknown source IDs.
 # ---------------------------------------------------------------------------
 # Retrieval controls remain independent of the answer provider/model.
 
+
 async def answer(
     question: str,
     *,
@@ -95,20 +97,32 @@ async def answer(
             citations=[],
         )
 
-    system = llm.system_prompt(_SYSTEM_PROMPT, _AnswerResponse, active_settings.generation_provider)
+    system = llm.system_prompt(
+        _SYSTEM_PROMPT, _AnswerResponse, active_settings.generation_provider
+    )
     budget = active_settings.generation_input_tokens - 64
     if active_settings.generation_provider != "deepseek":
-        budget -= _token_count(json.dumps(_AnswerResponse.model_json_schema(), ensure_ascii=False))
-    user_prompt, sources = _build_context(question, matches, budget, history=history, system=system)
+        budget -= _token_count(
+            json.dumps(_AnswerResponse.model_json_schema(), ensure_ascii=False)
+        )
+    user_prompt, sources = _build_context(
+        question, matches, budget, history=history, system=system
+    )
     try:
         async with llm.create_client(
-            active_settings.generation_provider, api_key=api_key, base_url=base_url,
+            active_settings.generation_provider,
+            api_key=api_key,
+            base_url=base_url,
             timeout=active_settings.generation_timeout_seconds,
         ) as client:
             response, _ = await llm.generate_structured_response(
-                client, provider=active_settings.generation_provider,
-                model=active_settings.generation_model or "", response_model=_AnswerResponse,
-                system=system, user=user_prompt, max_tokens=active_settings.generation_max_tokens,
+                client,
+                provider=active_settings.generation_provider,
+                model=active_settings.generation_model or "",
+                response_model=_AnswerResponse,
+                system=system,
+                user=user_prompt,
+                max_tokens=active_settings.generation_max_tokens,
             )
     except llm.StructuredOutputError as error:
         raise GenerationError(f"The generation {error}") from error
@@ -116,25 +130,46 @@ async def answer(
     text = response.text.strip()
     cited_ids = set(response.citations)
     if not text or not cited_ids.issubset(source.id for source in sources):
-        raise GenerationError("The generation API returned an empty answer or invalid citations")
-    return Answer(text, matches, [source for source in sources if source.id in cited_ids])
+        raise GenerationError(
+            "The generation API returned an empty answer or invalid citations"
+        )
+    return Answer(
+        text, matches, [source for source in sources if source.id in cited_ids]
+    )
 
 
 def _generation_endpoint(settings: Settings) -> tuple[str, str]:
     if settings.generation_provider not in llm.PROVIDERS:
-        raise ValueError("RAG_GENERATION_PROVIDER must be openai, deepseek, ollama, or anthropic")
+        raise ValueError(
+            "RAG_GENERATION_PROVIDER must be openai, deepseek, ollama, or anthropic"
+        )
     if not settings.generation_model or not settings.generation_model.strip():
-        raise ValueError("Set RAG_GENERATION_MODEL to an available chat model for the selected provider")
-    if min(settings.generation_input_tokens, settings.generation_max_tokens, settings.generation_timeout_seconds) <= 0:
-        raise ValueError("Generation prompt, output, and timeout limits must be positive")
+        raise ValueError(
+            "Set RAG_GENERATION_MODEL to an available chat model for the selected provider"
+        )
+    if (
+        min(
+            settings.generation_input_tokens,
+            settings.generation_max_tokens,
+            settings.generation_timeout_seconds,
+        )
+        <= 0
+    ):
+        raise ValueError(
+            "Generation prompt, output, and timeout limits must be positive"
+        )
     return (
         llm.api_key(settings.generation_provider, settings),
-        llm.endpoint(settings.generation_provider, settings, settings.generation_base_url),
+        llm.endpoint(
+            settings.generation_provider, settings, settings.generation_base_url
+        ),
     )
 
 
 def _user_prompt(
-    question: str, sources: list[dict[str, int | str]], history: list[dict[str, str]] | None = None,
+    question: str,
+    sources: list[dict[str, int | str]],
+    history: list[dict[str, str]] | None = None,
 ) -> str:
     payload: dict[str, object] = {"question": question, "sources": sources}
     if history:
@@ -143,7 +178,11 @@ def _user_prompt(
 
 
 def _build_context(
-    question: str, matches: list[SearchResult], budget: int, *, history: Sequence[Message] = (),
+    question: str,
+    matches: list[SearchResult],
+    budget: int,
+    *,
+    history: Sequence[Message] = (),
     system: str = _SYSTEM_PROMPT,
 ) -> tuple[str, list[Citation]]:
     system_tokens = _token_count(system)
@@ -158,13 +197,19 @@ def _build_context(
     )
     recent = history[-20:]
     for index in range(len(recent) - 2, -1, -2):
-        pair = recent[index:index + 2]
+        pair = recent[index : index + 2]
         if [message.role for message in pair] != ["user", "assistant"]:
-            raise ValueError("Conversation history must contain complete user/assistant turns")
+            raise ValueError(
+                "Conversation history must contain complete user/assistant turns"
+            )
         candidate_history = [
             {"role": message.role, "content": message.content} for message in pair
         ] + selected_history
-        if _token_count(_user_prompt(question, [], candidate_history)) - empty_prompt_size > history_budget:
+        if (
+            _token_count(_user_prompt(question, [], candidate_history))
+            - empty_prompt_size
+            > history_budget
+        ):
             break
         selected_history = candidate_history
     sources: list[dict[str, int | str]] = []
@@ -175,7 +220,11 @@ def _build_context(
         while lower + 1 < upper:
             middle = (lower + upper) // 2
             candidate = [*sources, {"id": source_id, "content": match.content[:middle]}]
-            if system_tokens + _token_count(_user_prompt(question, candidate, selected_history)) <= budget:
+            if (
+                system_tokens
+                + _token_count(_user_prompt(question, candidate, selected_history))
+                <= budget
+            ):
                 lower = middle
             else:
                 upper = middle
@@ -183,15 +232,23 @@ def _build_context(
             break
         content = match.content[:lower]
         sources.append({"id": source_id, "content": content})
-        citations.append(Citation(
-            id=source_id, source_id=match.source_id, source_title=match.source_title,
-            source_reference=match.source_reference, chunk_index=match.chunk_index,
-            content=content, truncated=lower < len(match.content),
-        ))
+        citations.append(
+            Citation(
+                id=source_id,
+                source_id=match.source_id,
+                source_title=match.source_title,
+                source_reference=match.source_reference,
+                chunk_index=match.chunk_index,
+                content=content,
+                truncated=lower < len(match.content),
+            )
+        )
         if lower < len(match.content):
             break
     if not sources:
-        raise ValueError("Generation prompt budget is too small to include a source passage")
+        raise ValueError(
+            "Generation prompt budget is too small to include a source passage"
+        )
     return _user_prompt(question, sources, selected_history), citations
 
 

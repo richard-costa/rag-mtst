@@ -81,6 +81,32 @@ For explanations, expected output, and troubleshooting, use the
 The [documentation index](docs/index.md) provides the full reading path.
 Future plans are in the [roadmap](ROADMAP.md).
 
+## Optional push checks
+
+Local Ruff automation is opt-in and works with any Git host. Cloning the
+repository or installing dependencies does not activate hooks. To enable it
+in your checkout:
+
+```bash
+uv run pre-commit install --hook-type pre-push
+```
+
+Before each push, the hook fixes import ordering, formats changed Python files,
+and checks lint across the repository. It does not run on commits. Other lint
+rules report findings without automatically changing code; unsafe fixes are
+disabled. Markdown files are excluded from Ruff checks and formatting.
+
+If files change, the push stops: review and commit those changes, then push again.
+Unresolved lint findings also stop the push and require review. The hook never
+creates or amends commits. Its isolated Ruff environment is downloaded on first
+use and reused afterward; no GitHub service is required.
+
+To disable the hook in your checkout:
+
+```bash
+uv run pre-commit uninstall --hook-type pre-push
+```
+
 ## Project status
 
 **Pre-release; trusted single-tenant backend.** The HTTP API uses one shared

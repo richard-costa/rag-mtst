@@ -13,27 +13,36 @@ from app.storage import documents, jobs
 from app.storage.database import Database
 from app.storage.records import ChunkInput
 
-pytestmark = pytest.mark.usefixtures('deterministic_embeddings')
+pytestmark = pytest.mark.usefixtures("deterministic_embeddings")
 
 
-async def test_enqueue_stages_shared_files_without_inference(settings, storage, monkeypatch):
+async def test_enqueue_stages_shared_files_without_inference(
+    settings, storage, monkeypatch
+):
     def unexpected(*args, **kwargs):
         pytest.fail("Submission must not extract, embed, or persist an archive file")
 
     monkeypatch.setattr(ingestion, "extract_source", unexpected)
     monkeypatch.setattr(ingestion, "embed_texts", unexpected)
     settings = replace(
-        settings, openai_api_key="private-openai", anthropic_api_key="private-anthropic",
-        deepseek_api_key="private-deepseek", api_key="private-api",
+        settings,
+        openai_api_key="private-openai",
+        anthropic_api_key="private-anthropic",
+        deepseek_api_key="private-deepseek",
+        api_key="private-api",
     )
     document = settings.data_dir.parent / "queued.md"
     document.write_bytes(b"# Queued\n\nOriginal document.")
-    submitted = await ingestion.enqueue_file(document, settings=settings, storage=storage)
+    submitted = await ingestion.enqueue_file(
+        document, settings=settings, storage=storage
+    )
     document.unlink()
 
     assert submitted.job is not None and submitted.job.status == "pending"
     restarted_storage = Database(settings.database_url)
-    queued_input = await jobs.get_ingestion_job_input(restarted_storage, settings.tenant_id, submitted.job.id)
+    queued_input = await jobs.get_ingestion_job_input(
+        restarted_storage, settings.tenant_id, submitted.job.id
+    )
     assert queued_input is not None
     assert queued_input.input_path is not None
     staged = Path(queued_input.input_path)
@@ -41,11 +50,16 @@ async def test_enqueue_stages_shared_files_without_inference(settings, storage, 
     assert not hasattr(queued_input, "content")
     assert queued_input.source_name == "queued.md"
     assert queued_input.extraction_profile == {
-        "method": "parser", "format": "md", "engine": "utf-8", "errors": "replace",
+        "method": "parser",
+        "format": "md",
+        "engine": "utf-8",
+        "errors": "replace",
     }
     assert queued_input.configuration == {
-        "chunk_size": settings.chunk_size, "chunk_group_adjacent": True,
-        "embedding_provider": "openai", "embedding_model": "text-embedding-3-small",
+        "chunk_size": settings.chunk_size,
+        "chunk_group_adjacent": True,
+        "embedding_provider": "openai",
+        "embedding_model": "text-embedding-3-small",
         "embedding_base_url": "https://api.openai.com/v1",
     }
     assert "private-" not in json.dumps(queued_input.configuration)
@@ -54,16 +68,22 @@ async def test_enqueue_stages_shared_files_without_inference(settings, storage, 
     assert not settings.source_dir.exists()
 
     duplicate = await ingestion.enqueue_bytes(
-        staged.read_bytes(), source_name="renamed.md", settings=replace(settings, openai_api_key="rotated"),
+        staged.read_bytes(),
+        source_name="renamed.md",
+        settings=replace(settings, openai_api_key="rotated"),
         storage=restarted_storage,
     )
     assert duplicate.job == submitted.job
     with pytest.raises(ValueError, match="active ingestion job"):
         await ingestion.enqueue_bytes(
-            staged.read_bytes(), source_name="queued.md", settings=replace(settings, chunk_size=50),
+            staged.read_bytes(),
+            source_name="queued.md",
+            settings=replace(settings, chunk_size=50),
             storage=storage,
         )
-    assert [path for path in (settings.data_dir / "ingestion").rglob("*") if path.is_file()] == [staged]
+    assert [
+        path for path in (settings.data_dir / "ingestion").rglob("*") if path.is_file()
+    ] == [staged]
 
 
 async def test_enqueue_failure_removes_its_staged_file(settings, storage, monkeypatch):
@@ -74,27 +94,46 @@ async def test_enqueue_failure_removes_its_staged_file(settings, storage, monkey
     monkeypatch.setattr(jobs, "create_ingestion_job", fail_enqueue)
     with pytest.raises(ValueError, match="Synthetic enqueue rejection"):
         await ingestion.enqueue_bytes(
-            b"Temporary input", source_name="rejected.md", settings=settings, storage=storage,
+            b"Temporary input",
+            source_name="rejected.md",
+            settings=settings,
+            storage=storage,
         )
     assert not list((settings.data_dir / "ingestion").iterdir())
 
 
-async def test_enqueue_existing_source_requires_explicit_profile_change_and_preserves_chunks(settings, storage):
+async def test_enqueue_existing_source_requires_explicit_profile_change_and_preserves_chunks(
+    settings, storage
+):
     content = b"# Existing\n\nKeep the indexed content."
-    indexed = await ingestion.add_bytes(content, source_name="existing.md", settings=settings, storage=storage)
+    indexed = await ingestion.add_bytes(
+        content, source_name="existing.md", settings=settings, storage=storage
+    )
     original_chunks = await documents.list_chunks(storage, settings.tenant_id)
-    duplicate = await ingestion.enqueue_bytes(content, source_name="existing.md", settings=settings, storage=storage)
+    duplicate = await ingestion.enqueue_bytes(
+        content, source_name="existing.md", settings=settings, storage=storage
+    )
     assert duplicate.source == indexed.source and duplicate.job is None
 
-    await documents.replace_chunks(storage,
-        tenant_id=settings.tenant_id, source_id=indexed.source.id,
-        chunks=[ChunkInput("Keep this old profile", {"extraction": {"method": "different"}})],
+    await documents.replace_chunks(
+        storage,
+        tenant_id=settings.tenant_id,
+        source_id=indexed.source.id,
+        chunks=[
+            ChunkInput("Keep this old profile", {"extraction": {"method": "different"}})
+        ],
     )
     with pytest.raises(ValueError, match="explicit reindexing"):
-        await ingestion.enqueue_bytes(content, source_name="existing.md", settings=settings, storage=storage)
+        await ingestion.enqueue_bytes(
+            content, source_name="existing.md", settings=settings, storage=storage
+        )
     before_reindex = await documents.list_chunks(storage, settings.tenant_id)
     submitted = await ingestion.enqueue_bytes(
-        content, source_name="existing.md", settings=settings, storage=storage, reindex=True,
+        content,
+        source_name="existing.md",
+        settings=settings,
+        storage=storage,
+        reindex=True,
     )
     assert submitted.source == indexed.source
     assert submitted.job is not None and submitted.job.status == "pending"
@@ -103,7 +142,9 @@ async def test_enqueue_existing_source_requires_explicit_profile_change_and_pres
     assert original_chunks[0].source_id == before_reindex[0].source_id
 
 
-async def test_ingests_deduplicates_and_searches_a_markdown_file(settings, storage) -> None:
+async def test_ingests_deduplicates_and_searches_a_markdown_file(
+    settings, storage
+) -> None:
     document = settings.data_dir.parent / "handbook.md"
     document.write_text(
         "# Authentication\n\nUse an access token to authenticate every request.",
@@ -124,7 +165,9 @@ async def test_ingests_deduplicates_and_searches_a_markdown_file(settings, stora
     assert "access token" in results[0].content
 
 
-async def test_reindex_replaces_embeddings_and_preserves_source_identity(settings, storage):
+async def test_reindex_replaces_embeddings_and_preserves_source_identity(
+    settings, storage
+):
     document = settings.data_dir.parent / "notes.md"
     document.write_text("Some text for embedding.", encoding="utf-8")
     first = await add_file(document, settings=settings, storage=storage)
@@ -133,7 +176,9 @@ async def test_reindex_replaces_embeddings_and_preserves_source_identity(setting
 
     unchanged = await add_file(document, settings=changed_settings, storage=storage)
     assert unchanged.chunk_count == 0
-    reindexed = await add_file(document, reindex=True, settings=changed_settings, storage=storage)
+    reindexed = await add_file(
+        document, reindex=True, settings=changed_settings, storage=storage
+    )
     new_chunks = await documents.list_chunks(storage, settings.tenant_id)
 
     assert reindexed.source.id == first.source.id == unchanged.source.id
@@ -144,7 +189,9 @@ async def test_reindex_replaces_embeddings_and_preserves_source_identity(setting
     assert len(await search("text", settings=changed_settings, storage=storage)) == 1
 
 
-async def test_chunk_insert_failure_rolls_back_new_source_and_preserves_reindex(settings, storage, monkeypatch):
+async def test_chunk_insert_failure_rolls_back_new_source_and_preserves_reindex(
+    settings, storage, monkeypatch
+):
     document = settings.data_dir.parent / "notes.md"
     document.write_text("Original searchable text.", encoding="utf-8")
     original = await add_file(document, settings=settings, storage=storage)
@@ -166,10 +213,14 @@ async def test_chunk_insert_failure_rolls_back_new_source_and_preserves_reindex(
     with pytest.raises(RuntimeError, match="chunk insert failed"):
         await add_file(document, reindex=True, settings=settings, storage=storage)
 
-    assert await documents.get_source_by_content_hash(storage,
-        settings.tenant_id,
-        ingestion.sha256(new_content).hexdigest(),
-    ) is None
+    assert (
+        await documents.get_source_by_content_hash(
+            storage,
+            settings.tenant_id,
+            ingestion.sha256(new_content).hexdigest(),
+        )
+        is None
+    )
     assert await documents.list_chunks(storage, settings.tenant_id) == original_chunks
 
     monkeypatch.setattr(documents, "_insert_chunks", insert_chunks)

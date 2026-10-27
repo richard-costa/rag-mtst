@@ -17,21 +17,37 @@ from app import ingestion, worker
 from app.retrieval import search
 from app.storage import documents, jobs
 
-pytestmark = pytest.mark.usefixtures('deterministic_embeddings')
+pytestmark = pytest.mark.usefixtures("deterministic_embeddings")
 
 
 @pytest.mark.usefixtures("inline_worker")
 async def test_worker_indexes_durable_input_using_saved_settings(settings, storage):
     content = b"# Worker\n\nUse an access token for authentication."
-    submitted = await ingestion.enqueue_bytes(content, source_name="worker.md", settings=settings, storage=storage)
+    submitted = await ingestion.enqueue_bytes(
+        content, source_name="worker.md", settings=settings, storage=storage
+    )
     assert submitted.job is not None
-    assert await worker.run_once(settings=replace(settings, chunk_size=500, embedding_model="changed"), storage=storage)
-    completed = await jobs.get_ingestion_job(storage, settings.tenant_id, submitted.job.id)
-    assert completed is not None and completed.status == "completed" and completed.attempts == 1
+    assert await worker.run_once(
+        settings=replace(settings, chunk_size=500, embedding_model="changed"),
+        storage=storage,
+    )
+    completed = await jobs.get_ingestion_job(
+        storage, settings.tenant_id, submitted.job.id
+    )
+    assert (
+        completed is not None
+        and completed.status == "completed"
+        and completed.attempts == 1
+    )
     chunks = await documents.list_chunks(storage, settings.tenant_id)
-    assert chunks and all(chunk.metadata["embedding_model"] == settings.embedding_model_name for chunk in chunks)
+    assert chunks and all(
+        chunk.metadata["embedding_model"] == settings.embedding_model_name
+        for chunk in chunks
+    )
     assert chunks[0].source_reference == "worker.md"
-    queued_input = await jobs.get_ingestion_job_input(storage, settings.tenant_id, submitted.job.id)
+    queued_input = await jobs.get_ingestion_job_input(
+        storage, settings.tenant_id, submitted.job.id
+    )
     assert queued_input is not None and queued_input.input_path is None
     assert not list((settings.data_dir / "ingestion").iterdir())
     assert not await worker.run_once(settings=settings, storage=storage)
@@ -40,10 +56,15 @@ async def test_worker_indexes_durable_input_using_saved_settings(settings, stora
 @pytest.mark.usefixtures("inline_worker")
 async def test_worker_recovery_cleans_abandoned_input_files(settings, storage):
     submitted = await ingestion.enqueue_bytes(
-        b"Interrupted input", source_name="interrupted.md", settings=settings, storage=storage,
+        b"Interrupted input",
+        source_name="interrupted.md",
+        settings=settings,
+        storage=storage,
     )
     assert submitted.job is not None
-    queued = await jobs.get_ingestion_job_input(storage, settings.tenant_id, submitted.job.id)
+    queued = await jobs.get_ingestion_job_input(
+        storage, settings.tenant_id, submitted.job.id
+    )
     assert queued is not None and queued.input_path is not None
     staged = Path(queued.input_path)
     claimed = await jobs.claim_ingestion_job(storage, settings.tenant_id)
@@ -55,22 +76,34 @@ async def test_worker_recovery_cleans_abandoned_input_files(settings, storage):
         )
     assert not await worker.run_once(settings=settings, storage=storage)
     assert not staged.exists() and not staged.parent.exists()
-    cleaned = await jobs.get_ingestion_job_input(storage, settings.tenant_id, claimed.id)
+    cleaned = await jobs.get_ingestion_job_input(
+        storage, settings.tenant_id, claimed.id
+    )
     assert cleaned is not None and cleaned.input_path is None
     assert await documents.list_chunks(storage, settings.tenant_id) == []
 
 
 @pytest.mark.usefixtures("inline_worker")
 @pytest.mark.parametrize("missing", [False, True])
-async def test_worker_rejects_unavailable_or_changed_input_without_replacing_chunks(settings, storage, missing):
+async def test_worker_rejects_unavailable_or_changed_input_without_replacing_chunks(
+    settings, storage, missing
+):
     content = b"Keep the existing indexed content."
-    await ingestion.add_bytes(content, source_name="original.md", settings=settings, storage=storage)
+    await ingestion.add_bytes(
+        content, source_name="original.md", settings=settings, storage=storage
+    )
     before = await documents.list_chunks(storage, settings.tenant_id)
     submitted = await ingestion.enqueue_bytes(
-        content, source_name="original.md", settings=settings, storage=storage, reindex=True,
+        content,
+        source_name="original.md",
+        settings=settings,
+        storage=storage,
+        reindex=True,
     )
     assert submitted.job is not None
-    queued = await jobs.get_ingestion_job_input(storage, settings.tenant_id, submitted.job.id)
+    queued = await jobs.get_ingestion_job_input(
+        storage, settings.tenant_id, submitted.job.id
+    )
     assert queued is not None and queued.input_path is not None
     staged = Path(queued.input_path)
     if missing:
@@ -85,12 +118,20 @@ async def test_worker_rejects_unavailable_or_changed_input_without_replacing_chu
 
 
 @pytest.mark.usefixtures("inline_worker")
-async def test_worker_failure_preserves_index_and_does_not_replay(settings, storage, monkeypatch, caplog):
+async def test_worker_failure_preserves_index_and_does_not_replay(
+    settings, storage, monkeypatch, caplog
+):
     content = b"# Keep\n\nPreviously indexed content."
-    await ingestion.add_bytes(content, source_name="keep.md", settings=settings, storage=storage)
+    await ingestion.add_bytes(
+        content, source_name="keep.md", settings=settings, storage=storage
+    )
     before = await documents.list_chunks(storage, settings.tenant_id)
     submitted = await ingestion.enqueue_bytes(
-        content, source_name="keep.md", settings=settings, storage=storage, reindex=True,
+        content,
+        source_name="keep.md",
+        settings=settings,
+        storage=storage,
+        reindex=True,
     )
 
     async def fail_embedding(*args, **kwargs):
@@ -106,20 +147,30 @@ async def test_worker_failure_preserves_index_and_does_not_replay(settings, stor
     assert "private-secret" not in (failed.error or "")
     assert "private-secret" not in caplog.text
     assert f"job_id={submitted.job.id}" in caplog.text
-    assert "stage=embedding" in caplog.text and "error_category=unexpected" in caplog.text
-    queued_input = await jobs.get_ingestion_job_input(storage, settings.tenant_id, submitted.job.id)
+    assert (
+        "stage=embedding" in caplog.text and "error_category=unexpected" in caplog.text
+    )
+    queued_input = await jobs.get_ingestion_job_input(
+        storage, settings.tenant_id, submitted.job.id
+    )
     assert queued_input is not None and queued_input.input_path is None
     assert not list((settings.data_dir / "ingestion").iterdir())
     assert await documents.list_chunks(storage, settings.tenant_id) == before
-    matches = await search("Previously", method="lexical", settings=settings, storage=storage)
+    matches = await search(
+        "Previously", method="lexical", settings=settings, storage=storage
+    )
     assert matches and matches[0].source_id == str(submitted.source.id)
     assert matches[0].content == before[0].content
     assert not await worker.run_once(settings=settings, storage=storage)
 
 
 @pytest.mark.usefixtures("inline_worker")
-async def test_worker_heartbeats_during_inference_and_shutdown_fails_without_replay(settings, storage, monkeypatch):
-    submitted = await ingestion.enqueue_bytes(b"Long running input", source_name="long.md", settings=settings, storage=storage)
+async def test_worker_heartbeats_during_inference_and_shutdown_fails_without_replay(
+    settings, storage, monkeypatch
+):
+    submitted = await ingestion.enqueue_bytes(
+        b"Long running input", source_name="long.md", settings=settings, storage=storage
+    )
     heartbeats = asyncio.Event()
     original = jobs.heartbeat_ingestion_job
     count = 0
@@ -151,12 +202,20 @@ async def test_worker_heartbeats_during_inference_and_shutdown_fails_without_rep
 
 
 @pytest.mark.parametrize("shutdown", [False, True])
-async def test_worker_force_stops_an_unresponsive_child(settings, storage, monkeypatch, tmp_path, shutdown, caplog):
+async def test_worker_force_stops_an_unresponsive_child(
+    settings, storage, monkeypatch, tmp_path, shutdown, caplog
+):
     content = b"Previously indexed original bytes."
-    await ingestion.add_bytes(content, source_name="bounded.md", settings=settings, storage=storage)
+    await ingestion.add_bytes(
+        content, source_name="bounded.md", settings=settings, storage=storage
+    )
     previous_chunks = await documents.list_chunks(storage, settings.tenant_id)
     submitted = await ingestion.enqueue_bytes(
-        content, source_name="bounded.md", settings=settings, storage=storage, reindex=True,
+        content,
+        source_name="bounded.md",
+        settings=settings,
+        storage=storage,
+        reindex=True,
     )
     ready = tmp_path / "child-ready"
     command = (
@@ -186,15 +245,25 @@ async def test_worker_force_stops_an_unresponsive_child(settings, storage, monke
             running.cancel()
         async with asyncio.timeout(3):
             outcome = (await asyncio.gather(running, return_exceptions=True))[0]
-        assert isinstance(outcome, asyncio.CancelledError) if shutdown else outcome is True
+        assert (
+            isinstance(outcome, asyncio.CancelledError) if shutdown else outcome is True
+        )
         assert children and children[0].returncode == -signal.SIGKILL
         with pytest.raises(ProcessLookupError):
             os.kill(children[0].pid, 0)
         assert submitted.job is not None
-        failed = await jobs.get_ingestion_job(storage, settings.tenant_id, submitted.job.id)
+        failed = await jobs.get_ingestion_job(
+            storage, settings.tenant_id, submitted.job.id
+        )
         assert failed is not None and failed.status == "failed"
-        assert "error_category=interrupted" in caplog.text if shutdown else "error_category=timeout" in caplog.text
-        assert await documents.list_chunks(storage, settings.tenant_id) == previous_chunks
+        assert (
+            "error_category=interrupted" in caplog.text
+            if shutdown
+            else "error_category=timeout" in caplog.text
+        )
+        assert (
+            await documents.list_chunks(storage, settings.tenant_id) == previous_chunks
+        )
         assert not await worker.run_once(settings=settings, storage=storage)
     finally:
         running.cancel()
@@ -205,7 +274,9 @@ async def test_worker_force_stops_an_unresponsive_child(settings, storage, monke
                 await process.wait()
 
 
-async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_requests(settings, storage):
+async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_requests(
+    settings, storage
+):
     entered = Event()
     release = Event()
     requests = []
@@ -217,10 +288,18 @@ async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_re
             if any("Interrupted ingestion" in text for text in payload["input"]):
                 entered.set()
                 release.wait(timeout=15)
-            body = json.dumps({"data": [
-                {"index": index, "embedding": [1.0, 0.0, 0.0], "object": "embedding"}
-                for index in range(len(payload["input"]))
-            ]}).encode()
+            body = json.dumps(
+                {
+                    "data": [
+                        {
+                            "index": index,
+                            "embedding": [1.0, 0.0, 0.0],
+                            "object": "embedding",
+                        }
+                        for index in range(len(payload["input"]))
+                    ]
+                }
+            ).encode()
             try:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -237,24 +316,41 @@ async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_re
     serving = Thread(target=server.serve_forever, daemon=True)
     serving.start()
     endpoint = f"http://127.0.0.1:{server.server_port}/v1"
-    settings = replace(settings, openai_api_key="synthetic-worker-key", openai_base_url=endpoint)
+    settings = replace(
+        settings, openai_api_key="synthetic-worker-key", openai_base_url=endpoint
+    )
     environment = {
-        **os.environ, "DATABASE_URL": settings.database_url,
-        "RAG_TENANT_ID": settings.tenant_id, "RAG_DATA_DIR": str(settings.data_dir),
-        "OPENAI_API_KEY": "synthetic-worker-key", "OPENAI_BASE_URL": endpoint,
+        **os.environ,
+        "DATABASE_URL": settings.database_url,
+        "RAG_TENANT_ID": settings.tenant_id,
+        "RAG_DATA_DIR": str(settings.data_dir),
+        "OPENAI_API_KEY": "synthetic-worker-key",
+        "OPENAI_BASE_URL": endpoint,
     }
     processes = []
     try:
         first = await ingestion.enqueue_bytes(
-            b"Interrupted ingestion", source_name="interrupted.md", settings=settings, storage=storage,
+            b"Interrupted ingestion",
+            source_name="interrupted.md",
+            settings=settings,
+            storage=storage,
         )
-        processes.append(subprocess.Popen(
-            [sys.executable, "-m", "app.worker"], env=environment,
-            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
-        ))
+        processes.append(
+            await asyncio.to_thread(
+                subprocess.Popen,
+                [sys.executable, "-m", "app.worker"],
+                env=environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+            )
+        )
         assert await asyncio.to_thread(entered.wait, 10)
-        child_pids = subprocess.check_output(
-            ["ps", "--ppid", str(processes[0].pid), "-o", "pid="], text=True,
+        child_pids = (
+            await asyncio.to_thread(
+                subprocess.check_output,
+                ["ps", "--ppid", str(processes[0].pid), "-o", "pid="],
+                text=True,
+            )
         ).split()
         assert len(child_pids) == 1
         processes[0].kill()
@@ -277,25 +373,47 @@ async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_re
                 (first.job.id,),
             )
         second = await ingestion.enqueue_bytes(
-            b"A separate pending job", source_name="pending.md", settings=settings, storage=storage,
+            b"A separate pending job",
+            source_name="pending.md",
+            settings=settings,
+            storage=storage,
         )
-        processes.append(subprocess.Popen(
-            [sys.executable, "-m", "app.worker"], env=environment,
-            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
-        ))
+        processes.append(
+            await asyncio.to_thread(
+                subprocess.Popen,
+                [sys.executable, "-m", "app.worker"],
+                env=environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+            )
+        )
         assert second.job is not None
         async with asyncio.timeout(15):
             while True:
-                completed = await jobs.get_ingestion_job(storage, settings.tenant_id, second.job.id)
-                if completed is not None and completed.status in {"completed", "failed"}:
+                completed = await jobs.get_ingestion_job(
+                    storage, settings.tenant_id, second.job.id
+                )
+                if completed is not None and completed.status in {
+                    "completed",
+                    "failed",
+                }:
                     assert completed.status == "completed", completed.error
                     break
                 await asyncio.sleep(0.05)
         failed = await jobs.get_ingestion_job(storage, settings.tenant_id, first.job.id)
         assert failed is not None and failed.status == "failed" and failed.attempts == 1
         assert len(requests) == 2
-        assert sum(any("Interrupted ingestion" in text for text in batch) for batch in requests) == 1
-        assert all(chunk.source_id == second.source.id for chunk in await documents.list_chunks(storage, settings.tenant_id))
+        assert (
+            sum(
+                any("Interrupted ingestion" in text for text in batch)
+                for batch in requests
+            )
+            == 1
+        )
+        assert all(
+            chunk.source_id == second.source.id
+            for chunk in await documents.list_chunks(storage, settings.tenant_id)
+        )
     finally:
         release.set()
         for process in processes:

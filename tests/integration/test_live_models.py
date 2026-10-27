@@ -22,32 +22,54 @@ from app.storage.records import ChunkInput
     os.getenv("RAG_RUN_HOSTED_GENERATION_SMOKE") != "1",
     reason="Opt-in hosted smoke: requires credentials and makes billable generation calls",
 )
-@pytest.mark.parametrize(("provider", "model_name", "endpoint", "key_name"), [
-    ("openai", "gpt-6-luna", "https://api.openai.com/v1", "OPENAI_API_KEY"),
-    ("deepseek", "deepseek-flash", "https://api.deepseek.com", "DEEPSEEK_API_KEY"),
-])
+@pytest.mark.parametrize(
+    ("provider", "model_name", "endpoint", "key_name"),
+    [
+        ("openai", "gpt-6-luna", "https://api.openai.com/v1", "OPENAI_API_KEY"),
+        ("deepseek", "deepseek-flash", "https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+    ],
+)
 async def test_hosted_generation_workflow(
-    provider, model_name, endpoint, key_name, settings, storage, monkeypatch,
+    provider,
+    model_name,
+    endpoint,
+    key_name,
+    settings,
+    storage,
+    monkeypatch,
 ):
     if not os.getenv(key_name):
-        pytest.fail(f"Set {key_name} before running the hosted smoke test", pytrace=False)
+        pytest.fail(
+            f"Set {key_name} before running the hosted smoke test", pytrace=False
+        )
     settings = replace(
-        settings, generation_provider=provider,
+        settings,
+        generation_provider=provider,
         generation_model=os.getenv(f"RAG_{provider.upper()}_SMOKE_MODEL", model_name),
-        generation_base_url=endpoint, generation_max_tokens=2048,
-        openai_api_key=os.getenv("OPENAI_API_KEY"), deepseek_api_key=os.getenv("DEEPSEEK_API_KEY"),
+        generation_base_url=endpoint,
+        generation_max_tokens=2048,
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        deepseek_api_key=os.getenv("DEEPSEEK_API_KEY"),
     )
-    source = await documents.insert_source_with_chunks(storage,
-        tenant_id=settings.tenant_id, source_type="file", reference="/synthetic/hosted-smoke.md",
-        mime_type="text/markdown", content_hash="hosted-smoke",
-        chunks=[ChunkInput(
-            "Documents / Documentos: Bring an identity document and proof of address. "
-            "Leve um documento de identidade e um comprovante de endere\u00e7o.", {},
-        )],
+    source = await documents.insert_source_with_chunks(
+        storage,
+        tenant_id=settings.tenant_id,
+        source_type="file",
+        reference="/synthetic/hosted-smoke.md",
+        mime_type="text/markdown",
+        content_hash="hosted-smoke",
+        chunks=[
+            ChunkInput(
+                "Documents / Documentos: Bring an identity document and proof of address. "
+                "Leve um documento de identidade e um comprovante de endere\u00e7o.",
+                {},
+            )
+        ],
     )
     report = {"provider": provider, "model": settings.generation_model, "answers": []}
     async with AsyncClient(
-        transport=ASGITransport(app=create_app(settings)), base_url="http://test",
+        transport=ASGITransport(app=create_app(settings)),
+        base_url="http://test",
         headers={"Authorization": f"Bearer {settings.api_key}"},
     ) as client:
         for question in [
@@ -55,19 +77,29 @@ async def test_hosted_generation_workflow(
             "Which documents should I bring? Answer in one sentence.",
         ]:
             started = perf_counter()
-            response = await client.post("/ask", json={"query": question, "method": "lexical", "limit": 1})
+            response = await client.post(
+                "/ask", json={"query": question, "method": "lexical", "limit": 1}
+            )
             assert response.status_code == 200, response.text
             result = response.json()
             assert result["answer"].strip()
             assert len(result["matches"]) == 1
             assert result["matches"][0]["source_id"] == str(source.id)
-            assert all(citation["source_id"] == str(source.id) for citation in result["citations"])
-            report["answers"].append({
-                "question": question, "answer": result["answer"],
-                "mapped_citations": len(result["citations"]),
-                "seconds": round(perf_counter() - started, 2),
-            })
-    print("Hosted generation smoke:\n" + json.dumps(report, ensure_ascii=False, indent=2))
+            assert all(
+                citation["source_id"] == str(source.id)
+                for citation in result["citations"]
+            )
+            report["answers"].append(
+                {
+                    "question": question,
+                    "answer": result["answer"],
+                    "mapped_citations": len(result["citations"]),
+                    "seconds": round(perf_counter() - started, 2),
+                }
+            )
+    print(
+        "Hosted generation smoke:\n" + json.dumps(report, ensure_ascii=False, indent=2)
+    )
 
 
 @pytest.mark.usefixtures("inline_worker")
@@ -78,15 +110,22 @@ async def test_hosted_generation_workflow(
 async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
     local_module = importlib.import_module("sentence_transformers")
     settings = replace(
-        settings, embedding_provider="local", chunk_size=180,
+        settings,
+        embedding_provider="local",
+        chunk_size=180,
         generation_provider="ollama",
         generation_model=os.getenv("RAG_OLLAMA_SMOKE_MODEL", "qwen2.5:1.5b"),
-        generation_base_url=os.getenv("RAG_OLLAMA_SMOKE_BASE_URL", "http://127.0.0.1:11434/v1"),
+        generation_base_url=os.getenv(
+            "RAG_OLLAMA_SMOKE_BASE_URL", "http://127.0.0.1:11434/v1"
+        ),
         generation_max_tokens=256,
     )
     model = local_module.SentenceTransformer(
-        settings.embedding_model_name, device="cpu", trust_remote_code=False,
-        local_files_only=True, revision="e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+        settings.embedding_model_name,
+        device="cpu",
+        trust_remote_code=False,
+        local_files_only=True,
+        revision="e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
     )
     monkeypatch.setattr(embeddings, "_load_local_model", lambda name: model)
     monkeypatch.setattr(ingestion, "embed_texts", embeddings.embed_texts)
@@ -105,7 +144,8 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
     )
     report = {"model": settings.generation_model, "answers": []}
     async with AsyncClient(
-        transport=ASGITransport(app=create_app(settings)), base_url="http://test",
+        transport=ASGITransport(app=create_app(settings)),
+        base_url="http://test",
         headers={"Authorization": f"Bearer {settings.api_key}"},
     ) as client:
         files = {"file": ("ollama-smoke.md", document.encode("utf-8"), "text/markdown")}
@@ -120,7 +160,9 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
         assert reindexed.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
         assert reindexed.json()["id"] == source_id
-        assert (await client.get(reindexed.json()["status_url"])).json()["status"] == "completed"
+        assert (await client.get(reindexed.json()["status_url"])).json()[
+            "status"
+        ] == "completed"
 
         async with storage.connection() as connection:
             cursor = await connection.execute(
@@ -130,7 +172,9 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
             dimensions = await cursor.fetchall()
         assert dimensions and all(row["dimensions"] == 384 for row in dimensions)
         for method in ["cosine", "window", "lexical", "hybrid"]:
-            result = await client.post("/search", json={"query": "documentos", "method": method, "limit": 1})
+            result = await client.post(
+                "/search", json={"query": "documentos", "method": method, "limit": 1}
+            )
             assert result.status_code == 200, result.text
             assert result.json()
             assert all(match["source_id"] == source_id for match in result.json())
@@ -141,48 +185,63 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
             ("How can I book an appointment? Answer in one sentence.", 2),
         ]:
             started = perf_counter()
-            response = await client.post("/ask", json={"query": question, "limit": 1, "window": window})
+            response = await client.post(
+                "/ask", json={"query": question, "limit": 1, "window": window}
+            )
             assert response.status_code == 200, response.text
             result = response.json()
             assert result["answer"] and result["matches"]
             for citation in result["citations"]:
                 assert citation["source_id"] == source_id
                 assert citation["content"]
-                assert f'[{citation["id"]}]' in result["answer"]
+                assert f"[{citation['id']}]" in result["answer"]
                 assert any(
                     match["source_id"] == citation["source_id"]
                     and match["chunk_index"] == citation["chunk_index"]
                     and match["content"].startswith(citation["content"])
                     for match in result["matches"]
                 )
-            report["answers"].append({
-                "question": question, "answer": result["answer"],
-                "window": window,
-                "mapped_citations": len(result["citations"]),
-                "seconds": round(perf_counter() - started, 2),
-            })
+            report["answers"].append(
+                {
+                    "question": question,
+                    "answer": result["answer"],
+                    "window": window,
+                    "mapped_citations": len(result["citations"]),
+                    "seconds": round(perf_counter() - started, 2),
+                }
+            )
 
     empty_app = create_app(replace(settings, tenant_id="empty-ollama-smoke"))
     async with AsyncClient(
-        transport=ASGITransport(app=empty_app), base_url="http://test",
+        transport=ASGITransport(app=empty_app),
+        base_url="http://test",
         headers={"Authorization": f"Bearer {settings.api_key}"},
     ) as client:
         empty = await client.post("/ask", json={"query": "Any sources?"})
         assert empty.status_code == 200
         assert empty.json()["matches"] == empty.json()["citations"] == []
-    missing_app = create_app(replace(settings, generation_model="rag-mtst-smoke-missing-model"))
+    missing_app = create_app(
+        replace(settings, generation_model="rag-mtst-smoke-missing-model")
+    )
     async with AsyncClient(
-        transport=ASGITransport(app=missing_app), base_url="http://test",
+        transport=ASGITransport(app=missing_app),
+        base_url="http://test",
         headers={"Authorization": f"Bearer {settings.api_key}"},
     ) as client:
-        missing = await client.post("/ask", json={"query": "documents", "limit": 1, "window": 0})
+        missing = await client.post(
+            "/ask", json={"query": "documents", "limit": 1, "window": 0}
+        )
         assert missing.status_code == 502
 
     for name, value in {
-        "DATABASE_URL": settings.database_url, "RAG_DATA_DIR": str(settings.data_dir),
-        "RAG_TENANT_ID": settings.tenant_id, "RAG_EMBEDDING_PROVIDER": "local",
-        "RAG_GENERATION_PROVIDER": "ollama", "RAG_GENERATION_MODEL": settings.generation_model,
-        "RAG_GENERATION_BASE_URL": settings.generation_base_url, "RAG_GENERATION_MAX_TOKENS": "256",
+        "DATABASE_URL": settings.database_url,
+        "RAG_DATA_DIR": str(settings.data_dir),
+        "RAG_TENANT_ID": settings.tenant_id,
+        "RAG_EMBEDDING_PROVIDER": "local",
+        "RAG_GENERATION_PROVIDER": "ollama",
+        "RAG_GENERATION_MODEL": settings.generation_model,
+        "RAG_GENERATION_BASE_URL": settings.generation_base_url,
+        "RAG_GENERATION_MAX_TOKENS": "256",
     }.items():
         monkeypatch.setenv(name, value)
     document_path = settings.data_dir.parent / "ollama-smoke.md"
@@ -190,11 +249,25 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
     capsys.readouterr()
     assert await asyncio.to_thread(main, ["add", str(document_path)]) == 0
     assert "already indexed" in capsys.readouterr().out
-    assert await asyncio.to_thread(main, ["search", "documentos", "--method", "hybrid", "--limit", "1"]) == 0
+    assert (
+        await asyncio.to_thread(
+            main, ["search", "documentos", "--method", "hybrid", "--limit", "1"]
+        )
+        == 0
+    )
     assert "Documents" in capsys.readouterr().out
-    assert await asyncio.to_thread(main, ["ask", "Which documents should I bring?", "--limit", "1", "--window", "0"]) == 0
+    assert (
+        await asyncio.to_thread(
+            main,
+            ["ask", "Which documents should I bring?", "--limit", "1", "--window", "0"],
+        )
+        == 0
+    )
     assert capsys.readouterr().out.strip()
-    print("Ollama local workflow smoke:\n" + json.dumps(report, ensure_ascii=False, indent=2))
+    print(
+        "Ollama local workflow smoke:\n"
+        + json.dumps(report, ensure_ascii=False, indent=2)
+    )
 
 
 @pytest.mark.skipif(
@@ -203,10 +276,15 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
 )
 async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatch):
     local_module = importlib.import_module("sentence_transformers")
-    settings = replace(settings, embedding_provider="local", chunk_size=180, retrieval_window=2)
+    settings = replace(
+        settings, embedding_provider="local", chunk_size=180, retrieval_window=2
+    )
     revision = "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"
     model = local_module.SentenceTransformer(
-        settings.embedding_model_name, device="cpu", trust_remote_code=False, local_files_only=True,
+        settings.embedding_model_name,
+        device="cpu",
+        trust_remote_code=False,
+        local_files_only=True,
         revision=revision,
     )
     monkeypatch.setattr(embeddings, "_load_local_model", lambda name: model)
@@ -240,16 +318,47 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
         "N\u00e3o \u00e9 necess\u00e1rio fazer cadastro para receber uma refei\u00e7\u00e3o."
     )
     cases = [
-        ("Q1", "Que pap\u00e9is preciso apresentar para solicitar ajuda?", {"Documentos"}),
-        ("Q2", "N\u00e3o tenho acesso \u00e0 internet. Como marco uma conversa?", {"Agendamento"}),
-        ("Q3", "Com quanto tempo de anteced\u00eancia devo estar no local?", {"Chegada"}),
-        ("Q4", "Quem pode consultar minhas informa\u00e7\u00f5es pessoais?", {"Prote\u00e7\u00e3o de dados"}),
-        ("Q5", "Quando posso entregar roupas para doa\u00e7\u00e3o?", {"Doa\u00e7\u00f5es"}),
-        ("Q6", "Onde consigo uma refei\u00e7\u00e3o sem pagar no fim de semana?", {"Cozinha comunit\u00e1ria"}),
-        ("Q7", "Como reservo uma consulta sem internet e quando devo chegar?", {"Agendamento", "Chegada"}),
+        (
+            "Q1",
+            "Que pap\u00e9is preciso apresentar para solicitar ajuda?",
+            {"Documentos"},
+        ),
+        (
+            "Q2",
+            "N\u00e3o tenho acesso \u00e0 internet. Como marco uma conversa?",
+            {"Agendamento"},
+        ),
+        (
+            "Q3",
+            "Com quanto tempo de anteced\u00eancia devo estar no local?",
+            {"Chegada"},
+        ),
+        (
+            "Q4",
+            "Quem pode consultar minhas informa\u00e7\u00f5es pessoais?",
+            {"Prote\u00e7\u00e3o de dados"},
+        ),
+        (
+            "Q5",
+            "Quando posso entregar roupas para doa\u00e7\u00e3o?",
+            {"Doa\u00e7\u00f5es"},
+        ),
+        (
+            "Q6",
+            "Onde consigo uma refei\u00e7\u00e3o sem pagar no fim de semana?",
+            {"Cozinha comunit\u00e1ria"},
+        ),
+        (
+            "Q7",
+            "Como reservo uma consulta sem internet e quando devo chegar?",
+            {"Agendamento", "Chegada"},
+        ),
     ]
     result = await ingestion.add_bytes(
-        document.encode("utf-8"), source_name="atendimento-baseline.md", settings=settings, storage=storage,
+        document.encode("utf-8"),
+        source_name="atendimento-baseline.md",
+        settings=settings,
+        storage=storage,
     )
     chunks = await documents.list_chunks(storage, settings.tenant_id)
     headings = {chunk.chunk_index: chunk.metadata["heading"] for chunk in chunks}
@@ -267,22 +376,43 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
         "cases": [],
     }
     for case_id, query, expected in cases:
-        cosine = await search(query, method="cosine", limit=1, settings=settings, storage=storage)
+        cosine = await search(
+            query, method="cosine", limit=1, settings=settings, storage=storage
+        )
         windows = await search(query, limit=1, settings=settings, storage=storage)
-        zero_window = await search(query, window=0, limit=1, settings=settings, storage=storage)
-        lexical = await search(query, method="lexical", limit=1, settings=settings, storage=storage)
-        hybrid = await search(query, method="hybrid", limit=1, settings=settings, storage=storage)
+        zero_window = await search(
+            query, window=0, limit=1, settings=settings, storage=storage
+        )
+        lexical = await search(
+            query, method="lexical", limit=1, settings=settings, storage=storage
+        )
+        hybrid = await search(
+            query, method="hybrid", limit=1, settings=settings, storage=storage
+        )
         assert zero_window == cosine
-        assert windows[:len(cosine)] == cosine
-        assert all(match.score is None for match in windows[len(cosine):])
-        assert len({(match.source_id, match.chunk_index) for match in windows}) == len(windows)
+        assert windows[: len(cosine)] == cosine
+        assert all(match.score is None for match in windows[len(cosine) :])
+        assert len({(match.source_id, match.chunk_index) for match in windows}) == len(
+            windows
+        )
         case_report = {"id": case_id, "query": query, "expected": sorted(expected)}
-        for method, matches in [("cosine", cosine), ("window", windows), ("lexical", lexical), ("hybrid", hybrid)]:
+        for method, matches in [
+            ("cosine", cosine),
+            ("window", windows),
+            ("lexical", lexical),
+            ("hybrid", hybrid),
+        ]:
             returned = [headings[match.chunk_index] for match in matches]
             case_report[method] = {
                 "headings": returned,
-                "scores": [round(match.score, 4) if match.score is not None else None for match in matches],
+                "scores": [
+                    round(match.score, 4) if match.score is not None else None
+                    for match in matches
+                ],
                 "all_expected_present": expected.issubset(returned),
             }
         report["cases"].append(case_report)
-    print("\nPortuguese local retrieval baseline:\n" + json.dumps(report, ensure_ascii=False, indent=2))
+    print(
+        "\nPortuguese local retrieval baseline:\n"
+        + json.dumps(report, ensure_ascii=False, indent=2)
+    )

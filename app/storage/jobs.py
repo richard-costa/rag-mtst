@@ -66,7 +66,9 @@ async def create_ingestion_job(
                 or active_input["configuration"] != configuration
                 or active_input["reindex"] != reindex
             ):
-                raise ValueError("The source already has an active ingestion job with different settings")
+                raise ValueError(
+                    "The source already has an active ingestion job with different settings"
+                )
             return source, IngestionJob(**active_job)
 
         cursor = await connection.execute(
@@ -78,7 +80,9 @@ async def create_ingestion_job(
         profiles = await cursor.fetchall()
         if profiles and not reindex:
             if len(profiles) != 1 or profiles[0]["profile"] != extraction_profile:
-                raise ValueError("The source has a different or unknown extraction profile; explicit reindexing is required")
+                raise ValueError(
+                    "The source has a different or unknown extraction profile; explicit reindexing is required"
+                )
             return source, None
 
         job_id = job_id or uuid4()
@@ -93,13 +97,22 @@ async def create_ingestion_job(
                 job_id, input_path, source_name, extraction_profile, configuration, reindex
             ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (job_id, input_path, source_name, Jsonb(extraction_profile), Jsonb(configuration), reindex),
+            (
+                job_id,
+                input_path,
+                source_name,
+                Jsonb(extraction_profile),
+                Jsonb(configuration),
+                reindex,
+            ),
         )
     assert row is not None
     return source, IngestionJob(**row)
 
 
-async def get_ingestion_job(database: Database, tenant_id: str, job_id: UUID) -> IngestionJob | None:
+async def get_ingestion_job(
+    database: Database, tenant_id: str, job_id: UUID
+) -> IngestionJob | None:
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -113,7 +126,9 @@ async def get_ingestion_job(database: Database, tenant_id: str, job_id: UUID) ->
     return IngestionJob(**row) if row is not None else None
 
 
-async def get_ingestion_job_input(database: Database, tenant_id: str, job_id: UUID) -> IngestionJobInput | None:
+async def get_ingestion_job_input(
+    database: Database, tenant_id: str, job_id: UUID
+) -> IngestionJobInput | None:
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -128,7 +143,9 @@ async def get_ingestion_job_input(database: Database, tenant_id: str, job_id: UU
     return IngestionJobInput(**row) if row is not None else None
 
 
-async def claim_ingestion_job(database: Database, tenant_id: str) -> IngestionJob | None:
+async def claim_ingestion_job(
+    database: Database, tenant_id: str
+) -> IngestionJob | None:
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -152,7 +169,9 @@ async def claim_ingestion_job(database: Database, tenant_id: str) -> IngestionJo
     return IngestionJob(**row) if row is not None else None
 
 
-async def list_finished_ingestion_inputs(database: Database, tenant_id: str) -> list[IngestionJobInput]:
+async def list_finished_ingestion_inputs(
+    database: Database, tenant_id: str
+) -> list[IngestionJobInput]:
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -169,7 +188,9 @@ async def list_finished_ingestion_inputs(database: Database, tenant_id: str) -> 
     return [IngestionJobInput(**row) for row in rows]
 
 
-async def clear_ingestion_input_path(database: Database, tenant_id: str, job_id: UUID, input_path: str) -> None:
+async def clear_ingestion_input_path(
+    database: Database, tenant_id: str, job_id: UUID, input_path: str
+) -> None:
     async with database.connection() as connection:
         await connection.execute(
             """
@@ -183,7 +204,9 @@ async def clear_ingestion_input_path(database: Database, tenant_id: str, job_id:
         )
 
 
-async def heartbeat_ingestion_job(database: Database, tenant_id: str, job_id: UUID, claim_token: UUID) -> bool:
+async def heartbeat_ingestion_job(
+    database: Database, tenant_id: str, job_id: UUID, claim_token: UUID
+) -> bool:
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -197,8 +220,14 @@ async def heartbeat_ingestion_job(database: Database, tenant_id: str, job_id: UU
 
 
 async def update_ingestion_job_progress(
-    database: Database, tenant_id: str, job_id: UUID, claim_token: UUID,
-    *, stage: str, processed: int | None = None, total: int | None = None,
+    database: Database,
+    tenant_id: str,
+    job_id: UUID,
+    claim_token: UUID,
+    *,
+    stage: str,
+    processed: int | None = None,
+    total: int | None = None,
 ) -> bool:
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -214,7 +243,12 @@ async def update_ingestion_job_progress(
 
 
 async def fail_ingestion_job(
-    database: Database, tenant_id: str, job_id: UUID, claim_token: UUID, *, error: str,
+    database: Database,
+    tenant_id: str,
+    job_id: UUID,
+    claim_token: UUID,
+    *,
+    error: str,
 ) -> bool:
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -229,7 +263,9 @@ async def fail_ingestion_job(
     return cursor.rowcount == 1
 
 
-async def fail_interrupted_ingestion_jobs(database: Database, tenant_id: str, *, stale_seconds: int) -> int:
+async def fail_interrupted_ingestion_jobs(
+    database: Database, tenant_id: str, *, stale_seconds: int
+) -> int:
     if stale_seconds <= 0:
         raise ValueError("Stale heartbeat timeout must be greater than zero")
     async with database.connection() as connection:
@@ -248,7 +284,12 @@ async def fail_interrupted_ingestion_jobs(database: Database, tenant_id: str, *,
 
 
 async def complete_ingestion_job(
-    database: Database, tenant_id: str, job: IngestionJob, *, reference: str, chunks: list[ChunkInput],
+    database: Database,
+    tenant_id: str,
+    job: IngestionJob,
+    *,
+    reference: str,
+    chunks: list[ChunkInput],
 ) -> bool:
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -267,7 +308,9 @@ async def complete_ingestion_job(
         )
         if await cursor.fetchone() is None:
             return False
-        await connection.execute("DELETE FROM chunks WHERE source_id = %s", (job.source_id,))
+        await connection.execute(
+            "DELETE FROM chunks WHERE source_id = %s", (job.source_id,)
+        )
         await documents._insert_chunks(connection, tenant_id, job.source_id, chunks)
         await connection.execute(
             "UPDATE sources SET reference = %s, updated_at = now() WHERE id = %s",

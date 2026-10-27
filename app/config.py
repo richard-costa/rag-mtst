@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -56,20 +56,26 @@ class Settings:
         return "text-embedding-3-small"
 
     @classmethod
-    def from_environment(cls) -> "Settings":
+    def from_environment(cls) -> Settings:
         defaults = cls()
         return cls(
-            data_dir=Path(os.getenv("RAG_DATA_DIR", str(defaults.data_dir))).expanduser(),
+            data_dir=Path(
+                os.getenv("RAG_DATA_DIR", str(defaults.data_dir))
+            ).expanduser(),
             database_url=os.getenv("DATABASE_URL", defaults.database_url),
             tenant_id=os.getenv("RAG_TENANT_ID", defaults.tenant_id),
             api_key=os.getenv("RAG_API_KEY"),
             office_host=os.getenv("RAG_OFFICE_HOST", defaults.office_host),
             office_port=_positive_integer("RAG_OFFICE_PORT", defaults.office_port),
-            embedding_provider=os.getenv("RAG_EMBEDDING_PROVIDER", defaults.embedding_provider),
+            embedding_provider=os.getenv(
+                "RAG_EMBEDDING_PROVIDER", defaults.embedding_provider
+            ),
             embedding_model=os.getenv("RAG_EMBEDDING_MODEL"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             openai_base_url=os.getenv("OPENAI_BASE_URL") or None,
-            generation_provider=os.getenv("RAG_GENERATION_PROVIDER", defaults.generation_provider),
+            generation_provider=os.getenv(
+                "RAG_GENERATION_PROVIDER", defaults.generation_provider
+            ),
             generation_model=os.getenv("RAG_GENERATION_MODEL") or None,
             generation_base_url=os.getenv("RAG_GENERATION_BASE_URL") or None,
             visual_provider=os.getenv("RAG_VISUAL_PROVIDER", defaults.visual_provider),

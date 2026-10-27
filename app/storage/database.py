@@ -1,7 +1,8 @@
 """Short-lived PostgreSQL connections with pgvector registration."""
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from typing import Any
 
 import psycopg
 from pgvector.psycopg import register_vector_async
@@ -13,7 +14,9 @@ class Database:
         self.database_url = database_url
 
     @asynccontextmanager
-    async def connection(self) -> AsyncGenerator[psycopg.AsyncConnection[dict[str, Any]]]:
+    async def connection(
+        self,
+    ) -> AsyncGenerator[psycopg.AsyncConnection[dict[str, Any]]]:
         connection = await psycopg.AsyncConnection.connect(
             self.database_url,
             row_factory=dict_row,

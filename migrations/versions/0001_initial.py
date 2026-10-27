@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from alembic import op
 
-
 revision = "0001_initial"
 down_revision = None
 branch_labels = None
@@ -15,6 +14,7 @@ depends_on = None
 # Initial schema creation
 # ---------------------------------------------------------------------------
 # The first migration creates the shared tenant-scoped RAG tables and indexes.
+
 
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
@@ -57,7 +57,9 @@ def upgrade() -> None:
     )
     op.execute("CREATE INDEX chunks_tenant_id_idx ON chunks (tenant_id)")
     op.execute("CREATE INDEX chunks_source_id_idx ON chunks (source_id)")
-    op.execute("CREATE INDEX chunks_search_vector_idx ON chunks USING gin (search_vector)")
+    op.execute(
+        "CREATE INDEX chunks_search_vector_idx ON chunks USING gin (search_vector)"
+    )
 
     op.execute(
         """
@@ -81,7 +83,9 @@ def upgrade() -> None:
         )
         """
     )
-    op.execute("CREATE INDEX ingestion_jobs_source_id_idx ON ingestion_jobs (source_id)")
+    op.execute(
+        "CREATE INDEX ingestion_jobs_source_id_idx ON ingestion_jobs (source_id)"
+    )
     op.execute("CREATE INDEX ingestion_jobs_status_idx ON ingestion_jobs (status)")
 
     op.execute(
@@ -138,6 +142,7 @@ def upgrade() -> None:
 # Schema rollback
 # ---------------------------------------------------------------------------
 # Tables are removed in dependency order so foreign-key constraints do not block rollback.
+
 
 def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS messages")

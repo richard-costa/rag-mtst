@@ -12,7 +12,8 @@ from app.retrieval import RetrievalMethod
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
     limit: int | None = Field(
-        default=None, ge=1,
+        default=None,
+        ge=1,
         description=(
             "Maximum matches for cosine, lexical, and hybrid methods. In window mode, "
             "counts seed matches before context expansion; the returned chunk count may exceed this limit. "
@@ -24,7 +25,8 @@ class SearchRequest(BaseModel):
         description="Retrieval strategy. Null or omitted uses the server-configured method.",
     )
     window: int | None = Field(
-        default=None, ge=0,
+        default=None,
+        ge=0,
         description=(
             "Number of neighboring chunks on each side of a seed; used only by the window method. "
             "Null or omitted uses the server-configured window."
@@ -33,7 +35,9 @@ class SearchRequest(BaseModel):
 
 
 class AskRequest(SearchRequest):
-    generation_provider: Literal["openai", "deepseek", "ollama", "anthropic"] | None = None
+    generation_provider: Literal["openai", "deepseek", "ollama", "anthropic"] | None = (
+        None
+    )
     generation_model: str | None = Field(default=None, min_length=1, pattern=r"\S")
 
 

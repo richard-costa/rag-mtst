@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from dataclasses import replace
 from functools import lru_cache
-import importlib
 from math import isfinite
 from typing import Any
 from urllib.parse import urlsplit
@@ -15,11 +15,11 @@ from openai import APIError, AsyncOpenAI
 from app.config import Settings, get_settings
 from app.storage.records import ChunkInput
 
-
 # ---------------------------------------------------------------------------
 # Embedding operation
 # ---------------------------------------------------------------------------
 # Both providers return one finite, nonzero vector per input, in input order.
+
 
 class EmbeddingError(RuntimeError):
     """An embedding provider could not complete the request."""
@@ -33,11 +33,16 @@ def embedding_endpoint(settings: Settings) -> str | None:
     endpoint = settings.openai_base_url or "https://api.openai.com/v1"
     parsed = urlsplit(endpoint)
     if (
-        parsed.scheme not in {"http", "https"} or not parsed.netloc
-        or parsed.username is not None or parsed.password is not None
-        or parsed.query or parsed.fragment
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
     ):
-        raise ValueError("The embedding endpoint must be an HTTP(S) URL without credentials, query, or fragment")
+        raise ValueError(
+            "The embedding endpoint must be an HTTP(S) URL without credentials, query, or fragment"
+        )
     return endpoint
 
 
@@ -73,7 +78,10 @@ async def embed_texts(
 # ---------------------------------------------------------------------------
 # Bounded batches avoid the API's input-count limit for larger documents.
 
-async def _embed_openai(texts: list[str], settings: Settings, *, base_url: str | None) -> list[list[float]]:
+
+async def _embed_openai(
+    texts: list[str], settings: Settings, *, base_url: str | None
+) -> list[list[float]]:
     if not settings.openai_api_key:
         raise ValueError("Set OPENAI_API_KEY or select RAG_EMBEDDING_PROVIDER=local")
 
@@ -88,7 +96,7 @@ async def _embed_openai(texts: list[str], settings: Settings, *, base_url: str |
             for start in range(0, len(texts), 128):
                 response = await client.embeddings.create(
                     model=settings.embedding_model_name,
-                    input=texts[start:start + 128],
+                    input=texts[start : start + 128],
                     encoding_format="float",
                 )
                 ordered = sorted(response.data, key=lambda item: item.index)
@@ -102,6 +110,7 @@ async def _embed_openai(texts: list[str], settings: Settings, *, base_url: str |
 # Optional local embeddings
 # ---------------------------------------------------------------------------
 # Model loading and CPU inference stay off the event loop; models are reused.
+
 
 @lru_cache(maxsize=1)
 def _load_local_model(model_name: str) -> Any:
@@ -127,7 +136,9 @@ def _embed_local(texts: list[str], settings: Settings) -> list[list[float]]:
             texts, batch_size=32, normalize_embeddings=True, show_progress_bar=False
         ).tolist()
     except (OSError, RuntimeError) as error:
-        raise EmbeddingError("The local embedding model could not load or encode") from error
+        raise EmbeddingError(
+            "The local embedding model could not load or encode"
+        ) from error
 
 
 def _local_token_count(model: Any, text: str) -> int:
@@ -135,41 +146,59 @@ def _local_token_count(model: Any, text: str) -> int:
     normalized = (prompt + text).strip()
     if model._first_module().do_lower_case:
         normalized = normalized.lower()
-    return len(model.tokenizer(
-        normalized, truncation=False, add_special_tokens=True,
-    )["input_ids"])
+    return len(
+        model.tokenizer(
+            normalized,
+            truncation=False,
+            add_special_tokens=True,
+        )["input_ids"]
+    )
 
 
-def _prepare_local_chunks(chunks: list[ChunkInput], settings: Settings) -> list[ChunkInput]:
+def _prepare_local_chunks(
+    chunks: list[ChunkInput], settings: Settings
+) -> list[ChunkInput]:
     try:
         model = _load_local_model(settings.embedding_model_name)
     except (OSError, RuntimeError) as error:
         raise EmbeddingError("The local embedding model could not load") from error
     if not isinstance(model.max_seq_length, int) or model.max_seq_length <= 0:
-        raise ValueError("The local embedding model must define a positive max_seq_length")
+        raise ValueError(
+            "The local embedding model must define a positive max_seq_length"
+        )
 
     prepared = []
     for parent_index, chunk in enumerate(chunks):
         if _local_token_count(model, chunk.content) <= model.max_seq_length:
             prepared.append(chunk)
             continue
-        for split_index, (start, end) in enumerate(_local_text_spans(chunk.content, model)):
-            prepared.append(replace(
-                chunk,
-                content=chunk.content[start:end],
-                embedding=None,
-                metadata={
-                    **chunk.metadata,
-                    "parent_chunk_index": parent_index,
-                    "split_index": split_index,
-                    "start_char": start,
-                    "end_char": end,
-                    **(
-                        {"source_pages": {**chunk.metadata["source_pages"], "scope": "parent_body"}}
-                        if "source_pages" in chunk.metadata else {}
-                    ),
-                },
-            ))
+        for split_index, (start, end) in enumerate(
+            _local_text_spans(chunk.content, model)
+        ):
+            prepared.append(
+                replace(
+                    chunk,
+                    content=chunk.content[start:end],
+                    embedding=None,
+                    metadata={
+                        **chunk.metadata,
+                        "parent_chunk_index": parent_index,
+                        "split_index": split_index,
+                        "start_char": start,
+                        "end_char": end,
+                        **(
+                            {
+                                "source_pages": {
+                                    **chunk.metadata["source_pages"],
+                                    "scope": "parent_body",
+                                }
+                            }
+                            if "source_pages" in chunk.metadata
+                            else {}
+                        ),
+                    },
+                )
+            )
     return prepared
 
 
@@ -201,11 +230,18 @@ def _local_text_spans(text: str, model: Any) -> list[tuple[int, int]]:
             piece = text[start:end]
             boundary = piece.rfind("\n") + 1
             if not boundary:
-                boundary = next((
-                    index + 1 for index in range(len(piece) - 1, -1, -1)
-                    if piece[index].isspace()
-                ), 0)
-            if boundary and _local_token_count(model, piece[:boundary]) <= model.max_seq_length:
+                boundary = next(
+                    (
+                        index + 1
+                        for index in range(len(piece) - 1, -1, -1)
+                        if piece[index].isspace()
+                    ),
+                    0,
+                )
+            if (
+                boundary
+                and _local_token_count(model, piece[:boundary]) <= model.max_seq_length
+            ):
                 end = start + boundary
         spans.append((start, end))
         start = end
@@ -216,6 +252,7 @@ def _local_text_spans(text: str, model: Any) -> list[tuple[int, int]]:
 # Vector validation
 # ---------------------------------------------------------------------------
 # Zero or malformed vectors do not have a useful cosine similarity.
+
 
 def _validate_vectors(vectors: list[list[float]], expected_count: int) -> None:
     if len(vectors) != expected_count:

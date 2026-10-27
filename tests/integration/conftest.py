@@ -29,7 +29,7 @@ def _sqlalchemy_url(url: str) -> str:
 
 
 @pytest.fixture(scope="session")
-def database_url() -> Generator[str, None, None]:
+def database_url() -> Generator[str]:
     with PostgresContainer("pgvector/pgvector:pg17", driver=None) as postgres:
         url = postgres.get_connection_url()
         original_database_url = os.environ.get("DATABASE_URL")
@@ -85,7 +85,9 @@ def deterministic_embeddings(monkeypatch):
         for text in texts:
             normalized = text.casefold()
             authentication = "token" in normalized or "authenticat" in normalized
-            vectors.append([1.0, float(authentication), float("retention" in normalized)])
+            vectors.append(
+                [1.0, float(authentication), float("retention" in normalized)]
+            )
         return vectors
 
     monkeypatch.setattr(ingestion, "embed_texts", embed)
@@ -106,18 +108,35 @@ def deterministic_generation(monkeypatch):
 
     def respond(request):
         requests.append(json.loads(request.content))
-        return Response(200, json={
-            "id": "test-answer", "object": "chat.completion", "created": 0,
-            "model": "test-model", "choices": [{
-                "index": 0, "finish_reason": "stop",
-                "message": {"role": "assistant", "content": json.dumps({
-                    "text": "Generated grounded answer [1].", "citations": [1],
-                })},
-            }],
-        })
+        return Response(
+            200,
+            json={
+                "id": "test-answer",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "test-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {
+                                    "text": "Generated grounded answer [1].",
+                                    "citations": [1],
+                                }
+                            ),
+                        },
+                    }
+                ],
+            },
+        )
 
     def client(**kwargs):
-        return AsyncOpenAI(**kwargs, http_client=AsyncClient(transport=MockTransport(respond)))
+        return AsyncOpenAI(
+            **kwargs, http_client=AsyncClient(transport=MockTransport(respond))
+        )
 
     monkeypatch.setattr(llm, "AsyncOpenAI", client)
     monkeypatch.setenv("RAG_GENERATION_PROVIDER", "ollama")
@@ -136,12 +155,15 @@ def cli_environment(settings, monkeypatch):
 def run_cli(inline_worker):
     async def run(arguments):
         stop = asyncio.Event()
-        running = asyncio.create_task(worker.run_worker(settings=get_settings(), stop_event=stop))
+        running = asyncio.create_task(
+            worker.run_worker(settings=get_settings(), stop_event=stop)
+        )
         try:
             return await asyncio.to_thread(main, arguments)
         finally:
             stop.set()
             await running
+
     return run
 
 
@@ -149,15 +171,22 @@ def run_cli(inline_worker):
 def store_vectors(storage, settings):
     async def store(vectors, *, tenant_id=None, model=None):
         tenant_id = tenant_id or settings.tenant_id
-        source = await documents.insert_source(storage,
-            tenant_id=tenant_id, source_type="file", reference="/tmp/vectors.md",
-            mime_type="text/markdown", content_hash=str(uuid4()),
+        source = await documents.insert_source(
+            storage,
+            tenant_id=tenant_id,
+            source_type="file",
+            reference="/tmp/vectors.md",
+            mime_type="text/markdown",
+            content_hash=str(uuid4()),
         )
-        await documents.replace_chunks(storage,
-            tenant_id=tenant_id, source_id=source.id,
+        await documents.replace_chunks(
+            storage,
+            tenant_id=tenant_id,
+            source_id=source.id,
             chunks=[
                 ChunkInput(
-                    content=f"chunk {index}", embedding=vector,
+                    content=f"chunk {index}",
+                    embedding=vector,
                     metadata={
                         "embedding_provider": settings.embedding_provider,
                         "embedding_model": model or settings.embedding_model_name,
@@ -167,4 +196,5 @@ def store_vectors(storage, settings):
             ],
         )
         return source
+
     return store

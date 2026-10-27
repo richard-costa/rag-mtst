@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from bisect import bisect_right
 from dataclasses import dataclass, replace
-import re
 from typing import TYPE_CHECKING
 
 from app.storage.records import ChunkInput
@@ -57,6 +57,7 @@ class _MarkdownSection:
 # ---------------------------------------------------------------------------
 # The entry point makes the parsing, section grouping, and packing stages explicit.
 
+
 def chunk_markdown(
     text: str,
     chunk_size: int,
@@ -74,9 +75,7 @@ def chunk_markdown(
     sections = _group_sections(blocks)
     chunks: list[ChunkInput] = []
     for section in sections:
-        chunks.extend(
-            _pack_section(section, chunk_size, group_adjacent=group_adjacent)
-        )
+        chunks.extend(_pack_section(section, chunk_size, group_adjacent=group_adjacent))
     if pages:
         page_lines = []
         start_line = 1
@@ -88,18 +87,30 @@ def chunk_markdown(
         annotated = []
         for chunk in chunks:
             numbers = [
-                number for number, start, end in page_lines
-                if start <= chunk.metadata["end_line"] and end >= chunk.metadata["start_line"]
+                number
+                for number, start, end in page_lines
+                if start <= chunk.metadata["end_line"]
+                and end >= chunk.metadata["start_line"]
             ]
             if not numbers:
                 raise ValueError("Chunk body has no matching source page")
-            annotated.append(replace(
-                chunk,
-                page_number=numbers[0] if pages[0].kind == "page" and numbers[0] == numbers[-1] else None,
-                metadata={**chunk.metadata, "source_pages": {
-                    "kind": pages[0].kind, "start": numbers[0], "end": numbers[-1], "scope": "body",
-                }},
-            ))
+            annotated.append(
+                replace(
+                    chunk,
+                    page_number=numbers[0]
+                    if pages[0].kind == "page" and numbers[0] == numbers[-1]
+                    else None,
+                    metadata={
+                        **chunk.metadata,
+                        "source_pages": {
+                            "kind": pages[0].kind,
+                            "start": numbers[0],
+                            "end": numbers[-1],
+                            "scope": "body",
+                        },
+                    },
+                )
+            )
         return annotated
     return chunks
 
@@ -108,6 +119,7 @@ def chunk_markdown(
 # Block parsing
 # ---------------------------------------------------------------------------
 # Blank lines and headings delimit text blocks; fenced code stays in one block.
+
 
 def _parse_blocks(text: str) -> list[_MarkdownBlock]:
     blocks: list[_MarkdownBlock] = []
@@ -183,6 +195,7 @@ def _parse_blocks(text: str) -> list[_MarkdownBlock]:
 # ---------------------------------------------------------------------------
 # Each heading updates the parent stack and starts a distinct section.
 
+
 def _group_sections(blocks: list[_MarkdownBlock]) -> list[_MarkdownSection]:
     sections: list[_MarkdownSection] = []
     headings: list[_Heading] = []
@@ -220,6 +233,7 @@ def _parse_heading(block: _MarkdownBlock) -> _Heading | None:
 # Chunk packing
 # ---------------------------------------------------------------------------
 # Split oversized blocks as needed, then combine pieces with heading and line metadata.
+
 
 def _pack_section(
     section: _MarkdownSection,
@@ -272,6 +286,7 @@ def _pack_section(
 # Oversized block splitting
 # ---------------------------------------------------------------------------
 # Prose prefers sentence boundaries; list items, tables, and code retain their structure.
+
 
 def _split_block(block: _MarkdownBlock, word_limit: int) -> list[_MarkdownBlock]:
     if block.is_code or _word_count(block.text) <= word_limit or _is_table(block.text):

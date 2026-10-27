@@ -10,13 +10,20 @@ import pytest
 from app.extraction import visual
 
 
-@pytest.mark.skipif(not shutil.which("pdftoppm") or not shutil.which("pdfinfo"), reason="Poppler is required")
-async def test_real_pdf_pages_render_in_order_with_bounded_images(tmp_path, pdf_document):
+@pytest.mark.skipif(
+    not shutil.which("pdftoppm") or not shutil.which("pdfinfo"),
+    reason="Poppler is required",
+)
+async def test_real_pdf_pages_render_in_order_with_bounded_images(
+    tmp_path, pdf_document
+):
     source = tmp_path / "source.pdf"
     source.write_bytes(pdf_document(("First page", "", "Third page")))
 
     assert await visual._page_count(source) == 3
-    images = [await visual._render_page(source, number, tmp_path) for number in range(1, 4)]
+    images = [
+        await visual._render_page(source, number, tmp_path) for number in range(1, 4)
+    ]
 
     assert len(set(images)) == 3
     for image in images:
@@ -27,7 +34,9 @@ async def test_real_pdf_pages_render_in_order_with_bounded_images(tmp_path, pdf_
 
 
 @pytest.mark.parametrize("metadata", [b"Pages: 0\n", b"Pages: 51\n", b"Unknown\n"])
-async def test_invalid_pdf_page_count_fails_before_rendering(monkeypatch, tmp_path, metadata):
+async def test_invalid_pdf_page_count_fails_before_rendering(
+    monkeypatch, tmp_path, metadata
+):
     monkeypatch.setattr(visual, "_run_tool", AsyncMock(return_value=metadata))
     with pytest.raises(ValueError):
         await visual._page_count(tmp_path / "source.pdf")
@@ -45,7 +54,11 @@ async def test_failed_render_removes_partial_image(monkeypatch, tmp_path):
 
 
 async def test_missing_poppler_has_an_explicit_error(monkeypatch):
-    monkeypatch.setattr(visual.asyncio, "create_subprocess_exec", AsyncMock(side_effect=FileNotFoundError))
+    monkeypatch.setattr(
+        visual.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(side_effect=FileNotFoundError),
+    )
     with pytest.raises(ValueError, match="install Poppler"):
         await visual._run_tool("pdfinfo", "source.pdf")
 
@@ -54,7 +67,9 @@ async def test_missing_poppler_has_an_explicit_error(monkeypatch):
 async def test_interrupted_tool_is_killed_and_reaped(monkeypatch, failure):
     process = Mock(returncode=None)
     process.communicate = AsyncMock(side_effect=[failure(), (b"", b"")])
-    monkeypatch.setattr(visual.asyncio, "create_subprocess_exec", AsyncMock(return_value=process))
+    monkeypatch.setattr(
+        visual.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)
+    )
     with pytest.raises(failure):
         await visual._run_tool("pdftoppm", "source.pdf")
     process.kill.assert_called_once()
