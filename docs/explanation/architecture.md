@@ -13,6 +13,15 @@ Both operate on the same feature modules and PostgreSQL database. A separate
 worker executes durable ingestion jobs. There is no external message broker,
 ORM layer, or separate service/repository framework.
 
+The HTTP adapter is split into feature routers for sources, jobs, search,
+answers, and conversations. The application factory owns lifecycle and router
+registration; dependencies provide shared bearer authentication and each
+application's settings and database handle. A small API service module shares
+answer-request orchestration and response conversion between stateless answers
+and conversation turns. Routers own HTTP error mapping, while retrieval,
+generation, ingestion, and storage remain independent of FastAPI. This is not a
+second domain-service layer or a separate runtime process.
+
 ```mermaid
 ---
 config:

@@ -5,9 +5,11 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.dependencies import get_api_settings, get_storage
 from app.api.main import create_app
 from app.config import Settings
 from app.generation import Answer
+from app.storage.database import Database
 
 
 @pytest.mark.parametrize(
@@ -32,8 +34,15 @@ def test_api_rejects_unauthenticated_requests_before_feature_calls(
         AsyncMock(side_effect=AssertionError("Feature must not execute"))
         for _ in range(3)
     ]
-    for name, feature in zip(("enqueue_bytes", "search", "answer"), features):
-        monkeypatch.setattr(f"app.api.routes.{name}", feature)
+    for path_to_feature, feature in zip(
+        (
+            "app.api.routers.sources.enqueue_bytes",
+            "app.api.routers.search.search",
+            "app.api.services.answer",
+        ),
+        features,
+    ):
+        monkeypatch.setattr(path_to_feature, feature)
     headers = {"Authorization": authorization} if authorization else {}
     with TestClient(create_app(Settings(api_key="test-key"))) as client:
         if path == "/sources/file":
@@ -51,7 +60,7 @@ def test_api_rejects_unauthenticated_requests_before_feature_calls(
 
 def test_api_accepts_valid_key_and_keeps_server_configured_tenant(monkeypatch) -> None:
     search = AsyncMock(return_value=[])
-    monkeypatch.setattr("app.api.routes.search", search)
+    monkeypatch.setattr("app.api.routers.search.search", search)
     settings = Settings(api_key="test-key", tenant_id="server-tenant")
     with TestClient(create_app(settings)) as client:
         response = client.post(
@@ -62,6 +71,58 @@ def test_api_accepts_valid_key_and_keeps_server_configured_tenant(monkeypatch) -
     assert response.status_code == 200
     assert response.json() == []
     assert search.call_args.kwargs["settings"].tenant_id == "server-tenant"
+
+
+def test_api_dependencies_remain_isolated_between_applications(monkeypatch) -> None:
+    search = AsyncMock(return_value=[])
+    monkeypatch.setattr("app.api.routers.search.search", search)
+    first_settings = Settings(api_key="first-key", tenant_id="first-tenant")
+    second_settings = Settings(api_key="second-key", tenant_id="second-tenant")
+    first_app = create_app(first_settings)
+    second_app = create_app(second_settings)
+    with TestClient(first_app) as first, TestClient(second_app) as second:
+        for client, settings, application in (
+            (first, first_settings, first_app),
+            (second, second_settings, second_app),
+            (first, first_settings, first_app),
+        ):
+            response = client.post(
+                "/search",
+                json={"query": "question"},
+                headers={"Authorization": f"Bearer {settings.api_key}"},
+            )
+            assert response.status_code == 200
+            assert search.call_args.kwargs["settings"] is settings
+            assert search.call_args.kwargs["storage"] is application.state.storage
+        assert (
+            first.post(
+                "/search",
+                json={"query": "question"},
+                headers={"Authorization": "Bearer second-key"},
+            ).status_code
+            == 401
+        )
+    assert first_app.state.storage is not second_app.state.storage
+    assert search.await_count == 3
+
+
+def test_api_resource_dependencies_can_be_overridden(monkeypatch) -> None:
+    search = AsyncMock(return_value=[])
+    monkeypatch.setattr("app.api.routers.search.search", search)
+    application = create_app(Settings(api_key="configured-key"))
+    settings = Settings(api_key="override-key", tenant_id="override-tenant")
+    storage = Database(settings.database_url)
+    application.dependency_overrides[get_api_settings] = lambda: settings
+    application.dependency_overrides[get_storage] = lambda: storage
+    with TestClient(application) as client:
+        response = client.post(
+            "/search",
+            json={"query": "question"},
+            headers={"Authorization": "Bearer override-key"},
+        )
+    assert response.status_code == 200
+    assert search.call_args.kwargs["settings"] is settings
+    assert search.call_args.kwargs["storage"] is storage
 
 
 def test_api_rejects_non_ascii_credentials_without_server_error() -> None:
@@ -136,7 +197,7 @@ def test_api_schema_documents_search_semantics() -> None:
 
 def test_job_status_requires_authentication_before_database_access(monkeypatch) -> None:
     lookup = AsyncMock(side_effect=AssertionError("Status lookup must not execute"))
-    monkeypatch.setattr("app.api.routes.jobs.get_ingestion_job", lookup)
+    monkeypatch.setattr("app.api.routers.jobs.jobs.get_ingestion_job", lookup)
     with TestClient(create_app(Settings(api_key="test-key"))) as client:
         response = client.get("/jobs/00000000-0000-0000-0000-000000000001")
     assert response.status_code == 401
@@ -158,7 +219,9 @@ def test_conversations_require_authentication_before_database_access(
         pytest.fail("Unauthenticated requests must not access conversations")
 
     for name in ("create_conversation", "list_messages", "conversation_turn"):
-        monkeypatch.setattr(f"app.api.routes.conversations.{name}", unexpected)
+        monkeypatch.setattr(
+            f"app.api.routers.conversations.conversations.{name}", unexpected
+        )
     with TestClient(create_app(Settings(api_key="test-key"))) as client:
         response = client.request(method, path, json={"query": "question"})
     assert response.status_code == 401
@@ -219,7 +282,7 @@ def test_answer_model_selection_is_request_scoped(
     monkeypatch, selection, provider, model, endpoint
 ) -> None:
     generate = AsyncMock(return_value=Answer("Answer", [], []))
-    monkeypatch.setattr("app.api.routes.answer", generate)
+    monkeypatch.setattr("app.api.services.answer", generate)
     settings = Settings(
         api_key="test-key",
         generation_model="configured-model",
@@ -258,7 +321,7 @@ def test_invalid_answer_model_selection_does_not_call_provider(
     monkeypatch, selection
 ) -> None:
     generate = AsyncMock(side_effect=AssertionError("Generation must not execute"))
-    monkeypatch.setattr("app.api.routes.answer", generate)
+    monkeypatch.setattr("app.api.services.answer", generate)
     with TestClient(create_app(Settings(api_key="test-key"))) as client:
         response = client.post(
             "/ask",

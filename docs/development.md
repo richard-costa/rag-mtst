@@ -15,8 +15,11 @@ this table tells you where to make a change.
 | CLI arguments and output | `app/cli.py` |
 | Local lifecycle (`start/status/stop/reset`) | `app/local.py` |
 | Defaults and environment parsing | `app/config.py` |
-| FastAPI factory, authentication and lifespan | `app/api/main.py` |
-| HTTP routing, requests and conversations | `app/api/routes.py`, `app/api/schemas.py` |
+| FastAPI factory, lifespan and router registration | `app/api/main.py` |
+| HTTP authentication and application resources | `app/api/dependencies.py` |
+| Source, job, search, answer and conversation endpoints | `app/api/routers/` |
+| Shared API answer orchestration and response conversion | `app/api/services.py` |
+| HTTP request and response models | `app/api/schemas.py` |
 | Ingestion submission, staging and deduplication | `app/ingestion.py` |
 | Job execution, child supervision and heartbeats | `app/worker.py` |
 | Native/visual document extraction | `app/extraction/` |
@@ -31,6 +34,29 @@ this table tells you where to make a change.
 | Conversation history and transactions | `app/storage/conversations.py` |
 | PostgreSQL schema and migrations | `migrations/` |
 | Optional visual teaching interface | `demo/` |
+
+### HTTP package boundaries
+
+Each feature module under `app/api/routers/` declares a module-level `APIRouter`:
+`sources.py`, `jobs.py`, `search.py`, `answers.py`, and `conversations.py`.
+Search and answer generation are separate API concerns; `/ask` is not a retrieval
+endpoint. `main.py` registers these routers directly and applies shared bearer
+authentication. The ASGI entry point remains `app.api.main:app`.
+
+`create_app(settings)` stores that application's settings and `Database` handle
+on `application.state`. Routes receive them through the `SettingsDependency` and
+`StorageDependency` aliases in `dependencies.py`, using FastAPI's `Depends` and
+`Annotated`. Tests can replace `get_api_settings` and `get_storage` through
+`application.dependency_overrides`; separate application instances do not share
+configuration or database handles. The HTTP tenant still comes from server
+settings, not request headers.
+
+Routers translate application errors to HTTP responses and do not import other
+routers. Both `/ask` and conversation turns call `services.generate_answer` with
+explicit settings, storage, and optional history. This API-specific helper selects
+request-scoped generation settings and constructs response models; it does not
+replace `app.generation.answer`. Simple endpoints call feature or storage
+functions directly. Domain modules do not depend on FastAPI or HTTP schemas.
 
 ## Local development workflow
 

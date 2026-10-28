@@ -96,7 +96,7 @@ async def test_conversation_api_rejects_overlap_and_failed_turns_leave_no_histor
         await release.wait()
         return await generation.answer(*args, **kwargs)
 
-    monkeypatch.setattr("app.api.routes.answer", blocked_answer)
+    monkeypatch.setattr("app.api.services.answer", blocked_answer)
     async with AsyncClient(
         transport=ASGITransport(app=create_app(settings)),
         base_url="http://test",
@@ -119,12 +119,12 @@ async def test_conversation_api_rejects_overlap_and_failed_turns_leave_no_histor
         async def fail_answer(*args, **kwargs):
             raise generation.GenerationError("Generation failed")
 
-        monkeypatch.setattr("app.api.routes.answer", fail_answer)
+        monkeypatch.setattr("app.api.services.answer", fail_answer)
         assert (
             await client.post(history_url, json={"query": "token"})
         ).status_code == 502
         assert (await client.get(history_url)).json() == before
-        monkeypatch.setattr("app.api.routes.answer", generation.answer)
+        monkeypatch.setattr("app.api.services.answer", generation.answer)
         assert (
             await client.post(history_url, json={"query": "token"})
         ).status_code == 200
@@ -132,7 +132,7 @@ async def test_conversation_api_rejects_overlap_and_failed_turns_leave_no_histor
             message["sequence"] for message in (await client.get(history_url)).json()
         ] == [1, 2, 3, 4]
         before_cancel = (await client.get(history_url)).json()
-        monkeypatch.setattr("app.api.routes.answer", blocked_answer)
+        monkeypatch.setattr("app.api.services.answer", blocked_answer)
         entered.clear()
         release.clear()
         pending = asyncio.create_task(
@@ -144,7 +144,7 @@ async def test_conversation_api_rejects_overlap_and_failed_turns_leave_no_histor
             pending.cancel()
             await asyncio.gather(pending, return_exceptions=True)
         assert (await client.get(history_url)).json() == before_cancel
-        monkeypatch.setattr("app.api.routes.answer", generation.answer)
+        monkeypatch.setattr("app.api.services.answer", generation.answer)
         assert (
             await client.post(history_url, json={"query": "token"})
         ).status_code == 200
