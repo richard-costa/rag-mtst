@@ -26,6 +26,14 @@ class EmbeddingError(RuntimeError):
 
 
 def embedding_endpoint(settings: Settings) -> str | None:
+    """Resolve the configured embedding service endpoint.
+
+    Args:
+        settings: Configuration for this operation; defaults to the environment where supported.
+
+    Returns:
+        Embedding service URL, or ``None`` for local embeddings.
+    """
     if settings.embedding_provider == "local":
         return None
     if settings.embedding_provider != "openai":
@@ -49,7 +57,15 @@ def embedding_endpoint(settings: Settings) -> str | None:
 async def prepare_chunks_for_embedding(
     chunks: list[ChunkInput], *, settings: Settings | None = None
 ) -> list[ChunkInput]:
-    """Split local-model overflow before the one-text/one-vector embedding call."""
+    """Split chunks that exceed a local model's input limit.
+
+    Args:
+        chunks: Input chunks to process.
+        settings: Configuration for this operation; defaults to the environment where supported.
+
+    Returns:
+        Chunks that fit the chosen embedding model.
+    """
     active_settings = settings or get_settings()
     if not chunks or active_settings.embedding_provider != "local":
         return chunks
@@ -59,6 +75,15 @@ async def prepare_chunks_for_embedding(
 async def embed_texts(
     texts: list[str], *, settings: Settings | None = None
 ) -> list[list[float]]:
+    """Embed texts with the selected hosted or local embedding provider.
+
+    Args:
+        texts: Input texts to embed.
+        settings: Configuration for this operation; defaults to the environment where supported.
+
+    Returns:
+        One vector per input text.
+    """
     active_settings = settings or get_settings()
     endpoint = embedding_endpoint(active_settings)
     if not texts:
@@ -82,6 +107,16 @@ async def embed_texts(
 async def _embed_openai(
     texts: list[str], settings: Settings, *, base_url: str | None
 ) -> list[list[float]]:
+    """Call the OpenAI-compatible embeddings API and validate its vectors.
+
+    Args:
+        texts: Input texts to embed.
+        settings: Configuration for this operation; defaults to the environment where supported.
+        base_url: Optional service URL override.
+
+    Returns:
+        Embedding vectors in input order.
+    """
     if not settings.openai_api_key:
         raise ValueError("Set OPENAI_API_KEY or select RAG_EMBEDDING_PROVIDER=local")
 
@@ -114,6 +149,14 @@ async def _embed_openai(
 
 @lru_cache(maxsize=1)
 def _load_local_model(model_name: str) -> Any:
+    """Load and cache a local sentence-transformer model.
+
+    Args:
+        model_name: Identifier of the local embedding model.
+
+    Returns:
+        Loaded sentence-transformer model.
+    """
     try:
         module = importlib.import_module("sentence_transformers")
     except ImportError as error:
@@ -122,6 +165,15 @@ def _load_local_model(model_name: str) -> Any:
 
 
 def _embed_local(texts: list[str], settings: Settings) -> list[list[float]]:
+    """Compute embeddings locally and validate the output vectors.
+
+    Args:
+        texts: Input texts to embed.
+        settings: Configuration for this operation; defaults to the environment where supported.
+
+    Returns:
+        Local embedding vectors in input order.
+    """
     try:
         model = _load_local_model(settings.embedding_model_name)
         for index, text in enumerate(texts):
@@ -142,6 +194,15 @@ def _embed_local(texts: list[str], settings: Settings) -> list[list[float]]:
 
 
 def _local_token_count(model: Any, text: str) -> int:
+    """Count model input tokens, including any configured prompt.
+
+    Args:
+        model: Loaded local embedding model.
+        text: Input text to process.
+
+    Returns:
+        Input token count.
+    """
     prompt = model.prompts.get(model.default_prompt_name, "") or ""
     normalized = (prompt + text).strip()
     if model._first_module().do_lower_case:
@@ -158,6 +219,15 @@ def _local_token_count(model: Any, text: str) -> int:
 def _prepare_local_chunks(
     chunks: list[ChunkInput], settings: Settings
 ) -> list[ChunkInput]:
+    """Split oversized chunks into model-fitting text slices.
+
+    Args:
+        chunks: Input chunks to process.
+        settings: Configuration for this operation; defaults to the environment where supported.
+
+    Returns:
+        Model-fitting chunks with preserved provenance.
+    """
     try:
         model = _load_local_model(settings.embedding_model_name)
     except (OSError, RuntimeError) as error:
@@ -203,7 +273,15 @@ def _prepare_local_chunks(
 
 
 def _local_text_spans(text: str, model: Any) -> list[tuple[int, int]]:
-    """Find verified fitting slices without decoding or discarding source characters."""
+    """Find token-fitting slices without losing original source characters.
+
+    Args:
+        text: Input text to process.
+        model: Loaded local embedding model.
+
+    Returns:
+        Start/end offsets of the fitting slices.
+    """
     spans = []
     start = 0
     while start < len(text):
@@ -255,6 +333,12 @@ def _local_text_spans(text: str, model: Any) -> list[tuple[int, int]]:
 
 
 def _validate_vectors(vectors: list[list[float]], expected_count: int) -> None:
+    """Check the count, dimensions, and finiteness of embedding vectors.
+
+    Args:
+        vectors: Embedding vectors to validate.
+        expected_count: Expected number of vectors.
+    """
     if len(vectors) != expected_count:
         raise EmbeddingError("The embedding provider returned the wrong vector count")
     dimension = len(vectors[0])

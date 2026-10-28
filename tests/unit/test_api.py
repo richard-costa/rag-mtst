@@ -151,6 +151,38 @@ def test_api_schema_is_public_and_documents_bearer_authentication() -> None:
     assert schema["paths"]["/jobs/{job_id}"]["get"]["security"] == [{"HTTPBearer": []}]
 
 
+@pytest.mark.parametrize(
+    "path,method,summary",
+    [
+        ("/sources/file", "post", "Submit a document for indexing"),
+        ("/jobs/{job_id}", "get", "Read ingestion job status"),
+        ("/search", "post", "Search source passages"),
+        ("/ask", "post", "Generate a cited answer"),
+        ("/conversations", "post", "Create a conversation"),
+        (
+            "/conversations/{conversation_id}/messages",
+            "get",
+            "List conversation messages",
+        ),
+        (
+            "/conversations/{conversation_id}/messages",
+            "post",
+            "Generate a conversation turn",
+        ),
+    ],
+)
+def test_api_schema_documents_each_endpoint_in_markdown(path, method, summary) -> None:
+    """Keep endpoint summaries and Markdown descriptions visible in Swagger."""
+    operation = create_app(Settings(api_key="test-key")).openapi()["paths"][path][
+        method
+    ]
+    assert operation["summary"] == summary
+    assert "### Responses" in operation["description"]
+    assert "**401**" in operation["description"]
+    assert "Args:" not in operation["description"]
+    assert operation["security"] == [{"HTTPBearer": []}]
+
+
 def test_api_schema_documents_search_semantics() -> None:
     schema = create_app(Settings(api_key="test-key")).openapi()
     models = schema["components"]["schemas"]

@@ -11,10 +11,28 @@ from app.generation import GenerationError
 router = APIRouter(tags=["answers"])
 
 
-@router.post("/ask", response_model=AskResponse)
+@router.post("/ask", response_model=AskResponse, summary="Generate a cited answer")
 async def ask_source(
     request: AskRequest, settings: SettingsDependency, storage: StorageDependency
 ) -> AskResponse:
+    """Generate a stateless answer grounded in indexed source passages.
+
+    ### Request body
+    - `query`: Question to answer.
+    - `method`, `limit`, `window`: Optional retrieval settings; omitted values use
+        server defaults.
+    - `generation_provider`, `generation_model`: Request-only model overrides.
+        Selecting a provider requires a model.
+
+    ### Responses
+    - **200**: Answer text, retrieved matches, and current-source citations.
+        Insufficient evidence may produce an answer without citations.
+    - **401**: Missing or invalid bearer token.
+    - **422**: Invalid request, generation settings, or input budget.
+    - **502**: Embedding or generation provider failure.
+
+    This endpoint does not read or persist conversation history.
+    """
     try:
         return await generate_answer(request, settings=settings, storage=storage)
     except ValueError as error:

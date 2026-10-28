@@ -23,6 +23,22 @@ async def generate_answer(
     storage: Database,
     history: Sequence[Message] = (),
 ) -> AskResponse:
+    """Generate an API answer with request-scoped model settings.
+
+    Args:
+        request: Validated question, retrieval controls, and model overrides.
+        settings: Server defaults and fixed tenant scope; never mutated.
+        storage: Database handle for retrieving source passages.
+        history: Ordered prior messages for generation context, empty by default.
+
+    Returns:
+        Answer text, retrieved matches, and current-source citations.
+
+    Raises:
+        ValueError: Request settings or the generation input budget are invalid.
+        EmbeddingError: Retrieval embeddings could not be produced.
+        GenerationError: The provider failed or returned an unusable answer.
+    """
     if request.generation_provider is not None and request.generation_model is None:
         raise ValueError("Select a model for the requested answer provider")
     answer_settings = replace(
@@ -56,6 +72,14 @@ async def generate_answer(
 
 
 def search_match_response(match: SearchResult) -> SearchMatchResponse:
+    """Convert a retrieval result into its HTTP response model.
+
+    Args:
+        match: Retrieved source passage with its diagnostic score.
+
+    Returns:
+        Search-match response preserving content, source identity, and score.
+    """
     return SearchMatchResponse(
         source_id=match.source_id,
         source_title=match.source_title,

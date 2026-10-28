@@ -9,6 +9,11 @@ The running application serves exact schemas at `/openapi.json`, Swagger UI at
 at the proxy if necessary. See [running the API](../development.md#run-the-api-alongside-the-local-manager) and
 [configuration](configuration.md) for prerequisites.
 
+Operations are grouped by feature and have concise summaries with Markdown
+descriptions of inputs, responses, and workflow guarantees. These descriptions
+come from endpoint docstrings; schema fields remain the source for exact types
+and validation constraints.
+
 ## Endpoints
 
 | Method | Path | Success response |

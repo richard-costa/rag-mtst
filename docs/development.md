@@ -150,3 +150,18 @@ uv run --group docs mkdocs build --strict
 The strict build checks navigation and links. Preview Mermaid diagrams in a
 browser: MkDocs does not execute Mermaid at build time. Keep synthetic samples
 and never commit provider keys or source documents with private content.
+
+### Docstring conventions
+
+Use concise Google-style docstrings for application functions, classes, and
+helpers, including demo and migration code. Document parameters with `Args:`,
+results with `Returns:` or `Yields:`, and important failure contracts with
+`Raises:` where relevant. Describe actual values, defaults, tenant scope, and
+side effects rather than repeating type annotations. A single summary line is
+enough for a simple no-argument function with no additional contract.
+
+FastAPI endpoint handlers use Markdown docstrings instead: explain inputs,
+responses, and important behavior under headings and lists. Set a concise route
+`summary` for Swagger UI. Let the docstring supply the OpenAPI description;
+an explicit decorator `description` overrides it. Keep detailed retrieval-order
+and score semantics intact, and do not claim new runtime behavior in docs.

@@ -11,11 +11,30 @@ from app.storage.database import Database
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    """Build the authenticated FastAPI application with the configured database.
+
+    Args:
+        settings: Server configuration; reads the environment when omitted.
+
+    Returns:
+        Application with isolated settings, storage, and authenticated routers.
+    """
     active_settings = settings or get_settings()
     storage = Database(active_settings.database_url)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
+        """Validate the API token before the application starts serving requests.
+
+        Args:
+            application: FastAPI application managed by the lifespan.
+
+        Yields:
+            None after successful token validation.
+
+        Raises:
+            ValueError: The configured token is missing, non-ASCII, or contains whitespace.
+        """
         api_key = active_settings.api_key
         if (
             not api_key

@@ -39,12 +39,27 @@ ERROR_EXIT_CODES = {
 
 
 class JobExecutionError(RuntimeError):
+    """Failure of an ingestion child process with a categorized exit status."""
+
     def __init__(self, category: str) -> None:
+        """Create a child-execution error for a known failure category.
+
+        Args:
+            category: Categorized failure name used for worker exit status and logging.
+        """
         self.category = category
         super().__init__(category)
 
 
 def _error_category(error: BaseException) -> str:
+    """Classify an exception for ingestion failure reporting.
+
+    Args:
+        error: Exception to classify.
+
+    Returns:
+        Stable failure category name.
+    """
     if isinstance(error, JobExecutionError):
         return error.category
     if isinstance(error, asyncio.CancelledError):
@@ -67,6 +82,15 @@ async def _log_outcome(
     started: float,
     category: str,
 ) -> None:
+    """Log job duration, stage, and final error category.
+
+    Args:
+        settings: Worker or application runtime settings.
+        storage: Database handle for reading and updating jobs.
+        job: Claimed ingestion job to execute or report.
+        started: Monotonic timestamp when execution began.
+        category: Categorized failure name used for worker exit status and logging.
+    """
     current = None
     try:
         async with asyncio.timeout(DATABASE_TIMEOUT_SECONDS):
@@ -91,6 +115,13 @@ async def _log_outcome(
 async def _execute_job(
     job: IngestionJob, *, settings: Settings, storage: Database
 ) -> None:
+    """Supervise a claimed ingestion job in an isolated child process.
+
+    Args:
+        job: Claimed ingestion job to execute or report.
+        settings: Worker or application runtime settings.
+        storage: Database handle for reading and updating jobs.
+    """
     configuration = asdict(settings)
     configuration["data_dir"] = str(settings.data_dir)
     payload = (
@@ -142,6 +173,11 @@ async def _execute_job(
 
 
 async def _execute_child() -> int:
+    """Read a claim from standard input and execute the job inside a child process.
+
+    Returns:
+        Exit status indicating success or a failure category.
+    """
     reader = asyncio.StreamReader()
     transport, _protocol = await asyncio.get_running_loop().connect_read_pipe(
         lambda: asyncio.StreamReaderProtocol(reader),
@@ -189,6 +225,15 @@ async def _execute_child() -> int:
 
 
 async def run_once(*, settings: Settings, storage: Database) -> bool:
+    """Claim and execute one pending ingestion job, if any.
+
+    Args:
+        settings: Worker or application runtime settings.
+        storage: Database handle for reading and updating jobs.
+
+    Returns:
+        Whether a job was claimed and executed.
+    """
     async with asyncio.timeout(DATABASE_TIMEOUT_SECONDS):
         await jobs.fail_interrupted_ingestion_jobs(
             storage, settings.tenant_id, stale_seconds=STALE_SECONDS
@@ -202,6 +247,7 @@ async def run_once(*, settings: Settings, storage: Database) -> bool:
     category = "none"
 
     async def heartbeat() -> None:
+        """Renew the current job claim while the child is running."""
         while True:
             assert job.claim_token is not None
             async with asyncio.timeout(DATABASE_TIMEOUT_SECONDS):
@@ -261,6 +307,12 @@ async def run_once(*, settings: Settings, storage: Database) -> bool:
 async def run_worker(
     *, settings: Settings | None = None, stop_event: asyncio.Event | None = None
 ) -> None:
+    """Poll for ingestion jobs and clean up abandoned staged inputs.
+
+    Args:
+        settings: Worker or application runtime settings.
+        stop_event: Optional event used to request worker shutdown.
+    """
     active_settings = settings or get_settings()
     storage = Database(active_settings.database_url)
     stop = stop_event or asyncio.Event()
@@ -300,6 +352,7 @@ async def run_worker(
 
 
 async def _main() -> None:
+    """Configure logging and start the worker process."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

@@ -21,6 +21,15 @@ class ConversationBusy(RuntimeError):
 
 
 async def create_conversation(database: Database, tenant_id: str) -> Conversation:
+    """Insert a new tenant-scoped conversation.
+
+    Args:
+        database: PostgreSQL database handle.
+        tenant_id: Tenant identifier used to scope the operation.
+
+    Returns:
+        Newly created conversation record.
+    """
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -42,7 +51,17 @@ async def conversation_turn(
     conversation_id: UUID,
     question: str,
 ) -> AsyncGenerator[ConversationTurn]:
-    """Lock one conversation and atomically save a successful question/reply pair."""
+    """Lock one conversation and commit a successful question-and-answer pair.
+
+    Args:
+        database: PostgreSQL database handle.
+        tenant_id: Tenant identifier used to scope the operation.
+        conversation_id: Identifier of the conversation.
+        question: Question to record before generating a response.
+
+    Yields:
+        Locked turn holding recent history and its pending reply.
+    """
     async with database.connection() as connection:
         try:
             cursor = await connection.execute(
@@ -93,6 +112,18 @@ async def list_messages(
     limit: int = 50,
     before: int | None = None,
 ) -> list[Message]:
+    """Retrieve conversation messages using a descending sequence cursor.
+
+    Args:
+        database: PostgreSQL database handle.
+        tenant_id: Tenant identifier used to scope the operation.
+        conversation_id: Identifier of the conversation.
+        limit: Maximum number of matching passages.
+        before: Sequence number used as an exclusive pagination cursor.
+
+    Returns:
+        Stored messages in descending sequence order.
+    """
     if not 1 <= limit <= 100:
         raise ValueError("History limit must be between 1 and 100")
     async with database.connection() as connection:
@@ -114,6 +145,17 @@ async def _conversation_messages(
     limit: int,
     before: int | None = None,
 ) -> list[Message]:
+    """Read the requested message page using an existing connection.
+
+    Args:
+        connection: Existing asynchronous PostgreSQL connection.
+        conversation_id: Identifier of the conversation.
+        limit: Maximum number of matching passages.
+        before: Sequence number used as an exclusive pagination cursor.
+
+    Returns:
+        Messages selected by the pagination cursor.
+    """
     cursor = await connection.execute(
         """
         SELECT * FROM messages

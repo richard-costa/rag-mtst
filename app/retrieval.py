@@ -24,6 +24,8 @@ RetrievalMethod = Literal["cosine", "window", "lexical", "hybrid"]
 
 @dataclass(frozen=True, slots=True)
 class SearchResult:
+    """A retrieved source passage with its title, location, and optional score."""
+
     source_id: str
     source_title: str
     source_reference: str
@@ -47,6 +49,19 @@ async def search(
     settings: Settings | None = None,
     storage: Database | None = None,
 ) -> list[SearchResult]:
+    """Dispatch a query to the configured retrieval strategy.
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of matching passages.
+        method: Optional retrieval method override.
+        window: Number of neighboring chunks to include per seed match.
+        settings: Search or local runtime configuration.
+        storage: Database handle used for retrieval.
+
+    Returns:
+        function search() { [native code] }
+    """
     if not query.strip():
         raise ValueError("The search query must not be empty")
 
@@ -97,6 +112,17 @@ async def search(
 async def search_cosine(
     embedding: list[float], *, limit: int, settings: Settings, storage: Database
 ) -> list[SearchResult]:
+    """Find nearest indexed chunks for an embedding vector.
+
+    Args:
+        embedding: Query embedding vector.
+        limit: Maximum number of matching passages.
+        settings: Search or local runtime configuration.
+        storage: Database handle used for retrieval.
+
+    Returns:
+        Passages ranked by vector similarity.
+    """
     chunks = await documents.vector_search(
         storage,
         tenant_id=settings.tenant_id,
@@ -122,6 +148,18 @@ async def search_with_windows(
     settings: Settings,
     storage: Database,
 ) -> list[SearchResult]:
+    """Expand vector-search hits with adjacent chunks from the same source.
+
+    Args:
+        embedding: Query embedding vector.
+        limit: Maximum number of matching passages.
+        window: Number of neighboring chunks to include per seed match.
+        settings: Search or local runtime configuration.
+        storage: Database handle used for retrieval.
+
+    Returns:
+        Seed hits and adjacent passages, deduplicated by source span.
+    """
     seeds = await search_cosine(
         embedding, limit=limit, settings=settings, storage=storage
     )
@@ -181,6 +219,17 @@ async def search_with_windows(
 async def search_lexical(
     query: str, *, limit: int, settings: Settings, storage: Database
 ) -> list[SearchResult]:
+    """Search source text using lexical word matching.
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of matching passages.
+        settings: Search or local runtime configuration.
+        storage: Database handle used for retrieval.
+
+    Returns:
+        Passages ranked by lexical relevance.
+    """
     if not _terms(query):
         raise ValueError("The search query must contain at least one word")
     chunks = await documents.full_text_search(
@@ -201,7 +250,17 @@ async def search_lexical(
 async def search_hybrid(
     query: str, *, limit: int, settings: Settings, storage: Database
 ) -> list[SearchResult]:
-    """Fuse equally weighted candidate lists with RRF constant 60, without windows."""
+    """Combine lexical and vector ranks using reciprocal rank fusion.
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of matching passages.
+        settings: Search or local runtime configuration.
+        storage: Database handle used for retrieval.
+
+    Returns:
+        Passages ranked by combined reciprocal rank.
+    """
     if not _terms(query):
         raise ValueError("The search query must contain at least one word")
     candidate_limit = max(20, 4 * limit)
@@ -241,14 +300,34 @@ async def search_hybrid(
 async def search_mmr(
     query: str, *, limit: int, settings: Settings, storage: Database
 ) -> list[SearchResult]:
-    """Balance relevance and diversity with maximal marginal relevance."""
+    """Reserve an unimplemented maximal-marginal-relevance retrieval extension.
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of matching passages.
+        settings: Search or local runtime configuration.
+        storage: Database handle used for retrieval.
+
+    Raises:
+        NotImplementedError: This retrieval strategy is not implemented.
+    """
     raise NotImplementedError("MMR retrieval is not implemented yet")
 
 
 async def search_multi_query(
     query: str, *, limit: int, settings: Settings, storage: Database
 ) -> list[SearchResult]:
-    """Retrieve across query variants and combine their results."""
+    """Reserve an unimplemented multi-query retrieval extension.
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of matching passages.
+        settings: Search or local runtime configuration.
+        storage: Database handle used for retrieval.
+
+    Raises:
+        NotImplementedError: This retrieval strategy is not implemented.
+    """
     raise NotImplementedError("Multi-query retrieval is not implemented yet")
 
 
@@ -259,6 +338,15 @@ async def search_multi_query(
 
 
 def _search_result(chunk: StoredChunk, *, score: float | None) -> SearchResult:
+    """Convert a stored chunk and optional score into a search result.
+
+    Args:
+        chunk: Stored source chunk.
+        score: Retrieval score; absent for expanded context chunks.
+
+    Returns:
+        Public retrieval result.
+    """
     return SearchResult(
         source_id=str(chunk.source_id),
         source_title=chunk.source_title,
@@ -271,4 +359,12 @@ def _search_result(chunk: StoredChunk, *, score: float | None) -> SearchResult:
 
 def _terms(text: str) -> list[str]:
     # Example: "Access_token, please!" becomes ["access", "token", "please"].
+    """Extract lowercase Unicode word terms, excluding underscores.
+
+    Args:
+        text: Text to tokenize into lexical search terms.
+
+    Returns:
+        Normalized query terms.
+    """
     return re.findall(r"[^\W_]+", text.casefold())

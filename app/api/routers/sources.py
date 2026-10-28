@@ -12,7 +12,12 @@ from app.ingestion import enqueue_bytes
 router = APIRouter(tags=["sources"])
 
 
-@router.post("/sources/file", response_model=SourceResponse, status_code=202)
+@router.post(
+    "/sources/file",
+    response_model=SourceResponse,
+    status_code=202,
+    summary="Submit a document for indexing",
+)
 async def add_source_file(
     file: Annotated[UploadFile, File(description="A supported document file")],
     settings: SettingsDependency,
@@ -20,6 +25,23 @@ async def add_source_file(
     reindex: bool = False,
     extraction_method: Literal["parser", "visual"] = "parser",
 ) -> SourceResponse | JSONResponse:
+    """Upload a document and submit durable indexing work.
+
+    ### Inputs
+    - `file`: Multipart TXT, Markdown, PDF, DOCX, or PPTX upload with a filename.
+    - `reindex`: Query flag allowing replacement of an existing index.
+    - `extraction_method`: Query selection, `parser` (default) or `visual`.
+      Unsupported input never silently falls back to another extraction method.
+
+    ### Responses
+    - **202**: A new or matching active job; poll the returned `status_url`.
+    - **200**: Source already indexed with the same extraction profile; no job.
+    - **401**: Missing or invalid bearer token.
+    - **422**: Invalid filename, unsupported input, or conflicting submission.
+
+    A separate worker processes queued jobs. File bytes are staged temporarily,
+    not permanently archived; unsuccessful reindexing preserves the prior index.
+    """
     if not file.filename:
         raise HTTPException(
             status_code=422, detail="The uploaded file needs a filename"

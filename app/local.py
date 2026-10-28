@@ -27,10 +27,18 @@ STOP_TIMEOUT = 20
 
 
 class LocalError(RuntimeError):
-    """A user-actionable local environment failure."""
+    """A local environment failure requiring user action."""
 
 
 def _checkout(root: Path | None = None) -> Path:
+    """Verify that the project root contains the expected checkout files.
+
+    Args:
+        root: Optional project root; defaults to the current checkout.
+
+    Returns:
+        Validated project root.
+    """
     root = root or ROOT
     if not (root / "compose.yaml").is_file() or not (root / "alembic.ini").is_file():
         raise LocalError(
@@ -40,12 +48,24 @@ def _checkout(root: Path | None = None) -> Path:
 
 
 def _state_dir(root: Path | None = None) -> Path:
+    """Locate the local runtime-state directory.
+
+    Args:
+        root: Optional project root; defaults to the current checkout.
+
+    Returns:
+        Directory containing local supervisor state.
+    """
     root = root or ROOT
     return root / ".rag-data" / "local-runtime"
 
 
 def load_environment(root: Path | None = None) -> None:
-    """Load project .env for CLI commands; existing exported variables win."""
+    """Load .env without overriding variables already exported in the shell.
+
+    Args:
+        root: Optional project root; defaults to the current checkout.
+    """
     root = root or ROOT
     path = root / ".env"
     if path.is_file():
@@ -76,6 +96,7 @@ def load_environment(root: Path | None = None) -> None:
 
 
 def _verify_configuration() -> None:
+    """Validate the local configuration before starting services."""
     from app.config import get_settings
 
     settings = get_settings()
@@ -129,6 +150,15 @@ def _verify_configuration() -> None:
 
 
 def _docker(*arguments: str, capture: bool = True) -> subprocess.CompletedProcess[str]:
+    """Run a Docker Compose command scoped to this project.
+
+    Args:
+        arguments: Additional command-line arguments passed to Docker Compose.
+        capture: Whether to capture command output.
+
+    Returns:
+        Completed process result, including its output and status.
+    """
     command = [
         "docker",
         "compose",
@@ -157,6 +187,11 @@ def _docker(*arguments: str, capture: bool = True) -> subprocess.CompletedProces
 
 
 def _docker_ready() -> bool:
+    """Check whether the database container is running and ready.
+
+    Returns:
+        Whether the database service is ready.
+    """
     listing = _docker("ps", "--status", "running", "-q", "db")
     if listing.returncode != 0 or not listing.stdout.strip():
         return False
@@ -174,6 +209,14 @@ def _docker_ready() -> bool:
 
 
 def _worker_info(root: Path | None = None) -> tuple[int, str] | None:
+    """Read the saved worker process identifier and ownership token.
+
+    Args:
+        root: Optional project root; defaults to the current checkout.
+
+    Returns:
+        Stored PID and ownership token, or ``None`` when missing.
+    """
     try:
         record = json.loads(
             (_state_dir(root) / "worker.json").read_text(encoding="utf-8")
@@ -192,6 +235,14 @@ def _worker_info(root: Path | None = None) -> tuple[int, str] | None:
 
 
 def _worker_alive(info: tuple[int, str] | None) -> bool:
+    """Check whether the recorded worker process still exists.
+
+    Args:
+        info: Recorded worker process identifier and token, if present.
+
+    Returns:
+        Whether the recorded process is alive.
+    """
     if info is None:
         return False
     pid, token = info
@@ -213,6 +264,15 @@ def _worker_alive(info: tuple[int, str] | None) -> bool:
 
 
 def _worker_ready(info: tuple[int, str] | None, root: Path | None = None) -> bool:
+    """Check whether the worker process has signaled readiness.
+
+    Args:
+        info: Recorded worker process identifier and token, if present.
+        root: Optional project root; defaults to the current checkout.
+
+    Returns:
+        Whether the worker reports ready.
+    """
     if not _worker_alive(info):
         return False
     try:
@@ -225,6 +285,11 @@ def _worker_ready(info: tuple[int, str] | None, root: Path | None = None) -> boo
 
 @contextmanager
 def _lock(root: Path | None = None):
+    """Hold the local supervisor lock while modifying process state.
+
+    Args:
+        root: Optional project root; defaults to the current checkout.
+    """
     root = root or ROOT
     if os.name != "posix":
         raise LocalError("The local worker manager requires Linux, macOS, or WSL.")
@@ -241,11 +306,21 @@ def _lock(root: Path | None = None):
 
 
 def _clean_stale_record(root: Path | None = None) -> None:
+    """Delete a stale worker PID record.
+
+    Args:
+        root: Optional project root; defaults to the current checkout.
+    """
     (_state_dir(root) / "worker.json").unlink(missing_ok=True)
     (_state_dir(root) / "ready").unlink(missing_ok=True)
 
 
 def start() -> int:
+    """Start the local database and managed ingestion worker.
+
+    Returns:
+        Process exit code.
+    """
     root = _checkout()
     if not (root / ".env").exists():
         template = root / ".env.example"
@@ -338,6 +413,11 @@ def start() -> int:
 
 
 def status() -> int:
+    """Report whether the local database and ingestion worker are running.
+
+    Returns:
+        Process exit code.
+    """
     _checkout()
     try:
         database = _docker_ready()
@@ -350,6 +430,7 @@ def status() -> int:
 
 
 def _stop_worker() -> None:
+    """Stop the managed ingestion worker if it is still alive."""
     info = _worker_info()
     if not _worker_alive(info):
         _clean_stale_record()
@@ -371,6 +452,11 @@ def _stop_worker() -> None:
 
 
 def stop() -> int:
+    """Stop the local worker and database without clearing indexed data.
+
+    Returns:
+        Process exit code.
+    """
     _checkout()
     with _lock():
         _stop_worker()
@@ -383,6 +469,14 @@ def stop() -> int:
 
 
 def reset(*, yes: bool = False) -> int:
+    """Delete local runtime state and indexed data after confirmation.
+
+    Args:
+        yes: Whether destructive reset has been explicitly confirmed.
+
+    Returns:
+        Process exit code.
+    """
     root = _checkout()
     if not yes:
         print(
@@ -416,6 +510,7 @@ def reset(*, yes: bool = False) -> int:
 
 
 async def _run_worker() -> None:
+    """Run the worker loop inside the supervisor's child process."""
     from app.worker import run_worker
 
     stop_event = asyncio.Event()
@@ -426,7 +521,14 @@ async def _run_worker() -> None:
 
 
 def worker_child(token: str) -> int:
-    """Internal subprocess entry; never called through public CLI arguments."""
+    """Launch the internal worker subprocess using its ownership token.
+
+    Args:
+        token: Worker ownership token from the supervisor.
+
+    Returns:
+        Process exit code.
+    """
     load_environment()
     try:
         import psycopg

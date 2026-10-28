@@ -27,6 +27,14 @@ from app.storage.database import Database
 
 
 def main(arguments: list[str] | None = None) -> int:
+    """Run the CLI and map operational failures to exit codes.
+
+    Args:
+        arguments: Optional command-line arguments; defaults to process arguments.
+
+    Returns:
+        Process exit code.
+    """
     try:
         return asyncio.run(_run(arguments))
     except KeyboardInterrupt:
@@ -44,6 +52,14 @@ def main(arguments: list[str] | None = None) -> int:
 
 
 async def _run(arguments: list[str] | None = None) -> int:
+    """Parse and dispatch a CLI command to the backend.
+
+    Args:
+        arguments: Optional command-line arguments; defaults to process arguments.
+
+    Returns:
+        Process exit code.
+    """
     parser = _build_parser()
     namespace = parser.parse_args(arguments)
     try:
@@ -163,6 +179,11 @@ async def _run(arguments: list[str] | None = None) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    """Create the CLI argument parser and supported subcommands.
+
+    Returns:
+        Parser with the supported CLI subcommands.
+    """
     parser = argparse.ArgumentParser(prog="rag")
     parser.add_argument(
         "--data-dir",
@@ -233,6 +254,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _print_matches(matches: list[SearchResult]) -> None:
+    """Print retrieved source passages to standard output.
+
+    Args:
+        matches: Retrieved source passages to display.
+    """
     if not matches:
         print("No matching source chunks found.")
         return
