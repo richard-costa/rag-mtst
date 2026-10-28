@@ -93,8 +93,9 @@ def _verify_configuration() -> None:
 
         if find_spec("sentence_transformers") is None:
             raise LocalError(
-                "Local embeddings need the optional dependencies. Install with: "
-                "uv tool install --editable '.[local]'"
+                "Local embeddings need the optional dependencies. Run: "
+                "uv run --extra local rag start. "
+                "Include --extra local in subsequent uv run commands too."
             )
     else:
         raise LocalError("RAG_EMBEDDING_PROVIDER must be 'openai' or 'local'")

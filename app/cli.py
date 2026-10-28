@@ -46,6 +46,17 @@ def main(arguments: list[str] | None = None) -> int:
 async def _run(arguments: list[str] | None = None) -> int:
     parser = _build_parser()
     namespace = parser.parse_args(arguments)
+    if namespace.data_dir is not None and namespace.command in {
+        "start",
+        "status",
+        "stop",
+        "reset",
+    }:
+        parser.error(
+            "--data-dir is not supported by local lifecycle commands. "
+            "Set RAG_DATA_DIR in .env before starting the worker so all commands "
+            "share the same staging directory."
+        )
     try:
         local.load_environment()
         if namespace.command == "start":
@@ -167,7 +178,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-dir",
         type=Path,
-        help="Directory for temporary staged ingestion inputs.",
+        help="Temporary staging directory; not supported by start/status/stop/reset.",
     )
     commands = parser.add_subparsers(dest="command")
     commands.add_parser(
