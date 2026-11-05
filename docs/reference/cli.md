@@ -10,7 +10,11 @@ rag [--data-dir PATH] COMMAND
 
 `--data-dir` overrides the staging directory and must precede the subcommand.
 It must resolve to the worker's shared input path; it is not an original-file
-archive. Run `rag --help` or `rag COMMAND --help` for installed argument help.
+archive. Lifecycle commands (`start`, `status`, `stop`, `reset`) reject this
+option. For the locally managed worker, set `RAG_DATA_DIR` in `.env` before
+starting it, then use the same configuration for subsequent commands. Restart
+the worker after changing that setting.
+Run `rag --help` or `rag COMMAND --help` for installed argument help.
 
 ## Local lifecycle
 
@@ -18,8 +22,9 @@ From a source checkout, use `uv run rag ...` directly; uv prepares the project
 environment automatically. Activating `.venv` or optionally installing with
 `uv tool install --editable .` also exposes plain `rag`. The CLI reads the
 checkout's `.env`,
-without overriding variables already exported in the shell. Relative staging
-paths are resolved against the checkout, so the local worker and CLI agree.
+without overriding variables already exported in the shell. Relative
+`RAG_DATA_DIR` paths are resolved against the checkout, so the local worker and
+CLI agree. Relative `--data-dir` arguments use the current working directory.
 
 | Command | Behavior |
 | --- | --- |
