@@ -79,6 +79,29 @@ An optional [visual demo](demo/README.md) shows the same backend in a browser.
 Future plans are in the [roadmap](ROADMAP.md). Contributors can enable optional
 [push checks](docs/how-to/develop.md#optional-push-checks).
 
+## Codebase size
+
+Measured with [tokei](https://github.com/XAMPPRocky/tokei) over git-tracked
+files, excluding Markdown (2026-11-13):
+
+| Language | Files | Lines | Code | Comments | Blanks |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Python | 62 | 13,503 | 11,839 | 213 | 1,451 |
+| YAML | 3 | 180 | 174 | 0 | 6 |
+| JavaScript | 1 | 141 | 133 | 0 | 8 |
+| HTML | 1 | 100 | 98 | 0 | 2 |
+| CSS | 2 | 86 | 86 | 0 | 0 |
+| TOML | 1 | 67 | 57 | 0 | 10 |
+| Dockerfile | 1 | 59 | 39 | 0 | 20 |
+| INI | 1 | 39 | 31 | 0 | 8 |
+| **Total** | **72** | **14,175** | **12,457** | **213** | **1,505** |
+
+Tokei counts Python docstrings as code. To reproduce:
+
+```bash
+git ls-files | grep -v '\.md$' | xargs tokei
+```
+
 ## Project status
 
 **Pre-release; trusted single-tenant backend.** The HTTP API uses one shared
