@@ -30,9 +30,13 @@ CLI agree. Relative `--data-dir` arguments use the current working directory.
 | --- | --- |
 | `rag start` | Check configuration, start only PostgreSQL in Docker, apply migrations, launch a host worker, and wait for readiness |
 | `rag status` | Report local PostgreSQL and background worker readiness |
-| `rag stop` | Stop the background worker and local PostgreSQL; keep database contents and model caches |
-| `rag reset` | Stop services and delete the local Compose project's database volumes after typing `RESET` |
+| `rag stop` | Stop the background worker and local PostgreSQL; keep database contents, conversations, originals, `.env`, and model caches |
+| `rag reset` | Stop services and delete the local Compose project's database volumes, indexed content, and conversations after typing `RESET`; originals, `.env`, and model caches are kept |
 | `rag reset --yes` | Same destructive reset without prompting; use only deliberately |
+
+Reset is for **intentionally disposable development data**, not routine
+troubleshooting; afterwards run `rag start` and reindex originals. Do not run
+`docker compose down --volumes` or global Docker pruning as a substitute.
 
 Local lifecycle management requires Docker Compose and Linux, macOS, or WSL. It
 manages the default database at `127.0.0.1:5432` and uses a dedicated Compose
@@ -53,7 +57,8 @@ checkout can still use ordinary commands against a separately managed backend.
 
 `METHOD` is `cosine`, `window`, `lexical`, or `hybrid`. Omitted retrieval options
 use [configuration defaults](configuration.md#retrieval). Limit must be positive;
-window must be nonnegative. Window limit counts seeds, not expanded neighbors.
+window must be nonnegative. Window limit counts seeds; see
+[search methods](../explanation/retrieval.md#search-methods).
 Quote multiword queries and paths containing spaces.
 
 ## Ingestion
@@ -69,14 +74,15 @@ and a vision model.
 for a failed job, but pending/running/completed jobs return success. Ctrl+C
 while adding stops the wait, not the accepted job.
 
-## Search and Answers
+## Search and answers
 
 Search prints source title, zero-based chunk index, score or `context`, and
 content. No matches prints a no-matches message. Ask prints generated text and,
 when present, recognized references with source and chunk identity. There is no
-CLI conversation command or provider/model override flag; set the environment.
+CLI conversation command, source list/delete command, or provider/model override
+flag; set the environment or use the [HTTP API](http.md).
 
-## Exit Codes
+## Exit codes
 
 | Code | Meaning |
 | --- | --- |

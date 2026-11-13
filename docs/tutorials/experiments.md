@@ -31,15 +31,15 @@ uv run rag search "refund eligibility" --method hybrid --limit 3
 search embeds the query, so it may match related language without the same
 words. Window retrieval adds neighboring chunks from a matched source; their
 scores display as `context`. Hybrid combines lexical and vector candidate
-ranks. Exact ordering is not a test guarantee. The `--limit` for window counts
-seeds, not expanded neighbor chunks.
+ranks. Exact ordering is not a test guarantee.
 
 Try changing **one option at a time**, especially `--window 0` versus
 `--window 2`, and compare the printed titles, chunk indices, and passages.
 
 **Read the implementation:** `app/retrieval.py` selects strategies and
 `app/storage/documents.py` performs PostgreSQL matching and neighbor reads.
-For exact strategy semantics see [retrieval internals](explanation/retrieval.md).
+For exact strategy semantics, including how `--limit` counts window seeds, see
+[retrieval internals](../explanation/retrieval.md#search-methods).
 
 ## Experiment 2: change chunking
 
@@ -99,25 +99,10 @@ Embeddings (used to index documents and search) and generation (used to write
 answers) are independent settings.
 
 The quickstart uses OpenAI for both. To try **local embeddings + Ollama answers**
-instead, install Ollama, start its server, pull a model supported by its
-structured-output path, and adjust private `.env` values:
-
-```dotenv
-RAG_EMBEDDING_PROVIDER=local
-RAG_GENERATION_PROVIDER=ollama
-RAG_GENERATION_MODEL=qwen2.5:1.5b
-RAG_GENERATION_BASE_URL=http://127.0.0.1:11434/v1
-```
-
-First install the optional embedding dependencies and pull model weights:
-
-```bash
-uv sync --extra local
-ollama pull qwen2.5:1.5b
-```
-
+instead, first complete the
+[local embeddings and Ollama setup](../how-to/providers.md#use-local-embeddings-and-ollama-answers).
 Then use `uv run --extra local rag ...` for all CLI commands in this experiment
-so uv keeps the optional dependencies installed. For example:
+so uv keeps the optional dependencies installed:
 
 ```bash
 uv run rag stop
@@ -126,13 +111,12 @@ uv run --extra local rag add docs/assets/sample.md --reindex
 uv run --extra local rag ask "When is the support desk open?"
 ```
 
-A model download uses network/disk/CPU or GPU resources even without hosted
-billing. Local embeddings and Ollama need suitable runtime resources and a
-separately running Ollama service. New embedding models/spaces require
-**explicit reindexing**; changing only the generation model generally does not.
+New embedding models/spaces require **explicit reindexing**; changing only the
+generation model generally does not. Compare the answer and retrieved passages
+with your OpenAI results.
 
-**Read:** [configuration](reference/configuration.md) and the
-[provider guide](how-to/providers.md) for other supported combinations.
+**Read:** [configuration](../reference/configuration.md) and the
+[provider guide](../how-to/providers.md) for other supported combinations.
 
 ## Experiment 5: follow an ingestion job
 
@@ -158,6 +142,6 @@ An interrupted worker does not automatically replay potentially paid work.
 
 ## Next
 
-Learn [how the components connect](how-it-works.md), then follow the
-[code map and test guide](development.md). `uv run rag stop` safely shuts down
+Learn [how the components connect](../explanation/overview.md), then follow the
+[code map and test guide](../how-to/develop.md). `uv run rag stop` safely shuts down
 the local stack without removing indexed data.

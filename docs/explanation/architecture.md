@@ -1,26 +1,22 @@
-# Architecture and Transactions
+# Architecture and transactions
 
 This page documents the **implementation boundaries and consistency guarantees**
-behind the [conceptual overview](../how-it-works.md). For a directory-by-directory
-code map, use the [development guide](../development.md#choose-your-entry-point).
+behind the [conceptual overview](overview.md). For a directory-by-directory
+code map, use the [development guide](../how-to/develop.md#choose-your-entry-point).
 For exact database columns and constraints, the authoritative definition is
 `migrations/versions/0001_initial.py`.
 
-## Component Boundaries
+## Component boundaries
 
 The CLI calls application functions **directly**; HTTP clients use FastAPI.
 Both operate on the same feature modules and PostgreSQL database. A separate
 worker executes durable ingestion jobs. There is no external message broker,
 ORM layer, or separate service/repository framework.
 
-The HTTP adapter is split into feature routers for sources, jobs, search,
-answers, and conversations. The application factory owns lifecycle and router
-registration; dependencies provide shared bearer authentication and each
-application's settings and database handle. A small API service module shares
-answer-request orchestration and response conversion between stateless answers
-and conversation turns. Routers own HTTP error mapping, while retrieval,
-generation, ingestion, and storage remain independent of FastAPI. This is not a
-second domain-service layer or a separate runtime process.
+The HTTP adapter is a thin layer of feature routers over the same modules;
+retrieval, generation, ingestion, and storage remain independent of FastAPI.
+Its package layout is described in
+[HTTP package boundaries](../how-to/develop.md#http-package-boundaries).
 
 ```mermaid
 ---
@@ -62,15 +58,9 @@ containers using the same application build configuration. The long-running
 worker starts a supervised child process for each claimed ingestion job;
 those children run inside the worker container, not the API container.
 The API submits durable jobs to PostgreSQL, and both containers access staged
-inputs through the `rag-data` volume mounted at `/app/.rag-data`.
-
-The `db` service stores both the job queue and indexed data in the persistent
-`postgres-data` volume. The one-shot `migrate` service waits for a healthy
-database and applies the schema before `app` and `worker` start. The optional
-`office` service provides unoserver/LibreOffice conversion for explicit visual
-DOCX/PPTX extraction; it is enabled through the `office` profile and is not
-needed for native parsing. See [Compose services](../operations.md#compose-services)
-for the service inventory and startup order.
+inputs through the shared `rag-data` volume. See
+[Compose services](../how-to/deploy.md#compose-services) for the service
+inventory, volumes, and startup order.
 
 **Deployed backend:** The API and worker must see staged inputs at the **same
 filesystem path**. The infrastructure team owns that shared storage, database
@@ -80,9 +70,10 @@ does not include the educational browser demo.
 Python callers can also invoke direct indexing functions without submitting
 an asynchronous job. See [indexing details](indexing.md).
 
-## Data and Persistence
+## Data and persistence
 
-The schema has six tables with four main relationships:
+The schema has six tables with four main relationships. The diagram shows keys
+and identifying columns only; the migration is the authoritative column list.
 
 ```mermaid
 ---
@@ -100,63 +91,35 @@ erDiagram
     sources {
         uuid id PK
         text tenant_id
-        text type
-        text reference
-        text mime_type
         text content_hash
-        timestamptz created_at
-        timestamptz updated_at
+        text reference
     }
     chunks {
         uuid id PK
-        text tenant_id
         uuid source_id FK
         integer chunk_index
-        integer page_number
-        text content
-        tsvector search_vector "generated"
         vector embedding
-        jsonb metadata
-        timestamptz created_at
+        tsvector search_vector "generated"
     }
     ingestion_jobs {
         uuid id PK
         uuid source_id FK
         text status
-        text stage
-        integer progress
-        integer processed
-        integer total
-        integer attempts
-        text error
-        timestamptz created_at
-        timestamptz started_at
-        timestamptz heartbeat_at
-        timestamptz finished_at
         uuid claim_token
     }
     ingestion_job_inputs {
         uuid job_id PK, FK
         text input_path "temporary file path"
-        text source_name
-        jsonb extraction_profile
-        jsonb configuration
-        boolean reindex
     }
     conversations {
         uuid id PK
         text tenant_id
-        timestamptz created_at
-        timestamptz updated_at
     }
     messages {
         uuid id PK
         uuid conversation_id FK
         integer sequence
-        text role
-        text content
         jsonb citations "saved snapshots"
-        timestamptz created_at
     }
 ```
 
@@ -192,11 +155,7 @@ automatically. The generated `chunks.search_vector` uses PostgreSQL's
 `simple` text-search configuration with a GIN index. Vector search is exact,
 without an approximate-nearest-neighbor index.
 
-For precise fields, nullability, indexes, and constraints, inspect the
-[migration definition](https://github.com/richard-costa/rag-mtst/blob/main/migrations/versions/0001_initial.py)
-rather than maintaining a second copy of the SQL schema in a diagram.
-
-## Ingestion Guarantees
+## Ingestion guarantees
 
 Submission stages the complete file before committing the source and its
 durable job. A worker claims that job with an ownership token and uses
@@ -213,15 +172,22 @@ using a central persistence gateway. Transactions are owned by the workflow
 that needs atomicity; the job-completion path writes through its existing
 connection. There is no application-wide connection pool.
 
+Source deletion locks the source row, the same lock job submission takes, and
+refuses while a job is pending or running or a staged input is still on disk.
+The cascade then removes chunks, jobs, and job inputs together, so deletion
+never races a worker or orphans a staged file it knows about.
+
 The [indexing internals](indexing.md) cover job stages, extraction profiles,
 chunk provenance, cleanup, and failure recovery in more detail.
 
-## Conversation Transactions
+## Conversation transactions
 
 Each conversation turn acquires a tenant-scoped row lock with `NOWAIT`.
 A missing or other-tenant conversation returns **404**; one already processing
-a turn returns **409**. The lock remains held through retrieval and model
-generation, so long provider calls also occupy a database connection.
+a turn returns **409**. Deletion takes the same lock, so it also returns 409
+rather than removing a conversation mid-turn. The lock remains held through
+retrieval and model generation, so long provider calls also occupy a database
+connection.
 
 ```mermaid
 ---
@@ -259,4 +225,4 @@ committed after the client disconnected. Read history before retrying; see
 [conversation recovery](../how-to/conversations.md#handle-overlap-and-uncertain-outcomes).
 
 Continue with [retrieval and answers](retrieval.md) for context-budget and
-citation semantics, or [operations](../operations.md) for security and recovery.
+citation semantics, or [security and data lifecycle](security.md).

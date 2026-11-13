@@ -5,7 +5,7 @@ application. `Settings` and a `Database` handle can be supplied explicitly;
 `storage=` arguments take `app.storage.database.Database`. Omitted settings come
 from the environment. No HTTP credential is required for direct calls.
 
-## Feature Entry Points
+## Feature entry points
 
 | Module | Symbols | Contract |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ without a queue or permanent original-file archive. `IngestionResult` contains
 `source`, `created`, and `chunk_count`; unchanged direct ingestion has
 `created=False` and `chunk_count=0`. Reindex retains source identity.
 
-## Retrieval and Generation
+## Retrieval and generation
 
 ```python
 from app.config import Settings
@@ -46,11 +46,8 @@ async def inspect_sources():
 ```
 
 `SearchResult` contains `source_id`, `source_title`, `source_reference`,
-`chunk_index`, `content`, and nullable `score`. `source_reference` is descriptive
-origin metadata, currently a filename for ingested files. It is not necessarily
-unique or accessible and does not instruct the backend to fetch a source.
-File titles use the reference's basename; non-file titles retain the full
-reference without filesystem parsing.
+`chunk_index`, `content`, and nullable `score`, with the same meaning as the
+[HTTP fields](http.md#search-and-answer-responses).
 
 `Answer` contains `text`, `matches`, and `citations`; HTTP names
 `text` as `answer`. `Citation` records the supplied passage and its source identity,
@@ -61,7 +58,7 @@ report handled provider failures.
 generation context. Retrieval still uses only the question. History does not
 supply citation evidence.
 
-## Extraction and Chunking
+## Extraction and chunking
 
 | Module | Symbols | Contract |
 | --- | --- | --- |
@@ -75,7 +72,7 @@ records, including blanks. Passing pages into chunking preserves known body
 provenance. Native parsing leaves unknown page numbers unset. Local token slices
 inherit parent-body ranges rather than claiming exact slice pages.
 
-## Storage and Conversations
+## Storage and conversations
 
 `Database(database_url)` from `app.storage.database` owns connection setup and
 cleanup. It is not a SQL gateway: storage operations are module functions that
@@ -84,23 +81,33 @@ take the database handle as their first argument.
 | Module | Responsibility |
 | --- | --- |
 | `app.storage.records` | Source, chunk, job, conversation, message, and turn dataclasses |
-| `app.storage.documents` | Source/chunk persistence, lexical/vector search, and chunk windows |
+| `app.storage.documents` | Source listing/reading/deletion, chunk persistence, lexical/vector search, and chunk windows |
 | `app.storage.jobs` | Durable job submission, claims, progress, failure, and atomic completion |
-| `app.storage.conversations` | Conversation creation, history, locked turns, and conversation exceptions |
+| `app.storage.conversations` | Conversation management, history, locked turns, and conversation exceptions |
 
 Ordinary indexing, search, and generation should use feature functions rather
-than reimplement their SQL workflows. The conversation functions below belong
-to `app.storage.conversations`:
+than reimplement their SQL workflows. Every function below takes the database
+handle and tenant ID first:
 
-- `create_conversation(database, tenant_id)` returns a new conversation.
-- `list_messages(database, tenant_id, conversation_id, limit=50, before=None)` returns
-  tenant-scoped, ascending sequence history from the selected page.
-- `conversation_turn(database, tenant_id, conversation_id, question)` is an async context
-  manager: it reserves the conversation and provides recent `history`. Generate
-  an answer, then set `turn.answer` and `turn.citations` (citation dictionaries).
-  Normal exit commits both messages; exceptions/cancellation roll back.
-- `ConversationBusy` reports overlapping turns; `ConversationNotFound` covers
-  missing and other-tenant conversations.
+| Function | Contract |
+| --- | --- |
+| `documents.list_sources(..., limit=50, offset=0)` | `SourceSummary` records, newest first, with `chunk_count` |
+| `documents.get_source(..., source_id)` | `SourceSummary`, or `None` |
+| `documents.delete_source(..., source_id)` | Deletes source, chunks, and jobs; raises `SourceNotFound` or `SourceBusy` |
+| `conversations.create_conversation(...)` | New `Conversation` |
+| `conversations.list_conversations(..., limit=50, offset=0)` | `Conversation` records, most recently updated first |
+| `conversations.get_conversation(..., conversation_id)` | `Conversation`, or `None` |
+| `conversations.delete_conversation(..., conversation_id)` | Deletes conversation and messages; raises `ConversationNotFound` or `ConversationBusy` |
+| `conversations.list_messages(..., conversation_id, limit=50, before=None)` | Ascending sequence history from the selected page |
+| `conversations.conversation_turn(..., conversation_id, question)` | Async context manager for one locked turn; see below |
+
+`conversation_turn` reserves the conversation and provides recent `history`.
+Generate an answer, then set `turn.answer` and `turn.citations` (citation
+dictionaries). Normal exit commits both messages; exceptions/cancellation roll
+back. `ConversationBusy` reports overlapping turns; `ConversationNotFound` covers
+missing and other-tenant conversations. `delete_source` does not remove staged
+files itself; call `app.ingestion.cleanup_ingestion_inputs` first, as the HTTP
+endpoint does.
 
 The transaction and database connection remain open during retrieval/generation.
 There is no connection pool. See [architecture](../explanation/architecture.md)

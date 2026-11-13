@@ -22,7 +22,8 @@ inputs**, not an archive.
 
 **What's included:** TXT/Markdown/PDF/DOCX/PPTX parsing; optional visual
 extraction; OpenAI or local embeddings; lexical, cosine, window, and hybrid
-search; OpenAI, DeepSeek, Ollama, or Anthropic answers; and a FastAPI interface.
+search; OpenAI, DeepSeek, Ollama, or Anthropic answers; and a FastAPI interface
+for ingestion, search, answers, conversations, and source management.
 
 ## Quickstart: your first answer
 
@@ -54,58 +55,29 @@ You should see an indexed chunk, matching text, then an answer about **Mondays
 and Wednesdays, 09:00–12:00**, with a `sample.md` reference. Generated wording
 may vary. Hosted embeddings and generation can incur API charges.
 
-```bash
-uv run rag status  # Check database and worker
-uv run rag stop    # Stop both; indexed data remains
-```
+`uv run rag stop` stops the database and worker; indexed data remains. For
+expected output, `status`/`reset`, and troubleshooting, use the
+[complete quickstart](docs/tutorials/quickstart.md).
 
-Use `uv run rag start` next time to resume. **`uv run rag reset` is destructive:**
-it requires confirmation and deletes local indexed data and conversations.
+## Documentation
 
-For explanations, expected output, and troubleshooting, use the
-[complete quickstart](docs/quickstart.md).
+The [documentation index](docs/index.md) is organized into four sections:
 
-## Explore and extend
+- **[Tutorials](docs/tutorials/quickstart.md)** — the quickstart and hands-on
+  [experiments](docs/tutorials/experiments.md).
+- **How-to guides** — [ingest and manage sources](docs/how-to/ingest.md),
+  [search and ask](docs/how-to/search.md), [conversations](docs/how-to/conversations.md),
+  [providers](docs/how-to/providers.md), [develop and test](docs/how-to/develop.md),
+  [deploy](docs/how-to/deploy.md), and [troubleshoot](docs/how-to/troubleshoot.md).
+- **Reference** — [CLI](docs/reference/cli.md), [HTTP](docs/reference/http.md),
+  [Python](docs/reference/python.md), [configuration](docs/reference/configuration.md),
+  and [limits](docs/reference/limits.md).
+- **Explanation** — [how it works](docs/explanation/overview.md) and the
+  architecture, indexing, retrieval, and security deep dives.
 
-| I want to... | Start here |
-| --- | --- |
-| Understand the components and data flow | [How it works](docs/how-it-works.md) |
-| Compare search, change chunking, or adjust prompts | [Experiments](docs/experiments.md) |
-| Find the right source file and run tests | [Development guide](docs/development.md) |
-| Connect another application over HTTP or Python | [HTTP](docs/reference/http.md) / [Python](docs/reference/python.md) |
-| Look up commands and options | [CLI reference](docs/reference/cli.md) |
-| Configure another model provider | [Configuration](docs/reference/configuration.md) |
-| See the system in a browser (optional) | [Visual demo](demo/README.md) |
-| Understand deployment requirements and limitations | [Operations](docs/operations.md) |
-
-The [documentation index](docs/index.md) provides the full reading path.
-Future plans are in the [roadmap](ROADMAP.md).
-
-## Optional push checks
-
-Local Ruff automation is opt-in and works with any Git host. Cloning the
-repository or installing dependencies does not activate hooks. To enable it
-in your checkout:
-
-```bash
-uv run pre-commit install --hook-type pre-push
-```
-
-Before each push, the hook fixes import ordering, formats changed Python files,
-and checks lint across the repository. It does not run on commits. Other lint
-rules report findings without automatically changing code; unsafe fixes are
-disabled. Markdown files are excluded from Ruff checks and formatting.
-
-If files change, the push stops: review and commit those changes, then push again.
-Unresolved lint findings also stop the push and require review. The hook never
-creates or amends commits. Its isolated Ruff environment is downloaded on first
-use and reused afterward; no GitHub service is required.
-
-To disable the hook in your checkout:
-
-```bash
-uv run pre-commit uninstall --hook-type pre-push
-```
+An optional [visual demo](demo/README.md) shows the same backend in a browser.
+Future plans are in the [roadmap](ROADMAP.md). Contributors can enable optional
+[push checks](docs/how-to/develop.md#optional-push-checks).
 
 ## Project status
 
@@ -115,4 +87,4 @@ untrusted public users. The operator/infrastructure team must provide appropriat
 networking, TLS, access controls, storage, and operational safeguards. A citation
 identifies a supplied passage; it does **not** certify that an answer is correct.
 Representative extraction and answer quality have not been established. See
-[security and data lifecycle](docs/operations.md).
+[security and data lifecycle](docs/explanation/security.md).

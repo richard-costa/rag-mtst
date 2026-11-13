@@ -1,6 +1,6 @@
-# Retrieval and Answers
+# Retrieval and answers
 
-## Search Methods
+## Search methods
 
 All search is tenant-scoped. The default is `window`, with ten seeds and two
 neighbors on each side. Invalid options and provider errors fail explicitly;
@@ -32,7 +32,7 @@ embeddings, not fusion. No method's score is a probability, and scores are not
 comparable across methods. Reranking is absent; MMR/multi-query stubs are not
 selectable strategies.
 
-## Retrieval Is Not the Final Prompt
+## Retrieval is not the final prompt
 
 ```mermaid
 ---
@@ -57,16 +57,17 @@ flowchart TB
 Answers validate generation configuration, retrieve matches, and fit source
 passages into a bounded serialized prompt. The budget includes system text,
 question, labels, JSON escaping, history, response schema, and a formatting
-reserve. The default is 8000 locally estimated input tokens, using `tiktoken`'s
-`cl100k_base` encoding, not exact provider accounting. Passages retain retrieval
-order and the final fitting passage may be shortened. The response retains all
-original matches, even those not supplied.
+reserve, estimated locally rather than by the provider; the default and the
+estimation method are listed under
+[worker and model context](../reference/limits.md#worker-and-model-context).
+Passages retain retrieval order and the final fitting passage may be shortened.
+The response retains all original matches, even those not supplied.
 
 With no matches, the application returns a fixed English no-sources message
 without calling generation, after configuration validation. There is no excerpt
 mode, streaming, automatic generation retry, or provider/model fallback.
 
-## What Citations Establish
+## What citations establish
 
 The model returns typed `{text, citations}` output. Numeric IDs must belong to
 supplied passages; unknown IDs and empty answer text are errors. The structured
@@ -75,13 +76,13 @@ are not parsed, and do not need to duplicate that list. Empty citation lists are
 valid, but leave the answer uncited.
 
 Citations expose the exact supplied passage, `source_reference`, chunk index,
-and truncation flag. The reference is descriptive origin metadata; file ingestion
-currently supplies a filename, not a retained original or download link. It is
-not necessarily unique or accessible. Citations let a reader inspect what was
+and truncation flag. The reference is
+[descriptive origin metadata](../reference/http.md#search-and-answer-responses),
+not a retained original or download link. Citations let a reader inspect what was
 available, not prove that the answer follows from it. JSON encoding and
 source-boundary instructions also do not guarantee resistance to prompt injection.
 
-## Conversations Share the Same Budget
+## Conversations share the same budget
 
 Recent conversation messages can help generation interpret a follow-up, but
 retrieval still sees only the current query. Ambiguous references can therefore

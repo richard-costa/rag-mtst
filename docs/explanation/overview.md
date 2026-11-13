@@ -48,8 +48,8 @@ a configured vision model and page rendering, and may send page images to a
 provider. No automatic OCR fallback is performed.
 
 Indexing jobs are durable; worker failure does not silently re-run paid work.
-Reindexing explicitly replaces all chunks atomically, preserving the old index
-if replacement fails. Identical bytes ordinarily reuse an already indexed source.
+Reindexing is explicit and atomic. Identical bytes ordinarily reuse an already
+indexed source. See [extraction and indexing](indexing.md) for the guarantees.
 
 ## Retrieval: select evidence for a question
 
@@ -62,14 +62,10 @@ All strategies are tenant-scoped.
 | `window` (default) | Cosine matches plus nearby chunks in document order | Recovering context split across chunks |
 | `hybrid` | Reciprocal-rank fusion of vector and lexical rankings | Combining exact-term and semantic signals |
 
-`window` defaults to ten seed chunks and two neighbors on each side. Window
-results can exceed the seed limit. `hybrid` does not automatically add windows.
-Lexical search uses the PostgreSQL `simple` configuration, not stemming or
-language translation. Retrieval scores are **not probabilities** and should not
-be compared across strategies.
-
-See the hands-on [retrieval experiment](experiments.md#experiment-1-compare-retrieval-strategies)
-and the [CLI flags](reference/cli.md).
+Retrieval scores are **not probabilities**. Defaults, window sizing, scoring,
+and language behavior are described in
+[retrieval and answers](retrieval.md#search-methods). Try them in the
+[retrieval experiment](../tutorials/experiments.md#experiment-1-compare-retrieval-strategies).
 
 ## Generation: passages become an answer
 
@@ -79,35 +75,27 @@ containing answer text and citation IDs.
 
 The system validates that returned citation IDs refer to passages actually
 supplied to the model. It does **not** independently verify the truth of the
-model's claims. Some retrieved passages may be excluded or shortened by the
-context budget; the result retains original retrieval matches.
-
-With no matches, generation returns a fixed no-sources answer rather than
-inventing document evidence. Provider errors are not silently converted into
-answers from another model.
+model's claims. With no matches, generation returns a fixed no-sources answer
+rather than inventing document evidence. See
+[what citations establish](retrieval.md#what-citations-establish).
 
 ## Conversations
 
 The HTTP API can persist conversations and citation snapshots. Recent turns
 inform **generation**, but retrieval still searches using the **current
-question** only; it does not rewrite ambiguous follow-up questions. Concurrent
-turns for the same conversation are rejected rather than running simultaneously.
-
-The CLI and demo are stateless for answers. See the
-[HTTP reference](reference/http.md) for conversation endpoints.
+question** only. The CLI and demo are stateless for answers. See
+[use conversations](../how-to/conversations.md) and
+[how history shares the prompt budget](retrieval.md#conversations-share-the-same-budget).
 
 ## What persists?
 
 PostgreSQL stores source metadata, extracted chunks, embeddings, ingestion jobs,
-conversations, and citation snapshots. Temporary upload bytes are staged on disk
-and removed after a terminal job. The source reference is descriptive origin
-metadata, currently a filename, not a permanent download link or unique identity.
-Backups, retention, and external exposure are operator
-responsibilities; see [operations](operations.md).
+conversations, and citation snapshots. Uploaded bytes are only staged
+temporarily. See [security and data lifecycle](security.md#data-lifecycle).
 
 ## Next steps
 
-Start with the [experiments](experiments.md), then use the
-[development code map](development.md#choose-your-entry-point) to locate the
+Start with the [experiments](../tutorials/experiments.md), then use the
+[development code map](../how-to/develop.md#choose-your-entry-point) to locate the
 modules behind each part of the pipeline. For transactional and persistence
-details, see [architecture and transactions](explanation/architecture.md).
+details, see [architecture and transactions](architecture.md).

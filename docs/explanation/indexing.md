@@ -1,6 +1,6 @@
-# Extraction and Indexing
+# Extraction and indexing
 
-## Identity Is Content, Not Filename
+## Identity is content, not filename
 
 Source identity is `(tenant_id, SHA-256(file_bytes))`. Identical bytes in another
 tenant are independent; another filename in the same tenant does not create a new
@@ -15,7 +15,7 @@ Embedding/chunking changes also require deliberate reindexing; ordinary duplicat
 adds do not rebuild old vectors. Reindex keeps the source ID but replaces chunks
 and vectors, not a historical index version.
 
-## Extraction Is an Explicit Choice
+## Extraction is an explicit choice
 
 The default parser decodes text/Markdown and uses AnyDoc for textual PDF, DOCX,
 and PPTX. It does not call Office or a hosted vision model on failure. Scanned
@@ -32,7 +32,7 @@ transcription supplies known page records. Layout conversion and vision can stil
 lose information; representative accuracy for scans, charts, tables, and Office
 layouts has not been established. See [formats and bounds](../reference/limits.md).
 
-## Structure First, Tokens Second
+## Structure first, tokens second
 
 Markdown is divided into blocks and heading sections, then packed toward a soft
 word budget (180 by default), including heading context. Separate sections are
@@ -53,7 +53,7 @@ end-exclusive). Inherited ranges describe `parent_body`, not exact slice pages
 or lines. Oversized direct local calls and queries fail before inference. Hosted
 input-token budgets are not managed locally.
 
-## Durable Work Without Automatic Replay
+## Durable work without automatic replay
 
 Submission writes a complete staged input, then transactionally records the
 source, job, extraction profile, and nonsecret settings. Matching active

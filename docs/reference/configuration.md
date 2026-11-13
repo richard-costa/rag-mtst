@@ -6,7 +6,11 @@ variables; other host Python processes (including uvicorn and Alembic) should
 load it with `uv run --env-file .env ...`. Compose uses `.env` for
 interpolation. Environment parsing errors can prevent startup.
 
-## Starter Values
+Every section lists environment variables except
+[code defaults](#code-defaults), which are `Settings` fields with no environment
+variable.
+
+## Starter values
 
 The default OpenAI workflow needs only the three entries in `.env.example`:
 
@@ -18,10 +22,10 @@ The default OpenAI workflow needs only the three entries in `.env.example`:
 
 The remaining environment settings are optional connection details, data scope,
 or model choices. Internal processing limits stay in code. See
-[quickstart](../quickstart.md) for startup commands and
+[quickstart](../tutorials/quickstart.md) for startup commands and
 [provider setup](../how-to/providers.md) for alternatives to OpenAI.
 
-## Core Settings
+## Core settings
 
 | Variable | Default | Contract |
 | --- | --- | --- |
@@ -36,26 +40,7 @@ HTTP clients send `Authorization: Bearer <token>`. Swagger's **Authorize** accep
 the token alone. CLI/Python calls do not require the HTTP credential. The key
 grants read/write access to the one configured tenant, with no per-user roles.
 Rotate by replacing it, restarting the API, and updating all clients; there is no
-overlapping-key rotation. See [security](../operations.md#security-boundary).
-
-## Retrieval
-
-These are `Settings` code defaults, not environment variables:
-
-| Field | Default | Contract |
-| --- | --- | --- |
-| `retrieval_method` | `window` | `cosine`, `window`, `lexical`, or `hybrid` |
-| `retrieval_limit` | `10` | Positive; counts seed chunks for window search |
-| `retrieval_window` | `2` | Nonnegative; neighbors on each side, only for `window` |
-
-HTTP requests and CLI flags (`--method`, `--limit`, `--window`) can override them
-for one operation. Window results may exceed the limit. Tenant scope is never
-selected by an HTTP request.
-
-Window search groups each seed with its neighbors in document order. Overlapping
-windows from the same source are merged, with each chunk included only once.
-Groups are prioritized by their best-ranked seed, rather than putting all seeds
-before their neighbors.
+overlapping-key rotation. See [security](../explanation/security.md#trust-boundary).
 
 ## Embeddings
 
@@ -77,7 +62,7 @@ deployment or revision changes. Reindex deliberately after changing embedding
 space. Hosted input-token limits are not enforced locally; local ingestion fits
 chunks losslessly and oversized direct queries fail before inference.
 
-## Answer Generation
+## Answer generation
 
 | Variable | Default | Contract |
 | --- | --- | --- |
@@ -104,7 +89,7 @@ overrides must support `/v1/responses` and structured outputs. `store=False`
 disables stored response state, not all provider retention. Anthropic's OpenAI
 compatibility endpoint is not used.
 
-## Visual Extraction
+## Visual extraction
 
 | Variable | Default | Contract |
 | --- | --- | --- |
@@ -121,11 +106,25 @@ Host visual extraction needs Poppler's `pdfinfo` and `pdftoppm` on `PATH`; backe
 images include them. Visual DOCX/PPTX also needs unoserver. Internal bounds are
 listed in [formats and limits](limits.md), not configured through extra variables.
 
-## Internal Processing Defaults
+## Code defaults
 
 These fields live in `app.config.Settings` and are not read from environment
 variables. Normal setup does not need to change them; Python callers can pass
 explicit settings when needed.
+
+### Retrieval
+
+| Field | Default | Contract |
+| --- | --- | --- |
+| `retrieval_method` | `window` | `cosine`, `window`, `lexical`, or `hybrid` |
+| `retrieval_limit` | `10` | Positive; counts seed chunks for window search |
+| `retrieval_window` | `2` | Nonnegative; neighbors on each side, only for `window` |
+
+HTTP requests and CLI flags (`--method`, `--limit`, `--window`) can override them
+for one operation; see [search methods](../explanation/retrieval.md#search-methods)
+for their semantics. Tenant scope is never selected by an HTTP request.
+
+### Processing
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -135,14 +134,12 @@ explicit settings when needed.
 | `generation_max_tokens` | `4000` | Separate output bound, including model reasoning |
 | `generation_timeout_seconds` | `180` | Provider timeout; no automatic generation retries |
 
-Input tokens are estimated locally with `tiktoken` and its `cl100k_base` encoding.
-The budget reserves 64 tokens for request formatting and counts the response
-schema separately unless it is already part of the system instructions. Provider
-tokenizers and request formats can differ, so this is not an exact provider-side
-token count. Select a model whose context window accommodates both the input and
-output allowances; the application does not infer context capacity from its name.
+How input tokens are estimated is described under
+[worker and model context](limits.md#worker-and-model-context). Select a model
+whose context window accommodates both the input and output allowances; the
+application does not infer context capacity from its name.
 
-## Container Addresses
+## Container addresses
 
 | Resource | Host process | Compose application |
 | --- | --- | --- |

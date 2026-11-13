@@ -1,8 +1,8 @@
-# Develop and integrate RAG-MTST
+# Develop and test
 
 This project uses Python 3.14+, uv, FastAPI, PostgreSQL 17/pgvector, Alembic,
 and a separate ingestion worker. The **CLI calls feature functions directly**;
-it does not call HTTP endpoints. Start with the [quickstart](quickstart.md)
+it does not call HTTP endpoints. Start with the [quickstart](../tutorials/quickstart.md)
 before modifying internals.
 
 ## Choose your entry point
@@ -29,9 +29,9 @@ this table tells you where to make a change.
 | Prompt budgets, history and citation validation | `app/generation.py` |
 | Model client and provider-specific output | `app/llm.py` |
 | Database handle and shared records | `app/storage/database.py`, `app/storage/records.py` |
-| Chunk persistence, lexical/vector queries | `app/storage/documents.py` |
+| Source listing/deletion, chunk persistence, lexical/vector queries | `app/storage/documents.py` |
 | Job claims, fencing, atomic completion | `app/storage/jobs.py` |
-| Conversation history and transactions | `app/storage/conversations.py` |
+| Conversation management, history and transactions | `app/storage/conversations.py` |
 | PostgreSQL schema and migrations | `migrations/` |
 | Optional visual teaching interface | `demo/` |
 
@@ -76,8 +76,8 @@ worker, chunking, extraction, or embedding implementation require restarting
 the worker (`rag stop` then `rag start`). They do not automatically reindex
 existing documents.
 
-For direct Python feature calls, use the [Python reference](reference/python.md).
-To connect another application over HTTP, use the [HTTP reference](reference/http.md).
+For direct Python feature calls, use the [Python reference](../reference/python.md).
+To connect another application over HTTP, use the [HTTP reference](../reference/http.md).
 
 ## Run the API alongside the local manager
 
@@ -97,7 +97,8 @@ Do not start two servers on port 8000 simultaneously. Stop the server with
 Ctrl+C; stop the worker/database separately with `uv run rag stop`.
 
 **Important:** the API uses one shared token for a configured tenant. It is not
-a public multi-user application; bind a development server to loopback.
+a public multi-user application; bind a development server to loopback. See the
+[trust boundary](../explanation/security.md#trust-boundary).
 
 ## Unit and integration tests
 
@@ -128,19 +129,48 @@ billable tests to default CI.
 ## Architecture constraints
 
 Maintain the guarantees described in
-[architecture and transactions](explanation/architecture.md):
+[architecture and transactions](../explanation/architecture.md):
 worker ownership fencing, atomic reindexing, explicit tenant scope, and
 conversation transaction boundaries. See
-[indexing internals](explanation/indexing.md) and
-[retrieval internals](explanation/retrieval.md) before changing those workflows.
+[indexing internals](../explanation/indexing.md) and
+[retrieval internals](../explanation/retrieval.md) before changing those workflows.
 These guides describe **why** the boundaries matter; the table above shows
 **where** to make changes.
 
+## Optional push checks
+
+Local Ruff automation is opt-in and works with any Git host. Cloning the
+repository or installing dependencies does not activate hooks. To enable it
+in your checkout:
+
+```bash
+uv run pre-commit install --hook-type pre-push
+```
+
+Before each push, the hook fixes import ordering, formats changed Python files,
+and checks lint across the repository. It does not run on commits. Other lint
+rules report findings without automatically changing code; unsafe fixes are
+disabled. Markdown files are excluded from Ruff checks and formatting.
+
+If files change, the push stops: review and commit those changes, then push again.
+Unresolved lint findings also stop the push and require review. The hook never
+creates or amends commits. Its isolated Ruff environment is downloaded on first
+use and reused afterward; no GitHub service is required.
+
+To disable the hook in your checkout:
+
+```bash
+uv run pre-commit uninstall --hook-type pre-push
+```
+
 ## Documentation
 
-Edit Markdown under `docs/`, with navigation defined in `mkdocs.yml`. Keep
-the README and quickstart aligned with **verified commands**, but avoid copying
-entire reference pages into introductory content.
+Edit Markdown under `docs/`, with navigation defined in `mkdocs.yml`. Pages are
+grouped as tutorials (`docs/tutorials/`), task guides (`docs/how-to/`), exact
+contracts (`docs/reference/`), and design explanations (`docs/explanation/`).
+State each fact on the page that owns it and link to it elsewhere. Keep the
+README and quickstart aligned with **verified commands**, but avoid copying
+reference pages into introductory content.
 
 ```bash
 uv run --group docs mkdocs serve --dev-addr 127.0.0.1:8002

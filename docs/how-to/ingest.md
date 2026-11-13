@@ -1,6 +1,6 @@
-# Ingest and Reindex Documents
+# Ingest and manage sources
 
-Start with the [CLI quickstart](../quickstart.md): `uv run rag start` brings up
+Start with the [CLI quickstart](../tutorials/quickstart.md): `uv run rag start` brings up
 PostgreSQL and the background host worker. CLI, API, and worker must share the
 database, tenant, and staging directory. Keep originals: terminal staged inputs
 are removed after processing. The `rag` CLI loads `.env` automatically.
@@ -8,7 +8,7 @@ For local embeddings use `uv run --extra local rag ...` consistently. HTTP
 curl examples require exported `RAG_API_KEY`; a private `.env` alone does not
 export variables for curl.
 
-## Submit Through the CLI
+## Submit through the CLI
 
 ```bash
 uv run rag add docs/assets/sample.md
@@ -24,7 +24,7 @@ uv run rag job JOB_ID
 Replace `JOB_ID` with the returned UUID. Ctrl+C stops waiting, not the queued
 job.
 
-## Submit Through HTTP
+## Submit through HTTP
 
 ```bash
 curl --fail-with-body http://127.0.0.1:8000/sources/file \
@@ -44,7 +44,7 @@ An unchanged indexed source returns 200 with null job fields. The same bytes
 are reused only when the extraction profile matches; otherwise reindex is required.
 Changing a filename does not create a new identity; changing bytes does.
 
-## Replace an Existing Index
+## Replace an existing index
 
 ```bash
 uv run rag add docs/assets/sample.md --reindex
@@ -58,7 +58,7 @@ Reindex after changing extraction profiles, chunking settings, or embedding spac
 Existing indexes are never rebuilt automatically. Conflicting active submissions
 are rejected rather than running two incompatible jobs for the same source.
 
-## Process Scans or Page Layouts
+## Process scans or page layouts
 
 After [configuring a visual provider](providers.md#enable-visual-extraction):
 
@@ -71,22 +71,33 @@ For an already-indexed parser source, add `--reindex`. HTTP uses
 PDF, DOCX, and PPTX; text/Markdown use the parser. Native parser errors never
 trigger automatic visual extraction. See [formats and limits](../reference/limits.md).
 
-## Search and Ask
+## List, inspect, and delete sources
+
+Source management is available over HTTP; the CLI has no list or delete command.
 
 ```bash
-uv run rag search "support hours" --method lexical --limit 3
-uv run rag search "When can I visit?" --method hybrid --limit 3
-uv run rag ask "When is the support desk open?" --method lexical --limit 3
+curl --fail-with-body 'http://127.0.0.1:8000/sources?limit=20' \
+  -H "Authorization: Bearer $RAG_API_KEY"
+curl --fail-with-body http://127.0.0.1:8000/sources/SOURCE_ID \
+  -H "Authorization: Bearer $RAG_API_KEY"
 ```
 
-Lexical search makes no embedding call. Cosine, window, and hybrid searches use
-query embeddings. `ask` requires a configured generation model, even if no sources
-match. It returns generated text, not a concatenation of excerpts.
+Sources are listed newest first with `title`, `reference`, and `chunk_count`.
+Page with `limit` (1 through 100) and `offset`. A source whose first indexing job
+is still pending reports zero chunks.
 
-For HTTP, send JSON to `/search` or `/ask`; see the
-[request reference](../reference/http.md#search-and-answer-requests).
+```bash
+curl --fail-with-body -X DELETE http://127.0.0.1:8000/sources/SOURCE_ID \
+  -H "Authorization: Bearer $RAG_API_KEY"
+```
 
-## Recover Failed or Interrupted Jobs
+A 204 response means the source, its chunks, and its finished job history are
+gone; it no longer appears in search or answers. Deletion returns 409 while an
+ingestion job for the source is pending or running; wait for it to finish.
+Citations already saved in conversations are snapshots and remain unchanged.
+There is no undo: resubmit the original to index it again.
+
+## Recover failed or interrupted jobs
 
 Inspect `rag job JOB_ID` or authenticated `GET /jobs/JOB_ID` and safe worker logs.
 Fix the reported input, configuration, provider, or infrastructure issue, then

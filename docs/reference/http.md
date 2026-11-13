@@ -6,7 +6,7 @@ streaming response, or per-user identity.
 
 The running application serves exact schemas at `/openapi.json`, Swagger UI at
 `/docs`, and ReDoc at `/redoc`. These schema routes are public; restrict them
-at the proxy if necessary. See [running the API](../development.md#run-the-api-alongside-the-local-manager) and
+at the proxy if necessary. See [running the API](../how-to/develop.md#run-the-api-alongside-the-local-manager) and
 [configuration](configuration.md) for prerequisites.
 
 Operations are grouped by feature and have concise summaries with Markdown
@@ -19,14 +19,27 @@ and validation constraints.
 | Method | Path | Success response |
 | --- | --- | --- |
 | POST | `/sources/file` | 202 `SourceResponse`, or 200 if unchanged |
+| GET | `/sources` | 200 array of `SourceDetailsResponse` |
+| GET | `/sources/{source_id}` | 200 `SourceDetailsResponse` |
+| DELETE | `/sources/{source_id}` | 204, no body |
 | GET | `/jobs/{job_id}` | 200 `JobResponse` |
 | POST | `/search` | 200 array of `SearchMatchResponse` |
 | POST | `/ask` | 200 `AskResponse` |
 | POST | `/conversations` | 201 `ConversationResponse` |
+| GET | `/conversations` | 200 array of `ConversationResponse` |
+| GET | `/conversations/{conversation_id}` | 200 `ConversationResponse` |
+| DELETE | `/conversations/{conversation_id}` | 204, no body |
 | GET | `/conversations/{conversation_id}/messages` | 200 array of `MessageResponse` |
 | POST | `/conversations/{conversation_id}/messages` | 200 `AskResponse` |
 
-## File Upload
+List endpoints share the same paging parameters:
+
+| Parameter | Default | Contract |
+| --- | --- | --- |
+| `limit` | `50` | Integer from 1 through 100 |
+| `offset` | `0` | Nonnegative number of items to skip |
+
+## File upload
 
 `POST /sources/file` accepts `multipart/form-data` with a required `file` part
 and a filename. Its query parameters are:
@@ -66,7 +79,30 @@ Conflicting active jobs return 422. Accepted extraction/provider failures are
 reported by the job rather than by the upload response. Existing searchable
 chunks survive a failed reindex.
 
-## Job Status
+## Source management
+
+`GET /sources` lists tenant sources newest first, using the shared paging
+parameters. `GET /sources/{source_id}` returns one source or 404.
+`SourceDetailsResponse` fields:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Source UUID |
+| `source_type` | `file` or `url` |
+| `title` | Display label derived from `reference` |
+| `reference` | Descriptive origin metadata; see `source_reference` below |
+| `mime_type` | Detected media type, or null |
+| `chunk_count` | Currently indexed chunks; zero before the first index completes |
+| `created_at`, `updated_at` | Timestamps |
+
+Content hashes and tenant IDs are not returned.
+
+`DELETE /sources/{source_id}` returns 204 after removing the source, its chunks,
+and its job history. It returns 404 for missing or other-tenant sources and 409
+while a job for the source is pending or running. Saved conversation citations
+are snapshots and are not changed.
+
+## Job status
 
 `GET /jobs/{job_id}` returns the tenant-scoped job or 404. IDs must be UUIDs.
 
@@ -81,7 +117,7 @@ Poll the supplied URL with the same bearer token. A separate worker executes
 jobs; polling does not execute them. Terminal input files are removed and failed
 jobs are not automatically retried. See [recovery](../how-to/ingest.md#recover-failed-or-interrupted-jobs).
 
-## Search and Answer Requests
+## Search and answer requests
 
 `POST /search` accepts `SearchRequest`. `/ask` accepts `AskRequest`, adding
 answer provider/model options:
@@ -95,10 +131,8 @@ answer provider/model options:
 | `generation_provider` | Configured provider | Ask/turn only: null, `openai`, `deepseek`, `ollama`, or `anthropic` |
 | `generation_model` | Configured model | Ask/turn only: null or nonblank model name |
 
-Selecting a provider requires an explicit model. A model-only override keeps the
-configured provider. Switching providers uses the new provider's default endpoint,
-not the configured answer endpoint override. Overrides do not change server
-settings, retrieval, stored embeddings, or server-side credentials.
+Selecting a provider requires an explicit model. Override semantics are described
+in [override one answer request](../how-to/providers.md#override-one-answer-request).
 
 ```bash
 curl --fail-with-body http://127.0.0.1:8000/search \
@@ -111,7 +145,7 @@ Use `/ask` with the same JSON shape to request a generated answer. Lexical searc
 does not call embeddings; the other methods do. Answer generation needs valid
 provider/model configuration even when there are no matches.
 
-## Search and Answer Responses
+## Search and answer responses
 
 Each `SearchMatchResponse` contains:
 
@@ -122,10 +156,10 @@ Each `SearchMatchResponse` contains:
 | `content` | Retrieved text |
 | `score` | Number, or null for added window neighbors |
 
-Window `limit` counts seeds; with window two, up to `5 * limit` matches can be
-returned before overlap. Results group each seed with its neighbors in document
-order, merge overlapping same-source windows, and prioritize groups by their
-best-ranked seed. Scores from different methods are not comparable probabilities.
+In window mode `limit` counts seeds, so more matches than `limit` can be returned;
+ordering and grouping are described in
+[search methods](../explanation/retrieval.md#search-methods). Scores from
+different methods are not comparable probabilities.
 
 `AskResponse` contains `answer` (text), `matches` (all original retrieval results),
 and `citations` (recognized references to passages actually supplied to the model).
@@ -154,6 +188,12 @@ arrays, without a generation call, after generation configuration is validated.
 `POST /conversations` takes no body. `ConversationResponse` contains `id`,
 `created_at`, and `updated_at`. The configured tenant owns the conversation.
 
+`GET /conversations` lists conversations most recently updated first, using the
+shared paging parameters. `GET /conversations/{conversation_id}` returns one
+conversation or 404. `DELETE /conversations/{conversation_id}` returns 204 after
+removing the conversation and all its messages, 404 if missing, or 409 while a
+turn is running.
+
 `POST /conversations/{conversation_id}/messages` accepts
 `ConversationTurnRequest`: the same options as `/ask`, but with extra fields
 forbidden. Clients cannot submit `role`, system messages, or assistant history.
@@ -162,11 +202,9 @@ The response is `AskResponse`.
 One turn runs per conversation; overlap returns 409 immediately, including across
 API processes. The successful user/assistant pair commits atomically. Handled
 failures and cancellation leave history unchanged. A successful no-sources
-response is saved. Other conversations can run independently.
-
-Generation considers at most ten complete recent turns within one third of the
-existing prompt budget. History is untrusted context, not source evidence.
-Retrieval uses only the current query. There is no history rewriting or summary.
+response is saved. Other conversations can run independently. History is
+untrusted context, not source evidence, and retrieval uses only the current query;
+see [conversations share the same budget](../explanation/retrieval.md#conversations-share-the-same-budget).
 
 `GET /conversations/{conversation_id}/messages` parameters:
 
@@ -181,7 +219,7 @@ and `created_at`. User citations are empty; assistant citations are stored
 snapshots, unaffected by later reindexing. A new conversation has empty history.
 Missing and other-tenant conversation IDs both return 404.
 
-There is no listing/deletion endpoint, streaming, turn queue, or idempotency key.
+There is no streaming, turn queue, or idempotency key.
 Read history before retrying an uncertain request: a timeout does not prove that
 the turn failed. See the [conversation guide](../how-to/conversations.md).
 
@@ -190,8 +228,8 @@ the turn failed. See the [conversation guide](../how-to/conversations.md).
 | Status | Contract |
 | --- | --- |
 | 401 | Missing, malformed, or invalid bearer credentials; `WWW-Authenticate: Bearer` |
-| 404 | Job or conversation not found in the configured tenant |
-| 409 | A turn is already running for the conversation |
+| 404 | Source, job, or conversation not found in the configured tenant |
+| 409 | Source has ingestion work in progress, or a conversation turn is running |
 | 422 | Request validation or handled input/configuration errors |
 | 502 | Handled embedding/generation failures, including invalid generated output |
 | 500 | Unhandled failures, including database/infrastructure errors |

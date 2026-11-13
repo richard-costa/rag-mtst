@@ -4,7 +4,7 @@ The browser demo is a **learning aid**, not the recommended first-use path
 and not a production frontend. It uses the same real FastAPI upload, job,
 search, and answer endpoints as other clients. No mocks or second RAG pipeline.
 
-**Start with the [CLI quickstart](../docs/quickstart.md).** Once the database
+**Start with the [CLI quickstart](../docs/tutorials/quickstart.md).** Once the database
 and host worker are ready, you can use the demo to inspect them visually.
 
 ## Run
@@ -40,10 +40,10 @@ run `uv run rag stop`. Indexed data persists until an explicit reset.
 
 ## Related documentation
 
-- [What the system does](../docs/how-it-works.md)
-- [Compare retrieval from the CLI](../docs/experiments.md)
+- [What the system does](../docs/explanation/overview.md)
+- [Compare retrieval from the CLI](../docs/tutorials/experiments.md)
 - [HTTP API reference](../docs/reference/http.md)
-- [Security and data lifecycle](../docs/operations.md)
+- [Security and data lifecycle](../docs/explanation/security.md)
 
 The demo is excluded from the standard backend Python wheel and Docker image.
 Do not expose this development interface to untrusted public users.
