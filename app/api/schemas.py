@@ -70,6 +70,19 @@ class SourceResponse(BaseModel):
     status_url: str | None
 
 
+class SourceDetailsResponse(BaseModel):
+    """Stored source metadata and its current indexed chunk count."""
+
+    id: UUID
+    source_type: Literal["file", "url"]
+    title: str
+    reference: str
+    mime_type: str | None
+    chunk_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
 class JobResponse(BaseModel):
     """Progress, timing, and status details of an ingestion job."""
 

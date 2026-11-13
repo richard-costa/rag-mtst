@@ -1,10 +1,10 @@
-"""Conversation creation, history and answer endpoints."""
+"""Conversation management, history and answer endpoints."""
 
 from dataclasses import asdict
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.api.dependencies import SettingsDependency, StorageDependency
 from app.api.schemas import (
@@ -18,8 +18,111 @@ from app.embeddings import EmbeddingError
 from app.generation import GenerationError
 from app.storage import conversations
 from app.storage.conversations import ConversationBusy, ConversationNotFound
+from app.storage.records import Conversation
 
 router = APIRouter(tags=["conversations"])
+
+
+def _conversation_response(conversation: Conversation) -> ConversationResponse:
+    """Convert a stored conversation into its HTTP response.
+
+    Args:
+        conversation: Stored conversation record.
+
+    Returns:
+        Public conversation identifiers and timestamps.
+    """
+    return ConversationResponse(
+        id=conversation.id,
+        created_at=conversation.created_at,
+        updated_at=conversation.updated_at,
+    )
+
+
+@router.get(
+    "/conversations",
+    response_model=list[ConversationResponse],
+    summary="List conversations",
+)
+async def list_conversations(
+    settings: SettingsDependency,
+    storage: StorageDependency,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[ConversationResponse]:
+    """List a page of tenant conversations, most recently updated first.
+
+    ### Parameters
+    - `limit`: Maximum conversations, from 1 to 100; defaults to 50.
+    - `offset`: Number of conversations to skip; defaults to 0.
+
+    ### Responses
+    - **200**: Conversation IDs and creation/update timestamps.
+    - **401**: Missing or invalid bearer token.
+    - **422**: Invalid pagination parameters.
+    """
+    items = await conversations.list_conversations(
+        storage, settings.tenant_id, limit=limit, offset=offset
+    )
+    return [_conversation_response(conversation) for conversation in items]
+
+
+@router.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationResponse,
+    summary="Read a conversation",
+)
+async def get_conversation(
+    conversation_id: UUID, settings: SettingsDependency, storage: StorageDependency
+) -> ConversationResponse:
+    """Read the identifiers and timestamps of a tenant-owned conversation.
+
+    ### Parameter
+    - `conversation_id`: Conversation UUID.
+
+    ### Responses
+    - **200**: Conversation ID and creation/update timestamps.
+    - **401**: Missing or invalid bearer token.
+    - **404**: Conversation is missing or belongs to another tenant.
+    - **422**: Invalid conversation UUID.
+    """
+    conversation = await conversations.get_conversation(
+        storage, settings.tenant_id, conversation_id
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return _conversation_response(conversation)
+
+
+@router.delete(
+    "/conversations/{conversation_id}",
+    status_code=204,
+    summary="Delete a conversation",
+)
+async def delete_conversation(
+    conversation_id: UUID, settings: SettingsDependency, storage: StorageDependency
+) -> Response:
+    """Delete a conversation and all of its messages.
+
+    ### Parameter
+    - `conversation_id`: Conversation UUID.
+
+    ### Responses
+    - **204**: Conversation and messages deleted.
+    - **401**: Missing or invalid bearer token.
+    - **404**: Conversation is missing or belongs to another tenant.
+    - **409**: A turn currently holds the conversation lock.
+    - **422**: Invalid conversation UUID.
+    """
+    try:
+        await conversations.delete_conversation(
+            storage, settings.tenant_id, conversation_id
+        )
+    except ConversationNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ConversationBusy as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return Response(status_code=204)
 
 
 @router.post(
@@ -40,11 +143,7 @@ async def create_conversation(
     - **401**: Missing or invalid bearer token.
     """
     conversation = await conversations.create_conversation(storage, settings.tenant_id)
-    return ConversationResponse(
-        id=conversation.id,
-        created_at=conversation.created_at,
-        updated_at=conversation.updated_at,
-    )
+    return _conversation_response(conversation)
 
 
 @router.get(

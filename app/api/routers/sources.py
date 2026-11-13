@@ -1,15 +1,121 @@
-"""Source upload endpoints."""
+"""Source upload, listing, and deletion endpoints."""
 
 from typing import Annotated, Literal
+from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.dependencies import SettingsDependency, StorageDependency
-from app.api.schemas import SourceResponse
-from app.ingestion import enqueue_bytes
+from app.api.schemas import SourceDetailsResponse, SourceResponse
+from app.ingestion import cleanup_ingestion_inputs, enqueue_bytes
+from app.storage import documents
+from app.storage.documents import SourceBusy, SourceNotFound
+from app.storage.records import SourceSummary
 
 router = APIRouter(tags=["sources"])
+
+
+def _source_details(source: SourceSummary) -> SourceDetailsResponse:
+    """Convert a stored source summary into its HTTP response.
+
+    Args:
+        source: Stored source with its chunk count.
+
+    Returns:
+        Public source metadata.
+    """
+    return SourceDetailsResponse(
+        id=source.id,
+        source_type=source.source_type,
+        title=source.title,
+        reference=source.reference,
+        mime_type=source.mime_type,
+        chunk_count=source.chunk_count,
+        created_at=source.created_at,
+        updated_at=source.updated_at,
+    )
+
+
+@router.get(
+    "/sources", response_model=list[SourceDetailsResponse], summary="List sources"
+)
+async def list_sources(
+    settings: SettingsDependency,
+    storage: StorageDependency,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[SourceDetailsResponse]:
+    """List a page of tenant sources, newest first.
+
+    ### Parameters
+    - `limit`: Maximum sources, from 1 to 100; defaults to 50.
+    - `offset`: Number of sources to skip; defaults to 0.
+
+    ### Responses
+    - **200**: Source metadata with current indexed chunk counts.
+    - **401**: Missing or invalid bearer token.
+    - **422**: Invalid pagination parameters.
+
+    A source with pending first-time indexing reports zero chunks.
+    """
+    sources = await documents.list_sources(
+        storage, settings.tenant_id, limit=limit, offset=offset
+    )
+    return [_source_details(source) for source in sources]
+
+
+@router.get(
+    "/sources/{source_id}",
+    response_model=SourceDetailsResponse,
+    summary="Read a source",
+)
+async def get_source(
+    source_id: UUID, settings: SettingsDependency, storage: StorageDependency
+) -> SourceDetailsResponse:
+    """Read the metadata of a tenant-owned source.
+
+    ### Parameter
+    - `source_id`: Source UUID returned by source submission.
+
+    ### Responses
+    - **200**: Source metadata with its current indexed chunk count.
+    - **401**: Missing or invalid bearer token.
+    - **404**: Source is missing or belongs to another tenant.
+    - **422**: Invalid source UUID.
+    """
+    source = await documents.get_source(storage, settings.tenant_id, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return _source_details(source)
+
+
+@router.delete("/sources/{source_id}", status_code=204, summary="Delete a source")
+async def delete_source(
+    source_id: UUID, settings: SettingsDependency, storage: StorageDependency
+) -> Response:
+    """Delete a source, its indexed chunks, and its finished job history.
+
+    ### Parameter
+    - `source_id`: Source UUID returned by source submission.
+
+    ### Responses
+    - **204**: Source deleted; it no longer appears in search or answers.
+    - **401**: Missing or invalid bearer token.
+    - **404**: Source is missing or belongs to another tenant.
+    - **409**: An ingestion job for the source is pending or running.
+    - **422**: Invalid source UUID.
+
+    Saved conversation citations are snapshots and remain unchanged.
+    """
+    await cleanup_ingestion_inputs(settings=settings, storage=storage)
+    try:
+        await documents.delete_source(storage, settings.tenant_id, source_id)
+    except SourceNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except SourceBusy as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return Response(status_code=204)
 
 
 @router.post(

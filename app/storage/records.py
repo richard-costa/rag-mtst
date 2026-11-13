@@ -35,6 +35,13 @@ class Source:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceSummary(Source):
+    """Persisted source with its current indexed chunk count."""
+
+    chunk_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class Chunk:
     """Persisted source chunk with embedding and metadata."""
 

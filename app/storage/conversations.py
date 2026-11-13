@@ -44,6 +44,86 @@ async def create_conversation(database: Database, tenant_id: str) -> Conversatio
     return Conversation(**row)
 
 
+async def list_conversations(
+    database: Database, tenant_id: str, *, limit: int = 50, offset: int = 0
+) -> list[Conversation]:
+    """List a page of tenant conversations, most recently updated first.
+
+    Args:
+        database: PostgreSQL database handle.
+        tenant_id: Tenant identifier used to scope the operation.
+        limit: Maximum number of conversations to return.
+        offset: Number of conversations to skip.
+
+    Returns:
+        Conversation records.
+    """
+    async with database.connection() as connection:
+        cursor = await connection.execute(
+            """
+            SELECT * FROM conversations
+            WHERE tenant_id = %s
+            ORDER BY updated_at DESC, id
+            LIMIT %s OFFSET %s
+            """,
+            (tenant_id, limit, offset),
+        )
+        rows = await cursor.fetchall()
+    return [Conversation(**row) for row in rows]
+
+
+async def get_conversation(
+    database: Database, tenant_id: str, conversation_id: UUID
+) -> Conversation | None:
+    """Load a tenant conversation by UUID.
+
+    Args:
+        database: PostgreSQL database handle.
+        tenant_id: Tenant identifier used to scope the operation.
+        conversation_id: Identifier of the conversation.
+
+    Returns:
+        Conversation record, or ``None`` if absent.
+    """
+    async with database.connection() as connection:
+        cursor = await connection.execute(
+            "SELECT * FROM conversations WHERE tenant_id = %s AND id = %s",
+            (tenant_id, conversation_id),
+        )
+        row = await cursor.fetchone()
+    return Conversation(**row) if row is not None else None
+
+
+async def delete_conversation(
+    database: Database, tenant_id: str, conversation_id: UUID
+) -> None:
+    """Delete a conversation and its messages unless a turn is active.
+
+    Args:
+        database: PostgreSQL database handle.
+        tenant_id: Tenant identifier used to scope the operation.
+        conversation_id: Identifier of the conversation.
+
+    Raises:
+        ConversationNotFound: The conversation is absent from the tenant.
+        ConversationBusy: A turn currently holds the conversation lock.
+    """
+    async with database.connection() as connection:
+        try:
+            cursor = await connection.execute(
+                "DELETE FROM conversations WHERE id = ("
+                "SELECT id FROM conversations WHERE tenant_id = %s AND id = %s "
+                "FOR UPDATE NOWAIT) RETURNING id",
+                (tenant_id, conversation_id),
+            )
+        except psycopg.errors.LockNotAvailable as error:
+            raise ConversationBusy(
+                "A turn is already active for this conversation"
+            ) from error
+        if await cursor.fetchone() is None:
+            raise ConversationNotFound("Conversation not found")
+
+
 @asynccontextmanager
 async def conversation_turn(
     database: Database,

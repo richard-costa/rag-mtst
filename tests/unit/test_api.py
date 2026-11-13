@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +11,10 @@ from app.api.dependencies import get_api_settings, get_storage
 from app.api.main import create_app
 from app.config import Settings
 from app.generation import Answer
+from app.storage.conversations import ConversationBusy, ConversationNotFound
 from app.storage.database import Database
+from app.storage.documents import SourceBusy, SourceNotFound
+from app.storage.records import SourceSummary
 
 
 @pytest.mark.parametrize(
@@ -155,10 +160,16 @@ def test_api_schema_is_public_and_documents_bearer_authentication() -> None:
     "path,method,summary",
     [
         ("/sources/file", "post", "Submit a document for indexing"),
+        ("/sources", "get", "List sources"),
+        ("/sources/{source_id}", "get", "Read a source"),
+        ("/sources/{source_id}", "delete", "Delete a source"),
         ("/jobs/{job_id}", "get", "Read ingestion job status"),
         ("/search", "post", "Search source passages"),
         ("/ask", "post", "Generate a cited answer"),
         ("/conversations", "post", "Create a conversation"),
+        ("/conversations", "get", "List conversations"),
+        ("/conversations/{conversation_id}", "get", "Read a conversation"),
+        ("/conversations/{conversation_id}", "delete", "Delete a conversation"),
         (
             "/conversations/{conversation_id}/messages",
             "get",
@@ -240,6 +251,9 @@ def test_job_status_requires_authentication_before_database_access(monkeypatch) 
     "method,path",
     [
         ("POST", "/conversations"),
+        ("GET", "/conversations"),
+        ("GET", "/conversations/00000000-0000-0000-0000-000000000001"),
+        ("DELETE", "/conversations/00000000-0000-0000-0000-000000000001"),
         ("GET", "/conversations/00000000-0000-0000-0000-000000000001/messages"),
         ("POST", "/conversations/00000000-0000-0000-0000-000000000001/messages"),
     ],
@@ -250,13 +264,111 @@ def test_conversations_require_authentication_before_database_access(
     def unexpected(*args, **kwargs):
         pytest.fail("Unauthenticated requests must not access conversations")
 
-    for name in ("create_conversation", "list_messages", "conversation_turn"):
+    for name in (
+        "create_conversation",
+        "list_conversations",
+        "get_conversation",
+        "delete_conversation",
+        "list_messages",
+        "conversation_turn",
+    ):
         monkeypatch.setattr(
             f"app.api.routers.conversations.conversations.{name}", unexpected
         )
     with TestClient(create_app(Settings(api_key="test-key"))) as client:
         response = client.request(method, path, json={"query": "question"})
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("GET", "/sources"),
+        ("GET", "/sources/00000000-0000-0000-0000-000000000001"),
+        ("DELETE", "/sources/00000000-0000-0000-0000-000000000001"),
+    ],
+)
+def test_sources_require_authentication_before_database_access(
+    monkeypatch, method, path
+):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unauthenticated requests must not access sources")
+
+    for name in ("list_sources", "get_source", "delete_source"):
+        monkeypatch.setattr(f"app.api.routers.sources.documents.{name}", unexpected)
+    monkeypatch.setattr("app.api.routers.sources.cleanup_ingestion_inputs", unexpected)
+    with TestClient(create_app(Settings(api_key="test-key"))) as client:
+        response = client.request(method, path)
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "target,error,status",
+    [
+        ("sources", None, 204),
+        ("sources", SourceNotFound("Source not found"), 404),
+        ("sources", SourceBusy("busy"), 409),
+        ("conversations", None, 204),
+        ("conversations", ConversationNotFound("Conversation not found"), 404),
+        ("conversations", ConversationBusy("busy"), 409),
+    ],
+)
+def test_delete_endpoints_map_storage_outcomes(
+    monkeypatch, target, error, status
+) -> None:
+    delete = AsyncMock(side_effect=error)
+    if target == "sources":
+        monkeypatch.setattr("app.api.routers.sources.documents.delete_source", delete)
+        monkeypatch.setattr(
+            "app.api.routers.sources.cleanup_ingestion_inputs", AsyncMock()
+        )
+    else:
+        monkeypatch.setattr(
+            "app.api.routers.conversations.conversations.delete_conversation", delete
+        )
+    settings = Settings(api_key="test-key", tenant_id="server-tenant")
+    resource_id = "00000000-0000-0000-0000-000000000001"
+    with TestClient(create_app(settings)) as client:
+        response = client.delete(
+            f"/{target}/{resource_id}",
+            headers={"Authorization": "Bearer test-key"},
+        )
+    assert response.status_code == status
+    assert delete.call_args.args[1:] == ("server-tenant", UUID(resource_id))
+
+
+def test_source_details_expose_metadata_without_content_hash(monkeypatch) -> None:
+    now = datetime.now(UTC)
+    source = SourceSummary(
+        id=UUID("00000000-0000-0000-0000-000000000001"),
+        tenant_id="server-tenant",
+        source_type="file",
+        reference="folder/report.pdf",
+        mime_type="application/pdf",
+        content_hash="private-hash",
+        created_at=now,
+        updated_at=now,
+        chunk_count=3,
+    )
+    monkeypatch.setattr(
+        "app.api.routers.sources.documents.list_sources",
+        AsyncMock(return_value=[source]),
+    )
+    monkeypatch.setattr(
+        "app.api.routers.sources.documents.get_source", AsyncMock(return_value=None)
+    )
+    headers = {"Authorization": "Bearer test-key"}
+    with TestClient(create_app(Settings(api_key="test-key"))) as client:
+        listed = client.get("/sources?limit=10&offset=5", headers=headers)
+        missing = client.get(f"/sources/{source.id}", headers=headers)
+        invalid = client.get("/sources?limit=0", headers=headers)
+    assert listed.status_code == 200
+    [item] = listed.json()
+    assert item["title"] == "report.pdf"
+    assert item["chunk_count"] == 3
+    assert "content_hash" not in item and "tenant_id" not in item
+    assert missing.status_code == 404
+    assert invalid.status_code == 422
 
 
 @pytest.mark.parametrize(

@@ -8,7 +8,117 @@ from pgvector import Vector
 from psycopg.types.json import Jsonb
 
 from app.storage.database import Database
-from app.storage.records import ChunkInput, ScoredChunk, Source, StoredChunk
+from app.storage.records import (
+    ChunkInput,
+    ScoredChunk,
+    Source,
+    SourceSummary,
+    StoredChunk,
+)
+
+
+class SourceNotFound(LookupError):
+    """The source does not exist in the requested tenant."""
+
+
+class SourceBusy(RuntimeError):
+    """The source has ingestion work or staged input still in progress."""
+
+
+_SOURCE_SUMMARY_COLUMNS = """
+    id, tenant_id, type AS source_type, reference, mime_type,
+    content_hash, created_at, updated_at,
+    (SELECT count(*) FROM chunks WHERE chunks.source_id = sources.id) AS chunk_count
+"""
+
+
+async def list_sources(
+    database: Database, tenant_id: str, *, limit: int = 50, offset: int = 0
+) -> list[SourceSummary]:
+    """List a page of tenant sources, newest first.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        limit: Maximum number of sources to return.
+        offset: Number of sources to skip.
+
+    Returns:
+        Sources with their indexed chunk counts.
+    """
+    async with database.connection() as connection:
+        cursor = await connection.execute(
+            f"""
+            SELECT {_SOURCE_SUMMARY_COLUMNS}
+            FROM sources
+            WHERE tenant_id = %s
+            ORDER BY created_at DESC, id
+            LIMIT %s OFFSET %s
+            """,
+            (tenant_id, limit, offset),
+        )
+        rows = await cursor.fetchall()
+    return [SourceSummary(**row) for row in rows]
+
+
+async def get_source(
+    database: Database, tenant_id: str, source_id: UUID
+) -> SourceSummary | None:
+    """Load a tenant source by UUID.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        source_id: UUID identifying the source.
+
+    Returns:
+        Source with its indexed chunk count, or ``None`` if absent.
+    """
+    async with database.connection() as connection:
+        cursor = await connection.execute(
+            f"""
+            SELECT {_SOURCE_SUMMARY_COLUMNS}
+            FROM sources
+            WHERE tenant_id = %s AND id = %s
+            """,
+            (tenant_id, source_id),
+        )
+        row = await cursor.fetchone()
+    return SourceSummary(**row) if row is not None else None
+
+
+async def delete_source(database: Database, tenant_id: str, source_id: UUID) -> None:
+    """Delete a source with its chunks and finished ingestion jobs.
+
+    Args:
+        database: Database handle for the storage operation.
+        tenant_id: Tenant scope restricting the query or write.
+        source_id: UUID identifying the source.
+
+    Raises:
+        SourceNotFound: The source is absent from the tenant.
+        SourceBusy: A job is active or a staged input awaits cleanup.
+    """
+    async with database.connection() as connection:
+        cursor = await connection.execute(
+            "SELECT id FROM sources WHERE tenant_id = %s AND id = %s FOR UPDATE",
+            (tenant_id, source_id),
+        )
+        if await cursor.fetchone() is None:
+            raise SourceNotFound("Source not found")
+        cursor = await connection.execute(
+            """
+            SELECT 1 FROM ingestion_jobs AS jobs
+            LEFT JOIN ingestion_job_inputs AS inputs ON inputs.job_id = jobs.id
+            WHERE jobs.source_id = %s
+              AND (jobs.status IN ('pending', 'running') OR inputs.input_path IS NOT NULL)
+            LIMIT 1
+            """,
+            (source_id,),
+        )
+        if await cursor.fetchone() is not None:
+            raise SourceBusy("The source has ingestion work in progress")
+        await connection.execute("DELETE FROM sources WHERE id = %s", (source_id,))
 
 
 async def get_source_by_content_hash(

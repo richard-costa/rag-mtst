@@ -11,6 +11,7 @@ from alembic.config import Config
 
 from app.storage import conversations, documents, jobs
 from app.storage.conversations import ConversationBusy, ConversationNotFound
+from app.storage.documents import SourceBusy, SourceNotFound
 from app.storage.records import ChunkInput
 
 # ---------------------------------------------------------------------------
@@ -265,6 +266,102 @@ async def test_conversation_turn_history_is_bounded_without_reusing_sequence_num
         storage, "test-tenant", conversation.id
     )
     assert [message.sequence for message in messages] == list(range(1, 25))
+
+
+async def test_conversations_can_be_listed_read_and_deleted_per_tenant(storage):
+    first = await conversations.create_conversation(storage, "test-tenant")
+    second = await conversations.create_conversation(storage, "test-tenant")
+    await conversations.create_conversation(storage, "other-tenant")
+    async with conversations.conversation_turn(
+        storage, "test-tenant", first.id, "Question"
+    ) as turn:
+        turn.answer = "Answer"
+
+    listed = await conversations.list_conversations(storage, "test-tenant")
+    assert [conversation.id for conversation in listed] == [first.id, second.id]
+    assert [
+        conversation.id
+        for conversation in await conversations.list_conversations(
+            storage, "test-tenant", limit=1, offset=1
+        )
+    ] == [second.id]
+    assert (
+        await conversations.get_conversation(storage, "other-tenant", first.id) is None
+    )
+
+    with pytest.raises(ConversationNotFound):
+        await conversations.delete_conversation(storage, "other-tenant", first.id)
+    async with conversations.conversation_turn(
+        storage, "test-tenant", first.id, "Locked"
+    ) as turn:
+        with pytest.raises(ConversationBusy):
+            await conversations.delete_conversation(storage, "test-tenant", first.id)
+        turn.answer = "Still saved"
+    await conversations.delete_conversation(storage, "test-tenant", first.id)
+    assert (
+        await conversations.get_conversation(storage, "test-tenant", first.id) is None
+    )
+    async with storage.connection() as connection:
+        cursor = await connection.execute(
+            "SELECT count(*) AS count FROM messages WHERE conversation_id = %s",
+            (first.id,),
+        )
+        assert (await cursor.fetchone())["count"] == 0
+
+
+async def test_sources_can_be_listed_read_and_deleted_when_idle(storage):
+    indexed = await documents.insert_source_with_chunks(
+        storage,
+        tenant_id="test-tenant",
+        source_type="file",
+        reference="folder/indexed.md",
+        mime_type="text/markdown",
+        content_hash="indexed",
+        chunks=[ChunkInput(content="kept", metadata={})],
+    )
+    source, job = await jobs.create_ingestion_job(
+        storage,
+        tenant_id="test-tenant",
+        content_hash="queued",
+        reference="queued.md",
+        mime_type="text/markdown",
+        input_path="/tmp/queued.md",
+        source_name="queued.md",
+        extraction_profile={"method": "parser"},
+        configuration={},
+        reindex=False,
+    )
+    assert job is not None
+
+    listed = await documents.list_sources(storage, "test-tenant")
+    assert [(item.id, item.chunk_count) for item in listed] == [
+        (source.id, 0),
+        (indexed.id, 1),
+    ]
+    assert await documents.list_sources(storage, "other-tenant") == []
+    details = await documents.get_source(storage, "test-tenant", indexed.id)
+    assert details is not None and details.title == "indexed.md"
+    assert await documents.get_source(storage, "other-tenant", indexed.id) is None
+
+    with pytest.raises(SourceNotFound):
+        await documents.delete_source(storage, "other-tenant", indexed.id)
+    with pytest.raises(SourceBusy):
+        await documents.delete_source(storage, "test-tenant", source.id)
+    claimed = await jobs.claim_ingestion_job(storage, "test-tenant")
+    assert claimed is not None and claimed.claim_token is not None
+    await jobs.fail_ingestion_job(
+        storage, "test-tenant", claimed.id, claimed.claim_token, error="failed"
+    )
+    with pytest.raises(SourceBusy):
+        await documents.delete_source(storage, "test-tenant", source.id)
+    await jobs.clear_ingestion_input_path(
+        storage, "test-tenant", claimed.id, "/tmp/queued.md"
+    )
+    await documents.delete_source(storage, "test-tenant", source.id)
+    await documents.delete_source(storage, "test-tenant", indexed.id)
+    assert await documents.list_sources(storage, "test-tenant") == []
+    assert await documents.list_chunks(storage, "test-tenant") == []
+    assert await jobs.get_ingestion_job(storage, "test-tenant", job.id) is None
 
 
 async def test_ingestion_job_inputs_are_atomic_durable_and_tenant_scoped(storage):
