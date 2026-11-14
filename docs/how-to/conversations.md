@@ -1,8 +1,10 @@
 # Use conversations
 
 Use the authenticated HTTP API to retain successful question/answer pairs.
-`/ask` stays stateless; the CLI and demo have no conversation interface.
-Configure generation and index relevant material before starting.
+`/ask` never stores anything; a service that keeps its own history can
+[pass it to `/ask`](#keep-history-in-your-own-service) instead. The CLI and demo
+have no conversation interface. Configure generation and index relevant material
+before starting.
 
 ## 1. Create a conversation
 
@@ -29,8 +31,8 @@ questions: retrieval sees only the current query, not a history-rewritten query.
 For example, ask "Where is the support desk?", not just "Where is it?".
 
 You may use the same retrieval and provider/model options as `/ask`. Submit only
-questions and supported options: client-supplied `role`, assistant messages, and
-other extra fields are rejected.
+questions and supported options: client-supplied `history`, `role`, assistant
+messages, and other extra fields are rejected.
 
 ## 3. Read or page through history
 
@@ -74,3 +76,23 @@ or streaming.
 History informs generation within a bounded share of the prompt and is never
 citation evidence; see
 [conversations share the same budget](../explanation/retrieval.md#conversations-share-the-same-budget).
+
+## Keep history in your own service
+
+If the calling service already stores its users' conversations, skip the
+conversation endpoints and send recent turns with each `/ask` request:
+
+```bash
+curl --fail-with-body http://127.0.0.1:8000/ask \
+  -H "Authorization: Bearer $RAG_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"Is the support desk open on weekends?",
+       "history":[{"role":"user","content":"When is the support desk open?"},
+                  {"role":"assistant","content":"Weekdays from 9 to 17."}]}'
+```
+
+Send at most 20 messages, oldest first, as complete user/assistant pairs. The
+backend does not store the history, lock anything, or keep citations for it;
+your service owns ordering, concurrency, and persistence. Retrieval still sees
+only `query`, so keep follow-up questions explicit. Field rules are in the
+[HTTP reference](../reference/http.md#search-and-answer-requests).

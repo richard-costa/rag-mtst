@@ -54,9 +54,9 @@ async def inspect_sources():
 reference (`source_reference`), chunk index, and truncation flag. `EmbeddingError` and `GenerationError`
 report handled provider failures.
 
-`answer(..., history=messages)` accepts ordered `Message` records for bounded
-generation context. Retrieval still uses only the question. History does not
-supply citation evidence.
+`answer(..., history=messages)` accepts ordered messages with `role` and
+`content`, such as stored `Message` records, for bounded generation context.
+Retrieval still uses only the question. History does not supply citation evidence.
 
 ## Extraction and chunking
 

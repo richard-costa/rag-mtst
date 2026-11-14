@@ -53,7 +53,8 @@ validation, timeout, or budget failures do not commit a partial document.
 | Answer input | 8000 locally estimated tokens by default; not exact provider accounting |
 | Answer output | 4000 tokens by default, including reasoning |
 | Answer timeout | 180 seconds by default; no automatic generation retries |
-| Conversation generation history | At most 10 complete turns within one third of the prompt budget |
+| Generation history (conversations or `/ask` `history`) | At most 10 complete turns within one third of the prompt budget |
+| `/ask` `history` request field | At most 20 messages |
 | Conversation history page | Default 50 messages; allowed 1 through 100 |
 | Source and conversation list page | Default 50 items; allowed 1 through 100, with `offset` |
 

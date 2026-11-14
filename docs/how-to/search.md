@@ -35,4 +35,5 @@ Field contracts are in the
 [HTTP reference](../reference/http.md#search-and-answer-requests).
 
 To keep question/answer history, use [conversations](conversations.md) instead
-of `/ask`.
+of `/ask`, or keep it in your own service and
+[send it with each `/ask` request](conversations.md#keep-history-in-your-own-service).

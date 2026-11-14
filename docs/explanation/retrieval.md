@@ -84,9 +84,10 @@ source-boundary instructions also do not guarantee resistance to prompt injectio
 
 ## Conversations share the same budget
 
-Recent conversation messages can help generation interpret a follow-up, but
-retrieval still sees only the current query. Ambiguous references can therefore
-retrieve poor material. No history summary or query rewriting is performed.
+Recent conversation messages, whether stored by a conversation or supplied in an
+`/ask` request, can help generation interpret a follow-up, but retrieval still
+sees only the current query. Ambiguous references can therefore retrieve poor
+material. No history summary or query rewriting is performed.
 
 At most ten complete recent turns fit within one third of the existing prompt
 budget; older whole turns are omitted. This is not an additional allowance.

@@ -49,8 +49,6 @@ completed-task checklists. No release dates are committed.
 - Document deployment requirements for operators: API and worker share the
   staging path, connection-pooler compatibility (for example PgBouncer modes),
   and database connections held during conversation turns.
-- Evaluate S3-compatible object storage for staged inputs if a shared
-  filesystem is unavailable in the target infrastructure.
 - Better sanitized observability and carefully scoped retries.
 - Model revision tracking, embedding migration, and hosted token fitting.
 - Introduce pooling, batching, or approximate vector indexes only when

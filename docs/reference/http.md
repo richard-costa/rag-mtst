@@ -120,7 +120,7 @@ jobs are not automatically retried. See [recovery](../how-to/ingest.md#recover-f
 ## Search and answer requests
 
 `POST /search` accepts `SearchRequest`. `/ask` accepts `AskRequest`, adding
-answer provider/model options:
+answer provider/model options and caller-supplied history:
 
 | Field | Default | Validation |
 | --- | --- | --- |
@@ -130,9 +130,18 @@ answer provider/model options:
 | `window` | Configured window | Null or nonnegative integer; used only by `window` |
 | `generation_provider` | Configured provider | Ask/turn only: null, `openai`, `deepseek`, `ollama`, or `anthropic` |
 | `generation_model` | Configured model | Ask/turn only: null or nonblank model name |
+| `history` | `[]` | Ask only: at most 20 `{role, content}` messages, oldest first, as complete `user`/`assistant` pairs; content nonblank; no other fields |
 
 Selecting a provider requires an explicit model. Override semantics are described
 in [override one answer request](../how-to/providers.md#override-one-answer-request).
+
+`history` lets a calling service that keeps its own conversation state supply
+recent turns. It is untrusted generation context only: retrieval still uses only
+`query`, history is never cited, and nothing is stored. It shares the
+[history prompt budget](../explanation/retrieval.md#conversations-share-the-same-budget)
+with stored conversations, so older turns may be omitted. A lone question,
+wrong order, blank content, unknown roles, or extra fields return 422 before any
+provider call.
 
 ```bash
 curl --fail-with-body http://127.0.0.1:8000/search \
@@ -195,9 +204,9 @@ removing the conversation and all its messages, 404 if missing, or 409 while a
 turn is running.
 
 `POST /conversations/{conversation_id}/messages` accepts
-`ConversationTurnRequest`: the same options as `/ask`, but with extra fields
-forbidden. Clients cannot submit `role`, system messages, or assistant history.
-The response is `AskResponse`.
+`ConversationTurnRequest`: the same options as `/ask` except `history`, with extra
+fields forbidden. The server owns turn history: clients cannot submit `history`,
+`role`, system messages, or assistant messages. The response is `AskResponse`.
 
 One turn runs per conversation; overlap returns 409 immediately, including across
 API processes. The successful user/assistant pair commits atomically. Handled

@@ -83,7 +83,9 @@ rather than inventing document evidence. See
 
 The HTTP API can persist conversations and citation snapshots. Recent turns
 inform **generation**, but retrieval still searches using the **current
-question** only. The CLI and demo are stateless for answers. See
+question** only. Services that keep their own history can send recent turns to
+`/ask` instead; the backend does not store them. The CLI and demo are stateless
+for answers. See
 [use conversations](../how-to/conversations.md) and
 [how history shares the prompt budget](retrieval.md#conversations-share-the-same-budget).
 
