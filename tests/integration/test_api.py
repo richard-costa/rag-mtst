@@ -5,10 +5,8 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from app import generation, ingestion, llm, retrieval, worker
-from app.api.main import create_app
 from app.cli import main
 from app.embeddings import EmbeddingError
 from app.storage import documents
@@ -19,12 +17,10 @@ pytestmark = pytest.mark.usefixtures(
 
 
 @pytest.mark.usefixtures("inline_worker")
-async def test_api_upload_status_search_and_ask_are_tenant_scoped(settings, storage):
-    transport = ASGITransport(app=create_app(settings))
-    headers = {"Authorization": f"Bearer {settings.api_key}"}
-    async with AsyncClient(
-        transport=transport, base_url="http://test", headers=headers
-    ) as client:
+async def test_api_upload_status_search_and_ask_are_tenant_scoped(
+    settings, storage, api_client
+):
+    async with api_client() as client:
         files = {"file": ("queued.md", b"# Queued\n\nAn access token is required.")}
         uploaded = await client.post("/sources/file", files=files)
         assert uploaded.status_code == 202
@@ -37,12 +33,7 @@ async def test_api_upload_status_search_and_ask_are_tenant_scoped(settings, stor
         assert pending.status_code == 200 and pending.json()["status"] == "pending"
         assert "claim_token" not in pending.json() and "content" not in pending.json()
         assert (await client.get(f"/jobs/{uuid4()}")).status_code == 404
-        other_transport = ASGITransport(
-            app=create_app(replace(settings, tenant_id="other-tenant"))
-        )
-        async with AsyncClient(
-            transport=other_transport, base_url="http://test", headers=headers
-        ) as other:
+        async with api_client(replace(settings, tenant_id="other-tenant")) as other:
             assert (await other.get(submission["status_url"])).status_code == 404
         assert await worker.run_once(settings=settings, storage=storage)
         completed = await client.get(submission["status_url"])
@@ -75,7 +66,7 @@ async def test_api_upload_status_search_and_ask_are_tenant_scoped(settings, stor
 
 
 async def test_api_selects_cosine_windows_lexical_and_hybrid(
-    store_vectors, settings, storage
+    store_vectors, settings, storage, api_client
 ):
     await store_vectors(
         [
@@ -84,12 +75,7 @@ async def test_api_selects_cosine_windows_lexical_and_hybrid(
             [1.0, 0.0, 0.0],
         ]
     )
-    transport = ASGITransport(app=create_app(settings))
-    async with AsyncClient(
-        transport=transport,
-        base_url="http://test",
-        headers={"Authorization": f"Bearer {settings.api_key}"},
-    ) as client:
+    async with api_client() as client:
         cosine = await client.post(
             "/search", json={"query": "token", "limit": 1, "method": "cosine"}
         )
@@ -139,14 +125,11 @@ async def test_api_selects_cosine_windows_lexical_and_hybrid(
 
 
 @pytest.mark.usefixtures("inline_worker")
-async def test_api_reindex_status_and_embedding_failure(settings, storage, monkeypatch):
-    transport = ASGITransport(app=create_app(settings))
+async def test_api_reindex_status_and_embedding_failure(
+    settings, storage, monkeypatch, api_client
+):
     files = {"file": ("notes.md", b"A short document.", "text/markdown")}
-    async with AsyncClient(
-        transport=transport,
-        base_url="http://test",
-        headers={"Authorization": f"Bearer {settings.api_key}"},
-    ) as client:
+    async with api_client() as client:
         first = await client.post("/sources/file", files=files)
         assert await worker.run_once(settings=settings, storage=storage)
         duplicate = await client.post("/sources/file", files=files)
@@ -199,12 +182,9 @@ async def test_generation_empty_sources_configuration_and_provider_errors(
     monkeypatch,
     capsys,
     deterministic_generation,
+    api_client,
 ):
-    async with AsyncClient(
-        transport=ASGITransport(app=create_app(settings)),
-        base_url="http://test",
-        headers={"Authorization": f"Bearer {settings.api_key}"},
-    ) as client:
+    async with api_client() as client:
         empty = await client.post("/ask", json={"query": "token"})
         assert empty.status_code == 200
         assert empty.json()["matches"] == empty.json()["citations"] == []
@@ -220,12 +200,7 @@ async def test_generation_empty_sources_configuration_and_provider_errors(
         assert failed.status_code == 502
         assert failed.json()["detail"] == "generation unavailable"
 
-    missing_model = create_app(replace(settings, generation_model=None))
-    async with AsyncClient(
-        transport=ASGITransport(app=missing_model),
-        base_url="http://test",
-        headers={"Authorization": f"Bearer {settings.api_key}"},
-    ) as client:
+    async with api_client(replace(settings, generation_model=None)) as client:
         invalid = await client.post("/ask", json={"query": "token"})
         assert invalid.status_code == 422
         assert "RAG_GENERATION_MODEL" in invalid.json()["detail"]

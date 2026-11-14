@@ -4,17 +4,19 @@ import asyncio
 import json
 import os
 from collections.abc import Generator
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
-from httpx import AsyncClient, MockTransport, Response
+from httpx import ASGITransport, AsyncClient, MockTransport, Response
 from openai import AsyncOpenAI
 from testcontainers.community.postgres import PostgresContainer
 
 from app import ingestion, llm, retrieval, worker
+from app.api.main import create_app
 from app.cli import main
 from app.config import Settings, get_settings
 from app.storage import documents
@@ -63,6 +65,23 @@ def settings(database_url: str, tmp_path) -> Settings:
 @pytest.fixture
 def storage(settings: Settings) -> Database:
     return Database(settings.database_url)
+
+
+@pytest.fixture
+def api_client(settings: Settings):
+    """Open an authenticated in-process HTTP client, by default for `settings`."""
+
+    @asynccontextmanager
+    async def open_client(client_settings: Settings | None = None):
+        active = client_settings or settings
+        async with AsyncClient(
+            transport=ASGITransport(app=create_app(active)),
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {active.api_key}"},
+        ) as client:
+            yield client
+
+    return open_client
 
 
 async def _truncate(database_url: str) -> None:

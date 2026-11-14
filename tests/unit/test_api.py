@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 from uuid import UUID
@@ -16,6 +17,21 @@ from app.storage.database import Database
 from app.storage.documents import SourceBusy, SourceNotFound
 from app.storage.records import SourceSummary
 
+_UUID = "00000000-0000-0000-0000-000000000001"
+# API routes intentionally reachable without a token, as (method, path template).
+_PUBLIC_ROUTES: set[tuple[str, str]] = set()
+
+
+def _api_operations() -> list[tuple[str, str]]:
+    # Discovered from OpenAPI; a route hidden from the schema needs its own test.
+    paths = create_app(Settings(api_key="test-key")).openapi()["paths"]
+    return sorted(
+        (method.upper(), re.sub(r"\{[^}]+\}", _UUID, path))
+        for path, operations in paths.items()
+        for method in operations
+        if (method.upper(), path) not in _PUBLIC_ROUTES
+    )
+
 
 @pytest.mark.parametrize(
     "api_key", [None, "", " ", "token with spaces", "non-ascii-\u00e9"]
@@ -28,39 +44,31 @@ def test_api_refuses_startup_without_a_valid_key(api_key) -> None:
         pytest.fail("API startup must reject invalid authentication configuration")
 
 
-@pytest.mark.parametrize("path", ["/sources/file", "/search", "/ask"])
+@pytest.mark.parametrize("method,path", _api_operations())
 @pytest.mark.parametrize(
     "authorization", [None, "Bearer wrong-key", "Basic test-key", "Bearer"]
 )
-def test_api_rejects_unauthenticated_requests_before_feature_calls(
-    monkeypatch, path, authorization
+def test_every_api_route_rejects_unauthenticated_requests(
+    monkeypatch, tmp_path, method, path, authorization
 ) -> None:
-    features = [
-        AsyncMock(side_effect=AssertionError("Feature must not execute"))
-        for _ in range(3)
-    ]
-    for path_to_feature, feature in zip(
-        (
-            "app.api.routers.sources.enqueue_bytes",
-            "app.api.routers.search.search",
-            "app.api.services.answer",
-        ),
-        features,
-    ):
-        monkeypatch.setattr(path_to_feature, feature)
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unauthenticated requests must not reach storage")
+
+    monkeypatch.setattr(Database, "connection", unexpected)
+    monkeypatch.setattr(
+        "app.api.services.answer",
+        AsyncMock(side_effect=AssertionError("Generation must not execute")),
+    )
+    settings = Settings(api_key="test-key", data_dir=tmp_path / "data")
     headers = {"Authorization": authorization} if authorization else {}
-    with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        if path == "/sources/file":
-            response = client.post(
-                path, headers=headers, files={"file": ("test.md", b"Private text")}
-            )
-        else:
-            response = client.post(path, headers=headers, json={"query": "question"})
+    with TestClient(create_app(settings)) as client:
+        response = client.request(
+            method, path, headers=headers, json={"query": "question"}
+        )
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"] == "Bearer"
     assert response.json() == {"detail": "Invalid or missing API credentials"}
-    for feature in features:
-        feature.assert_not_called()
+    assert not settings.data_dir.exists()
 
 
 def test_api_accepts_valid_key_and_keeps_server_configured_tenant(monkeypatch) -> None:
@@ -238,70 +246,6 @@ def test_api_schema_documents_search_semantics() -> None:
     )
 
 
-def test_job_status_requires_authentication_before_database_access(monkeypatch) -> None:
-    lookup = AsyncMock(side_effect=AssertionError("Status lookup must not execute"))
-    monkeypatch.setattr("app.api.routers.jobs.jobs.get_ingestion_job", lookup)
-    with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        response = client.get("/jobs/00000000-0000-0000-0000-000000000001")
-    assert response.status_code == 401
-    lookup.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "method,path",
-    [
-        ("POST", "/conversations"),
-        ("GET", "/conversations"),
-        ("GET", "/conversations/00000000-0000-0000-0000-000000000001"),
-        ("DELETE", "/conversations/00000000-0000-0000-0000-000000000001"),
-        ("GET", "/conversations/00000000-0000-0000-0000-000000000001/messages"),
-        ("POST", "/conversations/00000000-0000-0000-0000-000000000001/messages"),
-    ],
-)
-def test_conversations_require_authentication_before_database_access(
-    monkeypatch, method, path
-):
-    def unexpected(*args, **kwargs):
-        pytest.fail("Unauthenticated requests must not access conversations")
-
-    for name in (
-        "create_conversation",
-        "list_conversations",
-        "get_conversation",
-        "delete_conversation",
-        "list_messages",
-        "conversation_turn",
-    ):
-        monkeypatch.setattr(
-            f"app.api.routers.conversations.conversations.{name}", unexpected
-        )
-    with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        response = client.request(method, path, json={"query": "question"})
-    assert response.status_code == 401
-
-
-@pytest.mark.parametrize(
-    "method,path",
-    [
-        ("GET", "/sources"),
-        ("GET", "/sources/00000000-0000-0000-0000-000000000001"),
-        ("DELETE", "/sources/00000000-0000-0000-0000-000000000001"),
-    ],
-)
-def test_sources_require_authentication_before_database_access(
-    monkeypatch, method, path
-):
-    def unexpected(*args, **kwargs):
-        pytest.fail("Unauthenticated requests must not access sources")
-
-    for name in ("list_sources", "get_source", "delete_source"):
-        monkeypatch.setattr(f"app.api.routers.sources.documents.{name}", unexpected)
-    monkeypatch.setattr("app.api.routers.sources.cleanup_ingestion_inputs", unexpected)
-    with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        response = client.request(method, path)
-    assert response.status_code == 401
-
-
 @pytest.mark.parametrize(
     "target,error,status",
     [
@@ -337,7 +281,9 @@ def test_delete_endpoints_map_storage_outcomes(
     assert delete.call_args.args[1:] == ("server-tenant", UUID(resource_id))
 
 
-def test_source_details_expose_metadata_without_content_hash(monkeypatch) -> None:
+def test_source_details_expose_metadata_without_content_hash(
+    monkeypatch, api_client
+) -> None:
     now = datetime.now(UTC)
     source = SourceSummary(
         id=UUID("00000000-0000-0000-0000-000000000001"),
@@ -358,12 +304,10 @@ def test_source_details_expose_metadata_without_content_hash(monkeypatch) -> Non
         "app.api.routers.sources.documents.get_source",
         AsyncMock(side_effect=[source, None]),
     )
-    headers = {"Authorization": "Bearer test-key"}
-    with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        listed = client.get("/sources?limit=10&offset=5", headers=headers)
-        found = client.get(f"/sources/{source.id}", headers=headers)
-        missing = client.get(f"/sources/{source.id}", headers=headers)
-        invalid = client.get("/sources?limit=0", headers=headers)
+    listed = api_client.get("/sources?limit=10&offset=5")
+    found = api_client.get(f"/sources/{source.id}")
+    missing = api_client.get(f"/sources/{source.id}")
+    invalid = api_client.get("/sources?limit=0")
     assert listed.status_code == 200
     [item] = listed.json()
     assert item["title"] == "report.pdf"
@@ -377,9 +321,8 @@ def test_source_details_expose_metadata_without_content_hash(monkeypatch) -> Non
 @pytest.mark.parametrize(
     "path", ["/demo/", "/demo/index.html", "/demo/app.js", "/demo/style.css"]
 )
-def test_backend_does_not_serve_demo(path) -> None:
-    with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        assert client.get(path).status_code == 404
+def test_backend_does_not_serve_demo(path, api_client) -> None:
+    assert api_client.get(path).status_code == 404
 
 
 def test_api_key_is_loaded_from_environment_but_not_displayed(monkeypatch) -> None:
@@ -465,33 +408,25 @@ def test_answer_model_selection_is_request_scoped(
     ],
 )
 def test_invalid_answer_model_selection_does_not_call_provider(
-    monkeypatch, selection
+    monkeypatch, api_client, selection
 ) -> None:
     generate = AsyncMock(side_effect=AssertionError("Generation must not execute"))
     monkeypatch.setattr("app.api.services.answer", generate)
-    with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        response = client.post(
-            "/ask",
-            json={"query": "question", **selection},
-            headers={"Authorization": "Bearer test-key"},
-        )
+    response = api_client.post("/ask", json={"query": "question", **selection})
     assert response.status_code == 422
     generate.assert_not_called()
 
 
-def test_ask_forwards_caller_history_to_generation(monkeypatch) -> None:
+def test_ask_forwards_caller_history_to_generation(monkeypatch, api_client) -> None:
     generate = AsyncMock(return_value=Answer("Answer", [], []))
     monkeypatch.setattr("app.api.services.answer", generate)
     history = [
         {"role": "user", "content": "When is the desk open?"},
         {"role": "assistant", "content": "Weekdays."},
     ]
-    with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        response = client.post(
-            "/ask",
-            json={"query": "And on weekends?", "history": history},
-            headers={"Authorization": "Bearer test-key"},
-        )
+    response = api_client.post(
+        "/ask", json={"query": "And on weekends?", "history": history}
+    )
     assert response.status_code == 200
     assert generate.call_args.args == ("And on weekends?",)
     forwarded = generate.call_args.kwargs["history"]
@@ -525,33 +460,28 @@ def test_ask_forwards_caller_history_to_generation(monkeypatch) -> None:
         ],
     ],
 )
-def test_invalid_ask_history_does_not_call_provider(monkeypatch, history) -> None:
+def test_invalid_ask_history_does_not_call_provider(
+    monkeypatch, api_client, history
+) -> None:
     generate = AsyncMock(side_effect=AssertionError("Generation must not execute"))
     monkeypatch.setattr("app.api.services.answer", generate)
-    with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        response = client.post(
-            "/ask",
-            json={"query": "question", "history": history},
-            headers={"Authorization": "Bearer test-key"},
-        )
+    response = api_client.post("/ask", json={"query": "question", "history": history})
     assert response.status_code == 422
     generate.assert_not_called()
 
 
-def test_conversation_turn_rejects_caller_history(monkeypatch) -> None:
+def test_conversation_turn_rejects_caller_history(monkeypatch, api_client) -> None:
     generate = AsyncMock(side_effect=AssertionError("Generation must not execute"))
     monkeypatch.setattr("app.api.services.answer", generate)
-    with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        response = client.post(
-            "/conversations/00000000-0000-0000-0000-000000000001/messages",
-            json={
-                "query": "question",
-                "history": [
-                    {"role": "user", "content": "Question"},
-                    {"role": "assistant", "content": "Answer"},
-                ],
-            },
-            headers={"Authorization": "Bearer test-key"},
-        )
+    response = api_client.post(
+        f"/conversations/{_UUID}/messages",
+        json={
+            "query": "question",
+            "history": [
+                {"role": "user", "content": "Question"},
+                {"role": "assistant", "content": "Answer"},
+            ],
+        },
+    )
     assert response.status_code == 422
     generate.assert_not_called()

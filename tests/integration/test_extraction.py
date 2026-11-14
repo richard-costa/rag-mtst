@@ -6,10 +6,8 @@ from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from app import embeddings, ingestion, retrieval, worker
-from app.api.main import create_app
 from app.chunking import chunk_markdown
 from app.cli import main
 from app.embeddings import EmbeddingError
@@ -142,7 +140,7 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
 
 @pytest.mark.usefixtures("inline_worker")
 async def test_native_office_upload_persists_searchable_chunks(
-    settings, storage, monkeypatch, office_document
+    settings, storage, monkeypatch, office_document, api_client
 ) -> None:
     from app.extraction import parser
 
@@ -152,12 +150,7 @@ async def test_native_office_upload_persists_searchable_chunks(
     monkeypatch.setattr(parser, "_convert_office_to_pdf", reject_conversion)
     content = office_document(".docx")
     source_name = "native.docx"
-    transport = ASGITransport(app=create_app(settings))
-    async with AsyncClient(
-        transport=transport,
-        base_url="http://test",
-        headers={"Authorization": f"Bearer {settings.api_key}"},
-    ) as client:
+    async with api_client() as client:
         uploaded = await client.post(
             "/sources/file", files={"file": (source_name, content)}
         )
@@ -230,17 +223,13 @@ async def test_extraction_profile_conflict_requires_explicit_reindex(
 
 @pytest.mark.usefixtures("inline_worker")
 async def test_explicit_extraction_selection_and_profile_conflicts_through_http_and_cli(
-    settings, storage, monkeypatch, run_cli
+    settings, storage, monkeypatch, run_cli, api_client
 ):
     from app.extraction import get_extraction_profile
 
     content = b"Profile-aware searchable document."
     files = {"file": ("profile.md", content, "text/markdown")}
-    async with AsyncClient(
-        transport=ASGITransport(app=create_app(settings)),
-        base_url="http://test",
-        headers={"Authorization": f"Bearer {settings.api_key}"},
-    ) as client:
+    async with api_client() as client:
         first = await client.post("/sources/file?extraction_method=parser", files=files)
         assert first.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
@@ -317,6 +306,7 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
     monkeypatch,
     vision_reply,
     pdf_document,
+    api_client,
 ):
     settings = replace(
         settings, visual_model="vision-model", openai_api_key="synthetic-key"
@@ -331,11 +321,7 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
         },
     ]
     requests = vision_reply(pages)
-    async with AsyncClient(
-        transport=ASGITransport(app=create_app(settings)),
-        base_url="http://test",
-        headers={"Authorization": f"Bearer {settings.api_key}"},
-    ) as client:
+    async with api_client(settings) as client:
         files = {"file": ("visual.pdf", document, "application/pdf")}
         uploaded = await client.post(
             "/sources/file?extraction_method=visual", files=files

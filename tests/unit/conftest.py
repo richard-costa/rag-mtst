@@ -5,6 +5,7 @@ import re
 
 import pytest
 from anthropic import AsyncAnthropic
+from fastapi.testclient import TestClient
 from httpx import AsyncClient, MockTransport, Response
 from httpx2 import AsyncClient as AnthropicHTTPClient
 from httpx2 import MockTransport as AnthropicTransport
@@ -12,8 +13,19 @@ from httpx2 import Response as AnthropicResponse
 from openai import AsyncOpenAI
 
 from app import generation, llm
+from app.api.main import create_app
 from app.config import Settings
 from app.retrieval import SearchResult
+
+
+@pytest.fixture
+def api_client():
+    """Authenticated test client for an API with default settings."""
+    with TestClient(
+        create_app(Settings(api_key="test-key")),
+        headers={"Authorization": "Bearer test-key"},
+    ) as client:
+        yield client
 
 
 @pytest.fixture
