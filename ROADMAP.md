@@ -39,6 +39,18 @@ completed-task checklists. No release dates are committed.
 
 ## Operations and model lifecycle
 
+- Add API liveness and readiness endpoints (database reachable, schema
+  migrated) and a worker health signal usable by container orchestrators.
+- Emit sanitized, structured logs on stdout/stderr for container log
+  collection.
+- Define graceful SIGTERM shutdown: the API drains in-flight requests; the
+  worker stops claiming jobs and finishes or explicitly fails the current job
+  within a configurable grace period.
+- Document deployment requirements for operators: API and worker share the
+  staging path, connection-pooler compatibility (for example PgBouncer modes),
+  and database connections held during conversation turns.
+- Evaluate S3-compatible object storage for staged inputs if a shared
+  filesystem is unavailable in the target infrastructure.
 - Better sanitized observability and carefully scoped retries.
 - Model revision tracking, embedding migration, and hosted token fitting.
 - Introduce pooling, batching, or approximate vector indexes only when
@@ -51,6 +63,8 @@ completed-task checklists. No release dates are committed.
 - Direct provider-managed PDF input versus current application-managed
   extraction and provenance.
 - Docling extraction quality versus additional dependency and compute cost.
+- In-process local embeddings (sentence-transformers) versus an
+  OpenAI-compatible local embedding server (Ollama, llama.cpp, vLLM).
 
 Passing integration tests does not certify factual correctness, citation support,
 visual extraction fidelity, or resistance to malicious source content.
