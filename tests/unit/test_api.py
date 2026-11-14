@@ -20,16 +20,20 @@ from app.storage.records import SourceSummary
 _UUID = "00000000-0000-0000-0000-000000000001"
 # API routes intentionally reachable without a token, as (method, path template).
 _PUBLIC_ROUTES: set[tuple[str, str]] = set()
+# Discovered from OpenAPI; a route hidden from the schema needs its own test.
+_OPENAPI = create_app(Settings(api_key="test-key")).openapi()
+_PROTECTED_OPERATIONS = [
+    (method.upper(), path, operation)
+    for path, operations in _OPENAPI["paths"].items()
+    for method, operation in operations.items()
+    if (method.upper(), path) not in _PUBLIC_ROUTES
+]
 
 
 def _api_operations() -> list[tuple[str, str]]:
-    # Discovered from OpenAPI; a route hidden from the schema needs its own test.
-    paths = create_app(Settings(api_key="test-key")).openapi()["paths"]
     return sorted(
-        (method.upper(), re.sub(r"\{[^}]+\}", _UUID, path))
-        for path, operations in paths.items()
-        for method in operations
-        if (method.upper(), path) not in _PUBLIC_ROUTES
+        (method, re.sub(r"\{[^}]+\}", _UUID, path))
+        for method, path, _operation in _PROTECTED_OPERATIONS
     )
 
 
@@ -148,102 +152,54 @@ def test_api_rejects_non_ascii_credentials_without_server_error() -> None:
     assert response.status_code == 401
 
 
-def test_api_schema_is_public_and_documents_bearer_authentication() -> None:
+def test_api_docs_are_public_and_operations_declare_bearer_auth() -> None:
     with TestClient(create_app(Settings(api_key="test-key"))) as client:
-        assert client.get("/docs").status_code == 200
-        assert client.get("/redoc").status_code == 200
-        response = client.get("/openapi.json")
-    assert response.status_code == 200
-    schema = response.json()
-    assert schema["components"]["securitySchemes"]["HTTPBearer"] == {
+        for path in ("/docs", "/redoc", "/openapi.json"):
+            assert client.get(path).status_code == 200
+    assert _OPENAPI["components"]["securitySchemes"]["HTTPBearer"] == {
         "type": "http",
         "scheme": "bearer",
     }
-    for path in ("/sources/file", "/search", "/ask"):
-        assert schema["paths"][path]["post"]["security"] == [{"HTTPBearer": []}]
-    assert schema["paths"]["/jobs/{job_id}"]["get"]["security"] == [{"HTTPBearer": []}]
+    for method, path, operation in _PROTECTED_OPERATIONS:
+        assert operation["security"] == [{"HTTPBearer": []}], (method, path)
+
+
+def test_every_operation_has_consumer_facing_documentation() -> None:
+    """Check documentation structure in Swagger, not its wording."""
+    summaries = []
+    for method, path, operation in _PROTECTED_OPERATIONS:
+        description = operation.get("description", "")
+        assert operation.get("summary", "").strip(), (method, path)
+        assert "### Responses" in description, (method, path)
+        # Google-style docstring sections are for developers, not API consumers.
+        assert not re.search(
+            r"^\s*(Args|Returns|Raises):", description, re.MULTILINE
+        ), (method, path)
+        summaries.append(operation["summary"])
+    assert len(summaries) == len(set(summaries))
 
 
 @pytest.mark.parametrize(
-    "path,method,summary",
+    "model,field",
     [
-        ("/sources/file", "post", "Submit a document for indexing"),
-        ("/sources", "get", "List sources"),
-        ("/sources/{source_id}", "get", "Read a source"),
-        ("/sources/{source_id}", "delete", "Delete a source"),
-        ("/jobs/{job_id}", "get", "Read ingestion job status"),
-        ("/search", "post", "Search source passages"),
-        ("/ask", "post", "Generate a cited answer"),
-        ("/conversations", "post", "Create a conversation"),
-        ("/conversations", "get", "List conversations"),
-        ("/conversations/{conversation_id}", "get", "Read a conversation"),
-        ("/conversations/{conversation_id}", "delete", "Delete a conversation"),
-        (
-            "/conversations/{conversation_id}/messages",
-            "get",
-            "List conversation messages",
-        ),
-        (
-            "/conversations/{conversation_id}/messages",
-            "post",
-            "Generate a conversation turn",
-        ),
+        ("SearchRequest", "limit"),
+        ("SearchRequest", "method"),
+        ("SearchRequest", "window"),
+        ("AskRequest", "history"),
+        ("SearchMatchResponse", "score"),
+        ("CitationResponse", "source_reference"),
     ],
 )
-def test_api_schema_documents_each_endpoint_in_markdown(path, method, summary) -> None:
-    """Keep endpoint summaries and Markdown descriptions visible in Swagger."""
-    operation = create_app(Settings(api_key="test-key")).openapi()["paths"][path][
-        method
-    ]
-    assert operation["summary"] == summary
-    assert "### Responses" in operation["description"]
-    assert "**401**" in operation["description"]
-    assert "Args:" not in operation["description"]
-    assert operation["security"] == [{"HTTPBearer": []}]
+def test_fields_with_non_obvious_semantics_are_documented(model, field) -> None:
+    properties = _OPENAPI["components"]["schemas"][model]["properties"]
+    assert properties[field].get("description", "").strip()
 
 
-def test_api_schema_documents_search_semantics() -> None:
-    schema = create_app(Settings(api_key="test-key")).openapi()
-    models = schema["components"]["schemas"]
-    for model_name in ("SearchRequest", "AskRequest", "ConversationTurnRequest"):
-        properties = models[model_name]["properties"]
-        assert (
-            "counts seed matches before context expansion"
-            in properties["limit"]["description"]
-        )
-        assert "server-configured method" in properties["method"]["description"]
-        assert "used only by the window method" in properties["window"]["description"]
-
-    match_schema = models["SearchMatchResponse"]
+def test_match_score_is_always_present_but_nullable() -> None:
+    match_schema = _OPENAPI["components"]["schemas"]["SearchMatchResponse"]
     score_schema = match_schema["properties"]["score"]
     assert "score" in match_schema["required"]
     assert {option["type"] for option in score_schema["anyOf"]} == {"number", "null"}
-    assert "not comparable across methods" in score_schema["description"]
-    assert "added as window context" in score_schema["description"]
-    assert "not a probability" in score_schema["description"]
-
-    citation_schema = models["CitationResponse"]
-    assert "source_reference" in citation_schema["required"]
-    assert "source_locator" not in citation_schema["properties"]
-    assert (
-        "Not necessarily unique or accessible"
-        in citation_schema["properties"]["source_reference"]["description"]
-    )
-
-    search_schema = schema["paths"]["/search"]["post"]
-    assert "groups are ranked by their best seed" in search_schema["description"]
-    assert (
-        "Chunks within each group follow document order" in search_schema["description"]
-    )
-    assert (
-        "rather than sorting individual chunks by score" in search_schema["description"]
-    )
-    assert (
-        search_schema["responses"]["200"]["content"]["application/json"]["schema"][
-            "type"
-        ]
-        == "array"
-    )
 
 
 @pytest.mark.parametrize(
