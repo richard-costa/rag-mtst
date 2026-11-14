@@ -53,6 +53,33 @@ async def test_failed_render_removes_partial_image(monkeypatch, tmp_path):
     assert not list(tmp_path.iterdir())
 
 
+def _png_header(width: int, height: int) -> bytes:
+    return b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + struct.pack(">II", width, height)
+
+
+@pytest.mark.parametrize(
+    "image,message",
+    [
+        (None, "missing or oversized image"),
+        (b"GIF89a" + bytes(18), "did not produce a PNG"),
+        (_png_header(0, 10), "image dimension limit"),
+        (_png_header(visual.IMAGE_DIMENSION + 1, 10), "image dimension limit"),
+    ],
+)
+async def test_rendered_images_are_validated_and_removed(
+    monkeypatch, tmp_path, image, message
+):
+    async def render(*arguments):
+        if image is not None:
+            (tmp_path / "page.png").write_bytes(image)
+        return b""
+
+    monkeypatch.setattr(visual, "_run_tool", render)
+    with pytest.raises(ValueError, match=message):
+        await visual._render_page(tmp_path / "source.pdf", 1, tmp_path)
+    assert not list(tmp_path.iterdir())
+
+
 async def test_missing_poppler_has_an_explicit_error(monkeypatch):
     monkeypatch.setattr(
         visual.asyncio,

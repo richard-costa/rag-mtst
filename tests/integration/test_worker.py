@@ -4,12 +4,14 @@ import asyncio
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Event, Thread
+from uuid import uuid4
 
 import pytest
 
@@ -199,6 +201,112 @@ async def test_worker_heartbeats_during_inference_and_shutdown_fails_without_rep
     failed = await jobs.get_ingestion_job(storage, settings.tenant_id, submitted.job.id)
     assert failed is not None and failed.status == "failed"
     assert not await worker.run_once(settings=settings, storage=storage)
+
+
+@pytest.mark.usefixtures("inline_worker")
+async def test_worker_stops_processing_when_another_owner_takes_the_job(
+    settings, storage, monkeypatch, caplog
+):
+    submitted = await ingestion.enqueue_bytes(
+        b"Contested input",
+        source_name="contested.md",
+        settings=settings,
+        storage=storage,
+    )
+    assert submitted.job is not None
+    started = asyncio.Event()
+    cancelled = False
+
+    async def slow_embedding(*args, **kwargs):
+        nonlocal cancelled
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+
+    monkeypatch.setattr(ingestion, "embed_texts", slow_embedding)
+    monkeypatch.setattr(worker, "HEARTBEAT_SECONDS", 0.01)
+    monkeypatch.setattr(worker.logger, "disabled", False)
+    caplog.set_level("WARNING", logger=worker.__name__)
+    running = asyncio.create_task(worker.run_once(settings=settings, storage=storage))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)
+        new_owner = uuid4()
+        async with storage.connection() as connection:
+            await connection.execute(
+                "UPDATE ingestion_jobs SET claim_token = %s WHERE id = %s",
+                (new_owner, submitted.job.id),
+            )
+        assert await asyncio.wait_for(running, timeout=5)
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+    assert cancelled
+    current = await jobs.get_ingestion_job(
+        storage, settings.tenant_id, submitted.job.id
+    )
+    assert current is not None
+    assert current.status == "running" and current.claim_token == new_owner
+    assert "error_category=unexpected" in caplog.text
+
+
+async def test_child_failure_reports_its_category_without_details(
+    settings, storage, monkeypatch, caplog
+):
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        closed_port = probe.getsockname()[1]
+    settings = replace(
+        settings,
+        openai_api_key="synthetic-key",
+        openai_base_url=f"http://127.0.0.1:{closed_port}/v1",
+    )
+    submitted = await ingestion.enqueue_bytes(
+        b"Unreachable provider",
+        source_name="provider.md",
+        settings=settings,
+        storage=storage,
+    )
+    assert submitted.job is not None
+    monkeypatch.setattr(worker.logger, "disabled", False)
+    caplog.set_level("WARNING", logger=worker.__name__)
+    async with asyncio.timeout(30):
+        assert await worker.run_once(settings=settings, storage=storage)
+    failed = await jobs.get_ingestion_job(storage, settings.tenant_id, submitted.job.id)
+    assert failed is not None and failed.status == "failed"
+    assert "error_category=provider" in caplog.text
+    assert str(closed_port) not in (failed.error or "") + caplog.text
+
+
+async def test_child_refuses_a_job_claimed_by_another_owner(settings, storage):
+    submitted = await ingestion.enqueue_bytes(
+        b"Fenced input", source_name="fenced.md", settings=settings, storage=storage
+    )
+    claimed = await jobs.claim_ingestion_job(storage, settings.tenant_id)
+    assert submitted.job is not None and claimed is not None
+    configuration = asdict(settings)
+    configuration["data_dir"] = str(settings.data_dir)
+    payload = {
+        "settings": configuration,
+        "job_id": str(claimed.id),
+        "claim_token": str(uuid4()),
+    }
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "app.worker",
+        "--execute-job",
+        stdin=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    async with asyncio.timeout(30):
+        await process.communicate(json.dumps(payload).encode() + b"\n")
+    assert process.returncode == worker.ERROR_EXIT_CODES["unexpected"]
+    current = await jobs.get_ingestion_job(storage, settings.tenant_id, claimed.id)
+    assert current == claimed
+    assert await documents.list_chunks(storage, settings.tenant_id) == []
 
 
 @pytest.mark.parametrize("shutdown", [False, True])

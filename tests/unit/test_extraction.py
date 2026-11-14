@@ -42,6 +42,21 @@ def test_extraction_pages_reject_missing_repeated_or_mixed_numbering(pages):
         parser.ExtractedContent.from_pages(pages, format="pdf", profile={})
 
 
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: parser.ExtractedPage(0, "Zero"),
+        lambda: parser.ExtractedContent.from_pages((), format="pdf", profile={}),
+        lambda: parser.ExtractedContent(
+            text="Different", format="pdf", pages=(parser.ExtractedPage(1, "First"),)
+        ),
+    ],
+)
+def test_extraction_provenance_rejects_invalid_pages_or_text(build):
+    with pytest.raises(ValueError):
+        build()
+
+
 @pytest.mark.parametrize("method", ["Visual", "unknown", "", "Parser"])
 async def test_invalid_extraction_selection_fails_before_parser(
     monkeypatch, method
@@ -200,3 +215,27 @@ def test_explicit_office_conversion(monkeypatch, converter_path, suffix) -> None
     )
 
     assert converted == b"%PDF-1.4\n"
+
+
+@pytest.mark.parametrize(
+    "error,message",
+    [
+        (FileNotFoundError(), "client is unavailable"),
+        (subprocess.TimeoutExpired("unoconvert", 90), "timed out"),
+        (
+            subprocess.CalledProcessError(1, "unoconvert", stderr="bad input\n"),
+            "Office conversion failed: bad input$",
+        ),
+        (subprocess.CalledProcessError(1, "unoconvert"), "Office conversion failed$"),
+        (None, "did not produce a PDF"),
+    ],
+)
+def test_office_conversion_failures_are_reported(monkeypatch, error, message):
+    def run(command, **kwargs):
+        if error is not None:
+            raise error
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(parser.subprocess, "run", run)
+    with pytest.raises(ValueError, match=message):
+        parser._convert_office_to_pdf(b"fake", ".docx", host="office", port=2003)

@@ -115,7 +115,7 @@ async def answer(
         Answer text, retrieved passages, and validated citations.
     """
     active_settings = settings or get_settings()
-    api_key, base_url = _generation_endpoint(active_settings)
+    api_key, base_url = generation_endpoint(active_settings)
     matches = await search(
         question,
         limit=limit,
@@ -172,14 +172,14 @@ async def answer(
     )
 
 
-def _generation_endpoint(settings: Settings) -> tuple[str, str]:
-    """Resolve the active generation model and service endpoint.
+def generation_endpoint(settings: Settings) -> tuple[str, str]:
+    """Validate generation settings and resolve the provider credential and endpoint.
 
     Args:
         settings: Runtime settings for extraction, storage, or models.
 
     Returns:
-        Generation model identifier and API endpoint.
+        Provider API key and API endpoint.
     """
     if settings.generation_provider not in llm.PROVIDERS:
         raise ValueError(

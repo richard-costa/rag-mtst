@@ -386,3 +386,25 @@ async def test_visual_office_conversion_retains_page_kind(
     )
     assert result.pages[0].kind == kind
     converter.assert_called_once_with(b"office", suffix, host="127.0.0.1", port=2003)
+
+
+@pytest.mark.parametrize(
+    "converted,message",
+    [
+        (ValueError("converter detail"), "Visual Office conversion failed"),
+        (b"%" * (visual.MAX_SOURCE_BYTES + 1), "exceeds the 20 MiB limit"),
+    ],
+)
+async def test_visual_office_conversion_failures_stop_before_rendering(
+    monkeypatch, vision_settings, converted, message
+):
+    if isinstance(converted, Exception):
+        converter = Mock(side_effect=converted)
+    else:
+        converter = Mock(return_value=converted)
+    renderer = AsyncMock(side_effect=AssertionError("Must not render"))
+    monkeypatch.setattr(visual, "_convert_office_to_pdf", converter)
+    monkeypatch.setattr(visual, "_page_count", renderer)
+    with pytest.raises(ValueError, match=message):
+        await visual.extract_with_visual(b"office", ".docx", settings=vision_settings)
+    renderer.assert_not_awaited()

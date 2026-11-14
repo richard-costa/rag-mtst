@@ -54,3 +54,21 @@ async def test_enqueue_rejects_invalid_input_before_persistence(
             extraction_method=method,
         )
     assert not settings.data_dir.exists()
+
+
+async def test_enqueue_removes_partial_input_when_staging_fails(tmp_path, monkeypatch):
+    def partial_write(path, content):
+        path.parent.mkdir(parents=True)
+        path.write_bytes(content[:1])
+        raise OSError("disk full")
+
+    monkeypatch.setattr(ingestion, "_write_input", partial_write)
+    monkeypatch.setattr(
+        ingestion.jobs,
+        "create_ingestion_job",
+        lambda *a, **k: pytest.fail("A failed staging write must not create a job"),
+    )
+    settings = Settings(data_dir=tmp_path / "data")
+    with pytest.raises(OSError, match="disk full"):
+        await ingestion.enqueue_bytes(b"text", source_name="a.md", settings=settings)
+    assert list((settings.data_dir / "ingestion").iterdir()) == []

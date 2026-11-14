@@ -234,3 +234,82 @@ async def test_chunk_insert_failure_rolls_back_new_source_and_preserves_reindex(
     assert retried.created is True
     assert retried.chunk_count == 1
     assert original.source.id != retried.source.id
+
+
+async def _claimed_job(settings, storage):
+    await ingestion.enqueue_bytes(
+        b"Guarded input", source_name="guarded.md", settings=settings, storage=storage
+    )
+    job = await jobs.claim_ingestion_job(storage, settings.tenant_id)
+    assert job is not None
+    return job
+
+
+@pytest.mark.parametrize(
+    "tamper,message",
+    [
+        ("unclaimed", "has not been claimed"),
+        ("missing", "input is missing"),
+        ("removed", "input has been removed"),
+        ("outside", "outside the job directory"),
+        ("profile", "cannot reproduce the queued extraction profile"),
+    ],
+)
+async def test_claimed_job_rejects_altered_queue_records(
+    settings, storage, tamper, message
+):
+    job = await _claimed_job(settings, storage)
+    outside = settings.data_dir.parent / "elsewhere" / str(job.id) / "guarded.md"
+    outside.parent.mkdir(parents=True)
+    outside.write_bytes(b"Guarded input")
+    statements = {
+        "missing": "DELETE FROM ingestion_job_inputs WHERE job_id = %(job)s",
+        "removed": "UPDATE ingestion_job_inputs SET input_path = NULL WHERE job_id = %(job)s",
+        "outside": "UPDATE ingestion_job_inputs SET input_path = %(path)s WHERE job_id = %(job)s",
+        "profile": (
+            "UPDATE ingestion_job_inputs SET extraction_profile = "
+            'extraction_profile || \'{"engine": "changed"}\' WHERE job_id = %(job)s'
+        ),
+    }
+    if tamper in statements:
+        async with storage.connection() as connection:
+            await connection.execute(
+                statements[tamper], {"job": job.id, "path": str(outside)}
+            )
+    if tamper == "unclaimed":
+        job = replace(job, claim_token=None)
+    with pytest.raises(ValueError, match=message):
+        await ingestion.process_ingestion_job(job, settings=settings, storage=storage)
+    assert await documents.list_chunks(storage, settings.tenant_id) == []
+    assert outside.exists()
+
+
+async def test_processing_stops_when_job_ownership_is_lost(settings, storage):
+    job = await _claimed_job(settings, storage)
+    async with storage.connection() as connection:
+        await connection.execute(
+            "UPDATE ingestion_jobs SET claim_token = gen_random_uuid() WHERE id = %s",
+            (job.id,),
+        )
+    with pytest.raises(RuntimeError, match="ownership was lost"):
+        await ingestion.process_ingestion_job(job, settings=settings, storage=storage)
+    assert await documents.list_chunks(storage, settings.tenant_id) == []
+
+
+async def test_cleanup_never_deletes_outside_the_staging_directory(settings, storage):
+    job = await _claimed_job(settings, storage)
+    assert job.claim_token is not None
+    assert await jobs.fail_ingestion_job(
+        storage, settings.tenant_id, job.id, job.claim_token, error="Failed."
+    )
+    outside = settings.data_dir.parent / "keep" / str(job.id) / "guarded.md"
+    outside.parent.mkdir(parents=True)
+    outside.write_bytes(b"Unrelated file")
+    async with storage.connection() as connection:
+        await connection.execute(
+            "UPDATE ingestion_job_inputs SET input_path = %s WHERE job_id = %s",
+            (str(outside), job.id),
+        )
+    with pytest.raises(ValueError, match="outside the staging directory"):
+        await ingestion.cleanup_ingestion_inputs(settings=settings, storage=storage)
+    assert outside.exists()

@@ -355,11 +355,13 @@ def test_source_details_expose_metadata_without_content_hash(monkeypatch) -> Non
         AsyncMock(return_value=[source]),
     )
     monkeypatch.setattr(
-        "app.api.routers.sources.documents.get_source", AsyncMock(return_value=None)
+        "app.api.routers.sources.documents.get_source",
+        AsyncMock(side_effect=[source, None]),
     )
     headers = {"Authorization": "Bearer test-key"}
     with TestClient(create_app(Settings(api_key="test-key"))) as client:
         listed = client.get("/sources?limit=10&offset=5", headers=headers)
+        found = client.get(f"/sources/{source.id}", headers=headers)
         missing = client.get(f"/sources/{source.id}", headers=headers)
         invalid = client.get("/sources?limit=0", headers=headers)
     assert listed.status_code == 200
@@ -367,6 +369,7 @@ def test_source_details_expose_metadata_without_content_hash(monkeypatch) -> Non
     assert item["title"] == "report.pdf"
     assert item["chunk_count"] == 3
     assert "content_hash" not in item and "tenant_id" not in item
+    assert found.status_code == 200 and found.json() == item
     assert missing.status_code == 404
     assert invalid.status_code == 422
 

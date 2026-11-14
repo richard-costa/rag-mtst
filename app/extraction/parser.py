@@ -159,17 +159,11 @@ def extract_with_parser(
             text=text, format=normalized_suffix.removeprefix("."), profile=profile
         )
 
-    if normalized_suffix in OFFICE_SUFFIXES | {".pdf"}:
-        source_format = normalized_suffix.removeprefix(".")
-        return ExtractedContent(
-            text=_extract_document(content, source_format),
-            format=source_format,
-            profile=profile,
-        )
-
-    supported = ", ".join(sorted(SUPPORTED_SUFFIXES))
-    raise ValueError(
-        f"Unsupported file type {suffix or '<none>'}; supported types: {supported}"
+    source_format = normalized_suffix.removeprefix(".")
+    return ExtractedContent(
+        text=_extract_document(content, source_format),
+        format=source_format,
+        profile=profile,
     )
 
 

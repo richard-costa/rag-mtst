@@ -82,6 +82,65 @@ async def test_conversation_api_persists_ordered_history_and_current_citations(
         assert len((await client.get(history_url)).json()) == 4
 
 
+async def test_ask_uses_caller_history_without_storing_it(
+    store_vectors, settings, deterministic_generation
+):
+    await store_vectors([[1.0, 1.0, 0.0]])
+    history = [
+        {"role": "user", "content": "What is required?"},
+        {"role": "assistant", "content": "A token."},
+    ]
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(settings)),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {settings.api_key}"},
+    ) as client:
+        answered = await client.post(
+            "/ask", json={"query": "What about the token?", "history": history}
+        )
+        assert answered.status_code == 200
+        prompt = json.loads(deterministic_generation[-1]["messages"][1]["content"])
+        assert prompt["history"] == history
+        assert prompt["question"] == "What about the token?"
+        assert (await client.get("/conversations")).json() == []
+
+
+async def test_conversations_are_listed_and_read_within_the_tenant(settings):
+    headers = {"Authorization": f"Bearer {settings.api_key}"}
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(settings)),
+        base_url="http://test",
+        headers=headers,
+    ) as client:
+        created = (await client.post("/conversations")).json()
+        listed = await client.get("/conversations")
+        assert listed.status_code == 200 and listed.json() == [created]
+        read = await client.get(f"/conversations/{created['id']}")
+        assert read.status_code == 200 and read.json() == created
+        assert (await client.get(f"/conversations/{uuid4()}")).status_code == 404
+        invalid_turn = await client.post(
+            f"/conversations/{created['id']}/messages",
+            json={"query": "token", "generation_provider": "deepseek"},
+        )
+        assert invalid_turn.status_code == 422
+        assert (
+            await client.get(f"/conversations/{created['id']}/messages")
+        ).json() == []
+        invalid_search = await client.post(
+            "/search", json={"query": "!!!", "method": "lexical"}
+        )
+        assert invalid_search.status_code == 422
+    async with AsyncClient(
+        transport=ASGITransport(
+            app=create_app(replace(settings, tenant_id="other-tenant"))
+        ),
+        base_url="http://test",
+        headers=headers,
+    ) as other:
+        assert (await other.get("/conversations")).json() == []
+        assert (await other.get(f"/conversations/{created['id']}")).status_code == 404
+
+
 async def test_conversation_api_rejects_overlap_and_failed_turns_leave_no_history(
     store_vectors, settings, storage, monkeypatch
 ):

@@ -97,56 +97,41 @@ def load_environment(root: Path | None = None) -> None:
 
 def _verify_configuration() -> None:
     """Validate the local configuration before starting services."""
+    from importlib.util import find_spec
+
     from app.config import get_settings
+    from app.embeddings import embedding_endpoint
+    from app.generation import generation_endpoint
 
     settings = get_settings()
-    missing: list[str] = []
     if settings.database_url != DEFAULT_DATABASE_URL:
         raise LocalError(
             "rag start manages the default local database only. Remove DATABASE_URL "
             "from .env (or use the manual setup for an external database)."
         )
-    if settings.embedding_provider == "openai":
-        if not settings.openai_api_key:
-            missing.append("OPENAI_API_KEY (for embeddings)")
-    elif settings.embedding_provider == "local":
-        from importlib.util import find_spec
-
-        if find_spec("sentence_transformers") is None:
-            raise LocalError(
-                "Local embeddings need the optional dependencies. Run: "
-                "uv run --extra local rag start. "
-                "Include --extra local in subsequent uv run commands too."
-            )
-    else:
-        raise LocalError("RAG_EMBEDDING_PROVIDER must be 'openai' or 'local'")
-
-    if not settings.generation_model:
-        missing.append("RAG_GENERATION_MODEL (for answers)")
-    providers = {
-        "openai": settings.openai_api_key,
-        "deepseek": settings.deepseek_api_key,
-        "anthropic": settings.anthropic_api_key,
-        "ollama": "local",
-    }
-    if settings.generation_provider not in providers:
-        raise LocalError(
-            "Invalid RAG_GENERATION_PROVIDER; see docs/how-to/providers.md"
-        )
     if (
-        settings.generation_provider != "ollama"
-        and not providers[settings.generation_provider]
+        settings.embedding_provider == "local"
+        and find_spec("sentence_transformers") is None
     ):
-        variable = {
-            "openai": "OPENAI_API_KEY",
-            "deepseek": "DEEPSEEK_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-        }[settings.generation_provider]
-        if not any(item.startswith(variable) for item in missing):
-            missing.append(variable + " (for answers)")
-    if missing:
         raise LocalError(
-            "Missing configuration in .env:\n  - " + "\n  - ".join(missing)
+            "Local embeddings need the optional dependencies. Run: "
+            "uv run --extra local rag start. "
+            "Include --extra local in subsequent uv run commands too."
+        )
+    problems = []
+    try:
+        embedding_endpoint(settings)
+        if settings.embedding_provider == "openai" and not settings.openai_api_key:
+            raise ValueError("Set OPENAI_API_KEY for embeddings")
+    except ValueError as error:
+        problems.append(str(error))
+    try:
+        generation_endpoint(settings)
+    except ValueError as error:
+        problems.append(str(error))
+    if problems:
+        raise LocalError(
+            "Fix the configuration in .env:\n  - " + "\n  - ".join(problems)
         )
 
 
@@ -193,20 +178,8 @@ def _docker_ready() -> bool:
     Returns:
         Whether the database service is ready.
     """
-    listing = _docker("ps", "--status", "running", "-q", "db")
-    if listing.returncode != 0 or not listing.stdout.strip():
-        return False
-    container_id = listing.stdout.strip().splitlines()[0]
-    try:
-        health = subprocess.run(
-            ["docker", "inspect", "--format", "{{.State.Health.Status}}", container_id],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-    except OSError:
-        return False
-    return health.returncode == 0 and health.stdout.strip() == "healthy"
+    listing = _docker("ps", "--status", "running", "--format", "{{.Health}}", "db")
+    return listing.returncode == 0 and listing.stdout.split()[:1] == ["healthy"]
 
 
 def _worker_info(root: Path | None = None) -> tuple[int, str] | None:
