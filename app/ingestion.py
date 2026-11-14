@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import mimetypes
 import os
 import shutil
@@ -23,6 +24,8 @@ from app.extraction import (
 from app.storage import documents, jobs
 from app.storage.database import Database
 from app.storage.records import ChunkInput, IngestionJob, Source
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public ingestion result
@@ -485,6 +488,10 @@ def _remove_input(path: Path, settings: Settings) -> None:
 async def cleanup_ingestion_inputs(*, settings: Settings, storage: Database) -> None:
     """Remove staged files for jobs already finished.
 
+    A recorded path outside the staging directory is never deleted; its
+    reference is cleared so it stops blocking source deletion. Filesystem
+    errors leave the reference for a later retry.
+
     Args:
         settings: Runtime settings for extraction, storage, or models.
         storage: Database handle; uses configured storage when omitted.
@@ -493,7 +500,18 @@ async def cleanup_ingestion_inputs(*, settings: Settings, storage: Database) -> 
         storage, settings.tenant_id
     ):
         assert queued.input_path is not None
-        await asyncio.to_thread(_remove_input, Path(queued.input_path), settings)
+        try:
+            await asyncio.to_thread(_remove_input, Path(queued.input_path), settings)
+        except ValueError:
+            logger.warning(
+                "job_id=%s stage=cleanup error_category=unsafe_input_path",
+                queued.job_id,
+            )
+        except OSError:
+            logger.warning(
+                "job_id=%s stage=cleanup error_category=cleanup", queued.job_id
+            )
+            continue
         await jobs.clear_ingestion_input_path(
             storage, settings.tenant_id, queued.job_id, queued.input_path
         )

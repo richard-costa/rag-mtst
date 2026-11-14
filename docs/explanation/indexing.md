@@ -86,7 +86,10 @@ a later poll, rather than automatically replaying potentially paid work.
 
 The complete prepared replacement and job completion commit together. Revoked
 claims cannot commit, and failed reindexing preserves the old searchable chunks.
-Terminal inputs are removed, with cleanup retried by later polls. If a submission
+Terminal inputs are removed, with cleanup retried by later polls. A recorded
+input path outside the staging directory is never deleted: cleanup logs the job
+ID and clears the reference so it cannot stop the worker or block source
+deletion. If a submission
 has an uncertain database outcome, it may leave an unreferenced file rather than
 risk deleting an accepted input. There is no general orphan-file sweep.
 

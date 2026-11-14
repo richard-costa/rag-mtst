@@ -296,7 +296,9 @@ async def test_processing_stops_when_job_ownership_is_lost(settings, storage):
     assert await documents.list_chunks(storage, settings.tenant_id) == []
 
 
-async def test_cleanup_never_deletes_outside_the_staging_directory(settings, storage):
+async def test_cleanup_never_deletes_outside_the_staging_directory(
+    settings, storage, monkeypatch, caplog
+):
     job = await _claimed_job(settings, storage)
     assert job.claim_token is not None
     assert await jobs.fail_ingestion_job(
@@ -310,6 +312,33 @@ async def test_cleanup_never_deletes_outside_the_staging_directory(settings, sto
             "UPDATE ingestion_job_inputs SET input_path = %s WHERE job_id = %s",
             (str(outside), job.id),
         )
-    with pytest.raises(ValueError, match="outside the staging directory"):
-        await ingestion.cleanup_ingestion_inputs(settings=settings, storage=storage)
+    monkeypatch.setattr(ingestion.logger, "disabled", False)
+    caplog.set_level("WARNING", logger=ingestion.__name__)
+    await ingestion.cleanup_ingestion_inputs(settings=settings, storage=storage)
     assert outside.exists()
+    assert f"job_id={job.id}" in caplog.text and "unsafe_input_path" in caplog.text
+    assert str(outside) not in caplog.text
+    queued = await jobs.get_ingestion_job_input(storage, settings.tenant_id, job.id)
+    assert queued is not None and queued.input_path is None
+
+
+async def test_cleanup_keeps_the_reference_when_removal_fails(
+    settings, storage, monkeypatch, caplog
+):
+    job = await _claimed_job(settings, storage)
+    assert job.claim_token is not None
+    assert await jobs.fail_ingestion_job(
+        storage, settings.tenant_id, job.id, job.claim_token, error="Failed."
+    )
+
+    def denied(path):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(ingestion.shutil, "rmtree", denied)
+    monkeypatch.setattr(ingestion.logger, "disabled", False)
+    caplog.set_level("WARNING", logger=ingestion.__name__)
+    await ingestion.cleanup_ingestion_inputs(settings=settings, storage=storage)
+    assert "error_category=cleanup" in caplog.text
+    queued = await jobs.get_ingestion_job_input(storage, settings.tenant_id, job.id)
+    assert queued is not None and queued.input_path is not None
+    assert Path(queued.input_path).exists()

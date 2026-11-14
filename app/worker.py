@@ -298,7 +298,7 @@ async def run_once(*, settings: Settings, storage: Database) -> bool:
         try:
             async with asyncio.timeout(DATABASE_TIMEOUT_SECONDS):
                 await cleanup_ingestion_inputs(settings=settings, storage=storage)
-        except OSError, ValueError, psycopg.Error, TimeoutError:
+        except psycopg.Error, TimeoutError:
             logger.warning("job_id=%s stage=cleanup error_category=cleanup", job.id)
         await _log_outcome(settings, storage, job, started, category)
     return True
