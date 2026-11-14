@@ -474,3 +474,81 @@ def test_invalid_answer_model_selection_does_not_call_provider(
         )
     assert response.status_code == 422
     generate.assert_not_called()
+
+
+def test_ask_forwards_caller_history_to_generation(monkeypatch) -> None:
+    generate = AsyncMock(return_value=Answer("Answer", [], []))
+    monkeypatch.setattr("app.api.services.answer", generate)
+    history = [
+        {"role": "user", "content": "When is the desk open?"},
+        {"role": "assistant", "content": "Weekdays."},
+    ]
+    with TestClient(create_app(Settings(api_key="test-key"))) as client:
+        response = client.post(
+            "/ask",
+            json={"query": "And on weekends?", "history": history},
+            headers={"Authorization": "Bearer test-key"},
+        )
+    assert response.status_code == 200
+    assert generate.call_args.args == ("And on weekends?",)
+    forwarded = generate.call_args.kwargs["history"]
+    assert [(message.role, message.content) for message in forwarded] == [
+        ("user", "When is the desk open?"),
+        ("assistant", "Weekdays."),
+    ]
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        [{"role": "user", "content": "Unanswered"}],
+        [
+            {"role": "assistant", "content": "Answer"},
+            {"role": "user", "content": "Question"},
+        ],
+        [{"role": "system", "content": "Instruction"}],
+        [
+            {"role": "user", "content": "   "},
+            {"role": "assistant", "content": "Answer"},
+        ],
+        [
+            {"role": "user", "content": "Question", "citations": []},
+            {"role": "assistant", "content": "Answer"},
+        ],
+        [
+            {"role": role, "content": "text"}
+            for _ in range(11)
+            for role in ("user", "assistant")
+        ],
+    ],
+)
+def test_invalid_ask_history_does_not_call_provider(monkeypatch, history) -> None:
+    generate = AsyncMock(side_effect=AssertionError("Generation must not execute"))
+    monkeypatch.setattr("app.api.services.answer", generate)
+    with TestClient(create_app(Settings(api_key="test-key"))) as client:
+        response = client.post(
+            "/ask",
+            json={"query": "question", "history": history},
+            headers={"Authorization": "Bearer test-key"},
+        )
+    assert response.status_code == 422
+    generate.assert_not_called()
+
+
+def test_conversation_turn_rejects_caller_history(monkeypatch) -> None:
+    generate = AsyncMock(side_effect=AssertionError("Generation must not execute"))
+    monkeypatch.setattr("app.api.services.answer", generate)
+    with TestClient(create_app(Settings(api_key="test-key"))) as client:
+        response = client.post(
+            "/conversations/00000000-0000-0000-0000-000000000001/messages",
+            json={
+                "query": "question",
+                "history": [
+                    {"role": "user", "content": "Question"},
+                    {"role": "assistant", "content": "Answer"},
+                ],
+            },
+            headers={"Authorization": "Bearer test-key"},
+        )
+    assert response.status_code == 422
+    generate.assert_not_called()

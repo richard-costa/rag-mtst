@@ -4,24 +4,23 @@ from collections.abc import Sequence
 from dataclasses import asdict, replace
 
 from app.api.schemas import (
-    AskRequest,
     AskResponse,
     CitationResponse,
+    GenerationRequest,
     SearchMatchResponse,
 )
 from app.config import Settings
-from app.generation import answer
+from app.generation import ConversationMessage, answer
 from app.retrieval import SearchResult
 from app.storage.database import Database
-from app.storage.records import Message
 
 
 async def generate_answer(
-    request: AskRequest,
+    request: GenerationRequest,
     *,
     settings: Settings,
     storage: Database,
-    history: Sequence[Message] = (),
+    history: Sequence[ConversationMessage] = (),
 ) -> AskResponse:
     """Generate an API answer with request-scoped model settings.
 

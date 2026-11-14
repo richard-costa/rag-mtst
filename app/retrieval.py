@@ -60,7 +60,7 @@ async def search(
         storage: Database handle used for retrieval.
 
     Returns:
-        function search() { [native code] }
+        Passages ranked by the selected retrieval strategy.
     """
     if not query.strip():
         raise ValueError("The search query must not be empty")

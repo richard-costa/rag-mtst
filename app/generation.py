@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 import tiktoken
 from pydantic import BaseModel, ConfigDict
@@ -13,7 +14,6 @@ from app import llm
 from app.config import Settings, get_settings
 from app.retrieval import RetrievalMethod, SearchResult, search
 from app.storage.database import Database
-from app.storage.records import Message
 
 # ---------------------------------------------------------------------------
 # Answer records
@@ -23,6 +23,20 @@ from app.storage.records import Message
 
 class GenerationError(RuntimeError):
     """A generation provider failed or returned an unusable answer."""
+
+
+class ConversationMessage(Protocol):
+    """Prior stored or caller-supplied message used as generation context."""
+
+    @property
+    def role(self) -> str:
+        """Message author: user or assistant."""
+        ...
+
+    @property
+    def content(self) -> str:
+        """Message text."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +98,7 @@ async def answer(
     window: int | None = None,
     settings: Settings | None = None,
     storage: Database | None = None,
-    history: Sequence[Message] = (),
+    history: Sequence[ConversationMessage] = (),
 ) -> Answer:
     """Retrieve relevant text, invoke the configured model, and validate citations.
 
@@ -220,7 +234,7 @@ def _build_context(
     matches: list[SearchResult],
     budget: int,
     *,
-    history: Sequence[Message] = (),
+    history: Sequence[ConversationMessage] = (),
     system: str = _SYSTEM_PROMPT,
 ) -> tuple[str, list[Citation]]:
     """Fit retrieved passages and conversation history into the prompt budget.

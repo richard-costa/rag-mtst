@@ -23,18 +23,23 @@ async def ask_source(
         server defaults.
     - `generation_provider`, `generation_model`: Request-only model overrides.
         Selecting a provider requires a model.
+    - `history`: Optional prior user/assistant pairs, oldest first, at most 20
+        messages. Informs generation only; retrieval searches only `query`.
 
     ### Responses
     - **200**: Answer text, retrieved matches, and current-source citations.
         Insufficient evidence may produce an answer without citations.
     - **401**: Missing or invalid bearer token.
-    - **422**: Invalid request, generation settings, or input budget.
+    - **422**: Invalid request, history, generation settings, or input budget.
     - **502**: Embedding or generation provider failure.
 
-    This endpoint does not read or persist conversation history.
+    This endpoint never reads or persists stored conversations; callers that keep
+    their own history pass it in `history`.
     """
     try:
-        return await generate_answer(request, settings=settings, storage=storage)
+        return await generate_answer(
+            request, settings=settings, storage=storage, history=request.history
+        )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except (EmbeddingError, GenerationError) as error:
