@@ -203,6 +203,7 @@ async def conversation_answer(
     - `query`: Nonblank question. Prior messages inform generation, but retrieval
         searches only this question.
     - `method`, `limit`, `window`: Optional retrieval settings.
+    - `assembly`: `document` (default) or score-first window context order.
     - `generation_provider`, `generation_model`: Request-only model overrides;
         selecting a provider requires a model. Unknown body fields are rejected.
 
