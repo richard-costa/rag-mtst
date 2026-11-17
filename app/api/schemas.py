@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.retrieval import RetrievalMethod
+from app.retrieval import RetrievalMethod, WindowAssembly
 
 
 class SearchRequest(BaseModel):
@@ -33,6 +33,10 @@ class SearchRequest(BaseModel):
             "Number of neighboring chunks on each side of a seed; used only by the window method. "
             "Null or omitted uses the server-configured window."
         ),
+    )
+    assembly: WindowAssembly = Field(
+        default="document",
+        description="Window assembly: merged document order (default) or ranked seeds with context.",
     )
 
 
