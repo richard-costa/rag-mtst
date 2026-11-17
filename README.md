@@ -42,9 +42,10 @@ On first use, `rag start` creates `.env` if needed and tells you which values
 are missing. Set `OPENAI_API_KEY` and `RAG_GENERATION_MODEL` (choose an available
 OpenAI model) and run `uv run rag start` again.
 
-It starts **only PostgreSQL in Docker**, runs migrations, and launches the
-ingestion worker locally in the background. You don't need to start the API,
-activate a virtual environment, or install the CLI separately.
+For the default quickstart, `rag start` starts PostgreSQL in Docker, runs
+migrations, and launches a host-side ingestion worker. It does **not** start
+the HTTP API or the optional DOCX/PPTX converter. You don't need to activate
+a virtual environment or install the CLI separately.
 
 ```bash
 uv run rag add docs/assets/sample.md
@@ -72,17 +73,22 @@ to **visual extraction**: the optional LibreOffice/unoserver converter exports
 the document to PDF, Poppler renders its pages as images, and a vision model
 transcribes them to Markdown for indexing. Conversion can change page layout.
 
-Install Poppler on the host (Arch: `sudo pacman -S poppler`). In `.env`, set
+Install [Poppler](https://pdf2image.readthedocs.io/en/latest/installation.html#installing-poppler)
+on the host (Arch: `sudo pacman -S poppler`). In `.env`, set
 `RAG_VISUAL_MODEL=gpt-4o` (or another vision-capable model); the default visual
 provider is OpenAI, using `OPENAI_API_KEY`. Restart the worker after changing
-`.env` (`uv run rag stop && uv run rag start`), then run:
+`.env` (`uv run rag stop && uv run rag start`). For visual DOCX/PPTX only,
+start the converter separately, then submit the document:
 
 ```bash
 docker compose -p rag-mtst-local up -d office
 uv run rag add path/to/complex.docx --extraction-method visual
 ```
 
-Add `--reindex` if the file was already indexed. Visual extraction sends page
+`-p rag-mtst-local` matches the Compose project used by `rag start`. For
+independent deployments, use their project name instead (or omit `-p` for the
+default). The converter starts once; `rag add` queues work for the running
+worker. Add `--reindex` if the file was already indexed. Visual extraction sends page
 images to the model provider and may incur costs. See
 [provider setup](docs/how-to/providers.md#enable-visual-extraction) and
 [limits](docs/reference/limits.md#visual-extraction-bounds).
