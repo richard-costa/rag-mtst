@@ -11,10 +11,13 @@ How the methods differ is explained in
 uv run rag search "support hours" --method lexical --limit 3
 uv run rag search "When can I visit?" --method hybrid --limit 3
 uv run rag ask "When is the support desk open?" --method lexical --limit 3
+uv run rag ask "When is the support desk open?" --method window --assembly score
 ```
 
 Omitted options use the [configured defaults](../reference/configuration.md#retrieval).
-Lexical search makes no embedding call; cosine, window, and hybrid searches embed
+The optional `--assembly score` prioritizes window seed matches before
+neighboring context in both `search` and `ask`; the default is merged document
+order. Lexical search makes no embedding call; cosine, window, and hybrid searches embed
 the query. `ask` requires a configured generation model, even if no sources
 match. It returns generated text, not a concatenation of excerpts. The CLI has no
 provider/model override flags; configure its environment instead.
