@@ -74,6 +74,11 @@ You should see an indexed chunk, matching text, then an answer about **Mondays
 and Wednesdays, 09:00–12:00**, with a `sample.md` reference. Generated wording
 may vary. Hosted embeddings and generation can incur API charges.
 
+By default, window retrieval groups neighboring chunks in document order.
+To prioritize scored matches (then their neighbors) in search and LLM context,
+add `--assembly score` to `rag search` or `rag ask`; see
+[retrieval ordering](docs/explanation/retrieval.md#search-methods).
+
 `uv run rag ...` manages `.venv` without activation. Don't install `uv`
 inside `.venv`: uv may recreate it and remove its own executable.
 
