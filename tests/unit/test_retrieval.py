@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from uuid import UUID
+
 import pytest
 
 from app import retrieval
@@ -156,3 +159,42 @@ async def test_hybrid_does_not_silently_fall_back_after_provider_failure(monkeyp
 async def test_keyword_methods_reject_punctuation_before_embedding_or_sql(method):
     with pytest.raises(ValueError, match="at least one word"):
         await search("!!!", method=method, settings=Settings())
+
+async def test_window_score_assembly_prioritizes_seeds_and_deduplicates(monkeypatch):
+    source = "00000000-0000-0000-0000-000000000001"
+    seeds = [
+        SearchResult(source, "doc", "doc", 6, "text-6", 0.9),
+        SearchResult(source, "doc", "doc", 4, "text-4", 0.4),
+    ]
+
+    async def cosine(*args, **kwargs):
+        return seeds
+
+    async def neighbors(*args, chunk_index, window, **kwargs):
+        return [
+            SimpleNamespace(
+                source_id=UUID(source),
+                source_title="doc",
+                source_reference="doc",
+                chunk_index=index,
+                content=f"text-{index}",
+            )
+            for index in range(max(0, chunk_index - window), chunk_index + window + 1)
+        ]
+
+    monkeypatch.setattr(retrieval, "search_cosine", cosine)
+    monkeypatch.setattr(retrieval.documents, "get_chunk_window", neighbors)
+    settings = Settings()
+    storage = Database(settings.database_url)
+    kwargs = dict(limit=2, window=2, settings=settings, storage=storage)
+    default = await retrieval.search_with_windows([1.0], **kwargs)
+    scored = await retrieval.search_with_windows([1.0], assembly="score", **kwargs)
+
+    assert [item.chunk_index for item in default] == [2, 3, 4, 5, 6, 7, 8]
+    assert [item.chunk_index for item in scored] == [6, 5, 7, 8, 4, 2, 3]
+    assert [item.score for item in scored if item.score is not None] == [0.9, 0.4]
+
+
+async def test_search_rejects_unknown_assembly():
+    with pytest.raises(ValueError, match="assembly must be"):
+        await search("text", assembly="unknown", settings=Settings())
