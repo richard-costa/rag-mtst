@@ -146,6 +146,7 @@ async def _run(arguments: list[str] | None = None) -> int:
                     limit=namespace.limit,
                     method=namespace.method,
                     window=namespace.window,
+                    assembly=namespace.assembly,
                     settings=settings,
                 )
             )
@@ -157,6 +158,7 @@ async def _run(arguments: list[str] | None = None) -> int:
                 limit=namespace.limit,
                 method=namespace.method,
                 window=namespace.window,
+                assembly=namespace.assembly,
                 settings=settings,
             )
             print(result.text)
@@ -254,6 +256,12 @@ def _build_parser() -> argparse.ArgumentParser:
         )
         command_parser.add_argument(
             "--window", type=int, help="Neighbors on each side of a seed (default: 2)."
+        )
+        command_parser.add_argument(
+            "--assembly",
+            choices=["document", "score"],
+            default="document",
+            help="Window assembly: merged document order (default) or ranked seeds first.",
         )
     return parser
 
