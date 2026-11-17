@@ -81,14 +81,16 @@ no provider/model override flags; configure its environment instead.
 
 ## Enable visual extraction
 
-1. Install Poppler (`poppler-utils` on Debian/Ubuntu) for host execution. Backend
-   Docker images already include it.
+1. Install [Poppler](https://pdf2image.readthedocs.io/en/latest/installation.html#installing-poppler)
+   on the host (`poppler-utils` on Debian/Ubuntu). Backend Docker images
+   already include it.
 2. Set `RAG_VISUAL_PROVIDER` and an explicit vision-capable `RAG_VISUAL_MODEL`;
    optionally set `RAG_VISUAL_BASE_URL`. Supply that provider's credential.
-3. For DOCX/PPTX only, start the optional unoserver converter with
-   `docker compose -p rag-mtst-local up -d office` when using `rag start`
-   (the same Compose project as the local manager). For separate Compose
-   deployments, use that deployment's project name. Configure host/port if needed.
+3. `rag start` launches only PostgreSQL and the host worker; for visual
+   DOCX/PPTX, start the optional unoserver converter separately with
+   `docker compose -p rag-mtst-local up -d office`. The `-p` value matches
+   the local manager's Compose project. For independent deployments, use their
+   project name or omit `-p` for the Compose default. Configure host/port if needed.
 4. Submit using `--extraction-method visual` or HTTP
    `?extraction_method=visual`. Reindex explicitly when changing an existing profile.
 
