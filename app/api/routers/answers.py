@@ -21,6 +21,7 @@ async def ask_source(
     - `query`: Question to answer.
     - `method`, `limit`, `window`: Optional retrieval settings; omitted values use
         server defaults.
+    - `assembly`: `document` (default) or score-first window context order.
     - `generation_provider`, `generation_model`: Request-only model overrides.
         Selecting a provider requires a model.
     - `history`: Optional prior user/assistant pairs, oldest first, at most 20
