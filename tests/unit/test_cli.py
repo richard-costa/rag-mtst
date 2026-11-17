@@ -127,3 +127,17 @@ def test_interrupted_wait_leaves_the_job_queued(monkeypatch, capsys):
     monkeypatch.setattr(cli.asyncio, "run", interrupted)
     assert cli.main(["add", "sample.md"]) == 130
     assert "remains available to the worker" in capsys.readouterr().err
+
+@pytest.mark.parametrize("command", ["search", "ask"])
+async def test_cli_forwards_window_assembly(monkeypatch, command):
+    monkeypatch.setattr(cli.local, "load_environment", lambda: None)
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings())
+    backend = AsyncMock(
+        return_value=[] if command == "search" else SimpleNamespace(text="ok", citations=[])
+    )
+    monkeypatch.setattr(cli, "search" if command == "search" else "answer", backend)
+
+    assert await cli._run(
+        [command, "question", "--method", "window", "--assembly", "score"]
+    ) == 0
+    assert backend.call_args.kwargs["assembly"] == "score"
