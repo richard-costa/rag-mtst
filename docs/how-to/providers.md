@@ -86,8 +86,8 @@ no provider/model override flags; configure its environment instead.
    already include it.
 2. Set `RAG_VISUAL_PROVIDER` and an explicit vision-capable `RAG_VISUAL_MODEL`;
    optionally set `RAG_VISUAL_BASE_URL`. Supply that provider's credential.
-3. `rag start` launches only PostgreSQL and the host worker; for visual
-   DOCX/PPTX, start the optional unoserver converter separately with
+3. `rag start` launches PostgreSQL and the host worker first. For
+   image-based extraction of DOCX/PPTX, start the optional converter separately with
    `docker compose -p rag-mtst-local up -d office`. The `-p` value matches
    the local manager's Compose project. For independent deployments, use their
    project name or omit `-p` for the Compose default. Configure host/port if needed.
