@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app import llm
 from app.config import Settings, get_settings
-from app.retrieval import RetrievalMethod, SearchResult, search
+from app.retrieval import RetrievalMethod, SearchResult, WindowAssembly, search
 from app.storage.database import Database
 
 # ---------------------------------------------------------------------------
@@ -96,6 +96,7 @@ async def answer(
     limit: int | None = None,
     method: RetrievalMethod | None = None,
     window: int | None = None,
+    assembly: WindowAssembly = "document",
     settings: Settings | None = None,
     storage: Database | None = None,
     history: Sequence[ConversationMessage] = (),
@@ -107,6 +108,7 @@ async def answer(
         limit: Maximum number of passages to retrieve.
         method: Optional retrieval algorithm override.
         window: Number of adjacent chunks to include around each match.
+        assembly: Window context order (document or score-first).
         settings: Runtime settings for extraction, storage, or models.
         storage: Database handle; uses configured storage when omitted.
         history: Prior messages included as conversational context.
@@ -121,6 +123,7 @@ async def answer(
         limit=limit,
         method=method,
         window=window,
+        assembly=assembly,
         settings=active_settings,
         storage=storage,
     )
