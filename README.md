@@ -29,8 +29,9 @@ for ingestion, search, answers, conversations, and source management.
 
 **Requirements:** [uv](https://docs.astral.sh/uv/getting-started/installation/)
 installed **outside** the project's `.venv` (Arch: `sudo pacman -S uv`),
-Docker with Compose running, and an OpenAI API key. The local manager supports
-Linux, macOS, and WSL. The project requires Python 3.14+; uv can manage it.
+Docker with Compose running, and an OpenAI API key. [Docker Buildx](https://docs.docker.com/build/buildx/)
+is recommended to avoid building unrelated Dockerfile stages. The local manager
+supports Linux, macOS, and WSL. The project requires Python 3.14+; uv can manage it.
 
 ```bash
 git clone https://github.com/richard-costa/rag-mtst.git
