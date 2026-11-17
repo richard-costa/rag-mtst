@@ -14,6 +14,7 @@ from app.storage.database import Database
 from app.storage.records import StoredChunk
 
 RetrievalMethod = Literal["cosine", "window", "lexical", "hybrid"]
+WindowAssembly = Literal["document", "score"]
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +47,7 @@ async def search(
     limit: int | None = None,
     method: RetrievalMethod | None = None,
     window: int | None = None,
+    assembly: WindowAssembly = "document",
     settings: Settings | None = None,
     storage: Database | None = None,
 ) -> list[SearchResult]:
@@ -56,6 +58,7 @@ async def search(
         limit: Maximum number of matching passages.
         method: Optional retrieval method override.
         window: Number of neighboring chunks to include per seed match.
+        assembly: Ordering for window context assembly.
         settings: Search or local runtime configuration.
         storage: Database handle used for retrieval.
 
@@ -75,6 +78,8 @@ async def search(
     context_window = window if window is not None else active_settings.retrieval_window
     if context_window < 0:
         raise ValueError("window must be zero or greater")
+    if assembly not in {"document", "score"}:
+        raise ValueError("assembly must be 'document' or 'score'")
 
     active_storage = storage or Database(active_settings.database_url)
     if selected_method == "lexical":
@@ -98,6 +103,7 @@ async def search(
         vectors[0],
         limit=result_limit,
         window=context_window,
+        assembly=assembly,
         settings=active_settings,
         storage=active_storage,
     )
@@ -147,6 +153,7 @@ async def search_with_windows(
     window: int,
     settings: Settings,
     storage: Database,
+    assembly: WindowAssembly = "document",
 ) -> list[SearchResult]:
     """Expand vector-search hits with adjacent chunks from the same source.
 
@@ -156,6 +163,7 @@ async def search_with_windows(
         window: Number of neighboring chunks to include per seed match.
         settings: Search or local runtime configuration.
         storage: Database handle used for retrieval.
+        assembly: Default merged document order, or scored seeds with context.
 
     Returns:
         Seed hits and adjacent passages, deduplicated by source span.
@@ -183,6 +191,17 @@ async def search_with_windows(
             identity = (str(chunk.source_id), chunk.chunk_index)
             if identity not in matches:
                 matches[identity] = _search_result(chunk, score=None)
+
+    if assembly == "score":
+        seed_ids = {(seed.source_id, seed.chunk_index) for seed in seeds}
+        ordered: dict[tuple[str, int], SearchResult] = {}
+        for seed in seeds:
+            ordered.setdefault((seed.source_id, seed.chunk_index), seed)
+            for index in range(seed.chunk_index - window, seed.chunk_index + window + 1):
+                identity = (seed.source_id, index)
+                if identity in matches and identity not in seed_ids:
+                    ordered.setdefault(identity, matches[identity])
+        return list(ordered.values())
 
     merged: list[tuple[str, int, int, int]] = []
     for source_id, start, end, rank in sorted(windows):
