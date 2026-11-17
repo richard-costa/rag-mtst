@@ -57,27 +57,43 @@ You should see an indexed chunk, matching text, then an answer about **Mondays
 and Wednesdays, 09:00–12:00**, with a `sample.md` reference. Generated wording
 may vary. Hosted embeddings and generation can incur API charges.
 
-`uv run rag ...` manages `.venv` without activation. If you activate `.venv`,
-use `rag ...` directly (e.g., `rag add docs/assets/sample.md`); both run the
-same CLI. Don't install `uv` inside `.venv`: uv may recreate it and remove
-its own executable.
+`uv run rag ...` manages `.venv` without activation. Don't install `uv`
+inside `.venv`: uv may recreate it and remove its own executable.
 
 `uv run rag stop` stops the database and worker; indexed data remains. For
 expected output, `status`/`reset`, and troubleshooting, use the
 [complete quickstart](docs/tutorials/quickstart.md).
 
-## Visual DOCX quickstart
+## Run commands without `uv run`
 
-The default `rag add` uses a text parser. For complex DOCX/PPTX layouts, opt in
-to **visual extraction**: the optional LibreOffice/unoserver converter exports
-the document to PDF, Poppler renders its pages as images, and a vision model
-transcribes them to Markdown for indexing. Conversion can change page layout.
+Alternatively, from the project root, use Bash/zsh to activate `.venv`:
+
+```bash
+uv sync
+source .venv/bin/activate
+rag start
+rag add docs/assets/sample.md
+rag ask "When is the support desk open?"
+```
+
+Run `uv sync` initially or when dependencies change. In each new shell,
+reactivate `.venv`; then use `rag` directly. Finish with `rag stop` and
+`deactivate`.
+
+## Visual extraction for DOCX/PPTX
+
+The default `rag add` uses a text parser. For complex layouts,
+`--extraction-method visual` renders pages with Poppler and uses a vision
+model to extract Markdown for indexing. **For DOCX/PPTX, this requires the
+optional LibreOffice/unoserver converter** to turn the document into PDF pages
+first; PDFs don't need the converter. Conversion can change page layout.
 
 Install [Poppler](https://pdf2image.readthedocs.io/en/latest/installation.html#installing-poppler)
 on the host (Arch: `sudo pacman -S poppler`). In `.env`, set
 `RAG_VISUAL_MODEL=gpt-4o` (or another vision-capable model); the default visual
-provider is OpenAI, using `OPENAI_API_KEY`. Restart the worker after changing
-`.env` (`uv run rag stop && uv run rag start`). For visual DOCX/PPTX only,
+provider is OpenAI, using `OPENAI_API_KEY`. **Run `rag start` first** (or
+`uv run rag start` without activation) to launch PostgreSQL and the ingestion
+worker; restart it after changing `.env`. For DOCX/PPTX image extraction,
 start the converter separately, then submit the document:
 
 ```bash
