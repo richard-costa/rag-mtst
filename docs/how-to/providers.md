@@ -86,7 +86,9 @@ no provider/model override flags; configure its environment instead.
 2. Set `RAG_VISUAL_PROVIDER` and an explicit vision-capable `RAG_VISUAL_MODEL`;
    optionally set `RAG_VISUAL_BASE_URL`. Supply that provider's credential.
 3. For DOCX/PPTX only, start the optional unoserver converter with
-   `docker compose up -d office` and configure its host/port if needed.
+   `docker compose -p rag-mtst-local up -d office` when using `rag start`
+   (the same Compose project as the local manager). For separate Compose
+   deployments, use that deployment's project name. Configure host/port if needed.
 4. Submit using `--extraction-method visual` or HTTP
    `?extraction_method=visual`. Reindex explicitly when changing an existing profile.
 
