@@ -128,6 +128,7 @@ answer provider/model options and caller-supplied history:
 | `limit` | Configured limit | Null or positive integer |
 | `method` | Configured method | Null, `cosine`, `window`, `lexical`, or `hybrid` |
 | `window` | Configured window | Null or nonnegative integer; used only by `window` |
+| `assembly` | `document` | `document` or `score`; changes window ordering only |
 | `generation_provider` | Configured provider | Ask/turn only: null, `openai`, `deepseek`, `ollama`, or `anthropic` |
 | `generation_model` | Configured model | Ask/turn only: null or nonblank model name |
 | `history` | `[]` | Ask only: at most 20 `{role, content}` messages, oldest first, as complete `user`/`assistant` pairs; content nonblank; no other fields |
@@ -165,8 +166,10 @@ Each `SearchMatchResponse` contains:
 | `content` | Retrieved text |
 | `score` | Number, or null for added window neighbors |
 
-In window mode `limit` counts seeds, so more matches than `limit` can be returned;
-ordering and grouping are described in
+In window mode `limit` counts seeds, so more matches than `limit` can be returned.
+`assembly: "score"` orders ranked seeds before their deduplicated neighbors;
+the default `document` merges windows in document order. This also changes
+which sources reach the generation input budget first. Ordering is described in
 [search methods](../explanation/retrieval.md#search-methods). Scores from
 different methods are not comparable probabilities.
 
