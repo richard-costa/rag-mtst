@@ -45,6 +45,11 @@ async def inspect_sources():
     return matches, result
 ```
 
+`search(..., method="window", assembly="score")` and `answer(...,
+method="window", assembly="score")` prioritize scored seed passages followed
+by neighboring context; the default `assembly="document"` keeps merged windows
+in document order. Other retrieval methods ignore `assembly`.
+
 `SearchResult` contains `source_id`, `source_title`, `source_reference`,
 `chunk_index`, `content`, and nullable `score`, with the same meaning as the
 [HTTP fields](http.md#search-and-answer-responses).
