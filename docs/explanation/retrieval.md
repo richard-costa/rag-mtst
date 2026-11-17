@@ -14,10 +14,18 @@ there is no silent lexical fallback when embeddings fail.
 | `hybrid` | Equal-weight reciprocal-rank fusion of cosine and lexical candidates | Sum of `1 / (60 + rank)`; no windows |
 
 Windows stop at source boundaries and deduplicate by source ID/chunk index, not
-content. Each seed travels with its neighbors in document order. Overlapping
-same-source windows merge, and groups retain the priority of their best-ranked
-seed. Window zero is equivalent to cosine. With window two, results can reach
-five times the seed limit before overlap; each seed performs a neighbor read.
+content. **Assembly** controls order, not retrieval or similarity scores:
+
+- `document` (default): overlapping same-source windows merge; groups are ranked
+  by their best seed, then chunks appear in document order within each group.
+- `score` (opt-in): visit cosine seeds in descending similarity, putting each
+  seed first followed by its unscored neighbors in document order. Defer other
+  scored seeds until their own turn and deduplicate overlapping context.
+
+Use `--assembly score` with `--method window` on CLI `search` or `ask`
+(or `assembly: "score"` in HTTP/Python). Other methods ignore assembly.
+Window zero is equivalent to cosine. With window two, results can reach five
+times the seed limit before overlap; each seed performs a neighbor read.
 
 Lexical terms are safely quoted and OR-combined. The language-neutral `simple`
 configuration normalizes case, but does not stem, remove stopwords, fold accents,
@@ -60,8 +68,12 @@ question, labels, JSON escaping, history, response schema, and a formatting
 reserve, estimated locally rather than by the provider; the default and the
 estimation method are listed under
 [worker and model context](../reference/limits.md#worker-and-model-context).
-Passages retain retrieval order and the final fitting passage may be shortened.
-The response retains all original matches, even those not supplied.
+Passages retain retrieval/assembly order: `ask` supplies them to the LLM in
+the same order displayed by `search`, until the input budget is full. The
+default input budget is 8,000 locally estimated tokens, including instructions,
+question, history, source text, response schema, and a 64-token reserve; the
+output budget is a separate 4,000 tokens. Later passages may be shortened or
+excluded, but all retrieval matches remain in the response.
 
 With no matches, the application returns a fixed English no-sources message
 without calling generation, after configuration validation. There is no excerpt
