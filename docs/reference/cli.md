@@ -52,13 +52,15 @@ checkout can still use ordinary commands against a separately managed backend.
 | --- | --- | --- |
 | `rag add FILE` | Queue ingestion; wait by default | `--reindex`, `--no-wait`, `--extraction-method parser\|visual` |
 | `rag job JOB_ID` | Inspect one tenant-scoped ingestion job | UUID argument |
-| `rag search QUERY` | Print retrieved passages | `--limit N`, `--method METHOD`, `--window N` |
+| `rag search QUERY` | Print retrieved passages | `--limit N`, `--method METHOD`, `--window N`, `--assembly document\\|score` |
 | `rag ask QUESTION` | Generate text and print recognized references | Same retrieval options as search |
 
 `METHOD` is `cosine`, `window`, `lexical`, or `hybrid`. Omitted retrieval options
 use [configuration defaults](configuration.md#retrieval). Limit must be positive;
-window must be nonnegative. Window limit counts seeds; see
-[search methods](../explanation/retrieval.md#search-methods).
+window must be nonnegative. Window limit counts seeds. `--assembly score`
+puts scored matches before their deduplicated neighbors in window mode, instead
+of the default merged document order; it does not alter the ranking or scores.
+See [search methods](../explanation/retrieval.md#search-methods).
 Quote multiword queries and paths containing spaces.
 
 ## Ingestion
