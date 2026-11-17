@@ -27,7 +27,8 @@ for ingestion, search, answers, conversations, and source management.
 
 ## Quickstart: your first answer
 
-**Requirements:** [uv](https://docs.astral.sh/uv/getting-started/installation/),
+**Requirements:** [uv](https://docs.astral.sh/uv/getting-started/installation/)
+installed **outside** the project's `.venv` (Arch: `sudo pacman -S uv`),
 Docker with Compose running, and an OpenAI API key. The local manager supports
 Linux, macOS, and WSL. The project requires Python 3.14+; uv can manage it.
 
@@ -55,9 +56,36 @@ You should see an indexed chunk, matching text, then an answer about **Mondays
 and Wednesdays, 09:00–12:00**, with a `sample.md` reference. Generated wording
 may vary. Hosted embeddings and generation can incur API charges.
 
+`uv run rag ...` manages `.venv` without activation. If you activate `.venv`,
+use `rag ...` directly (e.g., `rag add docs/assets/sample.md`); both run the
+same CLI. Don't install `uv` inside `.venv`: uv may recreate it and remove
+its own executable.
+
 `uv run rag stop` stops the database and worker; indexed data remains. For
 expected output, `status`/`reset`, and troubleshooting, use the
 [complete quickstart](docs/tutorials/quickstart.md).
+
+## Visual DOCX quickstart
+
+The default `rag add` uses a text parser. For complex DOCX/PPTX layouts, opt in
+to **visual extraction**: the optional LibreOffice/unoserver converter exports
+the document to PDF, Poppler renders its pages as images, and a vision model
+transcribes them to Markdown for indexing. Conversion can change page layout.
+
+Install Poppler on the host (Arch: `sudo pacman -S poppler`). In `.env`, set
+`RAG_VISUAL_MODEL=gpt-4o` (or another vision-capable model); the default visual
+provider is OpenAI, using `OPENAI_API_KEY`. Restart the worker after changing
+`.env` (`uv run rag stop && uv run rag start`), then run:
+
+```bash
+docker compose -p rag-mtst-local up -d office
+uv run rag add path/to/complex.docx --extraction-method visual
+```
+
+Add `--reindex` if the file was already indexed. Visual extraction sends page
+images to the model provider and may incur costs. See
+[provider setup](docs/how-to/providers.md#enable-visual-extraction) and
+[limits](docs/reference/limits.md#visual-extraction-bounds).
 
 ## Documentation
 
