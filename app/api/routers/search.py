@@ -25,11 +25,12 @@ async def search_sources(
     - `query`: Search text.
     - `method`, `limit`, `window`: Optional retrieval settings; omitted values use
       server defaults. In window mode, `limit` counts seeds before expansion.
+    - `assembly`: `document` (default) or `score` for window mode.
 
     ### Ordering and scores
     Overlapping same-source windows are merged and deduplicated.
-    Chunks within each group follow document order; groups are ranked by their best seed.
-    Preserve this order rather than sorting individual chunks by score.
+    Default windows merge and follow document order, ranked by best seed.
+    Score assembly visits ranked seeds first with deduplicated adjacent context.
     Scores are method-specific diagnostics, not probabilities or comparable
     across methods. A null score identifies a neighbor added as context.
 
@@ -45,6 +46,7 @@ async def search_sources(
             limit=request.limit,
             method=request.method,
             window=request.window,
+            assembly=request.assembly,
             settings=settings,
             storage=storage,
         )
