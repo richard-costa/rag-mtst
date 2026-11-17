@@ -57,6 +57,7 @@ async def generate_answer(
         limit=request.limit,
         method=request.method,
         window=request.window,
+        assembly=request.assembly,
         settings=answer_settings,
         storage=storage,
         history=history,
