@@ -1,5 +1,21 @@
 # rag-mtst
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Language              Files        Lines         Code     Comments       Blanks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ CSS                       2           86           86            0            0
+ Dockerfile                1           59           39            0           20
+ HTML                      1          100           98            0            2
+ INI                       1           39           31            0            8
+ JavaScript                1          141          133            0            8
+ Python                   63        14383        12571          216         1596
+ TOML                      1           67           57            0           10
+ YAML                      2          152          147            0            5
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Total                    72        15027        13162          216         1649
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
 **A Python RAG backend you can inspect, modify, and integrate into other applications.**
 Index documents, retrieve relevant passages, and generate answers with references
 to the text used. This is a developer-oriented backend, not a finished chat product.
@@ -129,29 +145,6 @@ The [documentation index](docs/index.md) is organized into four sections:
 An optional [visual demo](demo/README.md) shows the same backend in a browser.
 Future plans are in the [roadmap](ROADMAP.md). Contributors can enable optional
 [push checks](docs/how-to/develop.md#optional-push-checks).
-
-## Codebase size
-
-Measured with [tokei](https://github.com/XAMPPRocky/tokei) over git-tracked
-files, excluding Markdown (2026-11-13):
-
-| Language | Files | Lines | Code | Comments | Blanks |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Python | 62 | 13,503 | 11,839 | 213 | 1,451 |
-| YAML | 3 | 180 | 174 | 0 | 6 |
-| JavaScript | 1 | 141 | 133 | 0 | 8 |
-| HTML | 1 | 100 | 98 | 0 | 2 |
-| CSS | 2 | 86 | 86 | 0 | 0 |
-| TOML | 1 | 67 | 57 | 0 | 10 |
-| Dockerfile | 1 | 59 | 39 | 0 | 20 |
-| INI | 1 | 39 | 31 | 0 | 8 |
-| **Total** | **72** | **14,175** | **12,457** | **213** | **1,505** |
-
-Tokei counts Python docstrings as code. To reproduce:
-
-```bash
-git ls-files | grep -v '\.md$' | xargs tokei
-```
 
 ## Project status
 
