@@ -3,12 +3,8 @@
 from collections.abc import Sequence
 from dataclasses import asdict, replace
 
-from app.api.schemas import (
-    AskResponse,
-    CitationResponse,
-    GenerationRequest,
-    SearchMatchResponse,
-)
+from app.api.schemas.answers import AskResponse, CitationResponse, GenerationRequest
+from app.api.schemas.search import SearchMatchResponse
 from app.config import Settings
 from app.generation import ConversationMessage, answer
 from app.retrieval import SearchResult

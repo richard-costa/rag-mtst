@@ -1,13 +1,39 @@
-"""HTTP application setup and authentication."""
+"""FastAPI application setup and authentication."""
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 
 from app.api.dependencies import authenticate
-from app.api.routers import answers, conversations, jobs, search, sources
+from app.api.router import api_router
 from app.config import Settings, get_settings
 from app.storage.database import Database
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    """Validate the API token before the application starts serving requests.
+
+    Args:
+        application: FastAPI application managed by the lifespan.
+
+    Yields:
+        None after successful token validation.
+
+    Raises:
+        ValueError: The configured token is missing, non-ASCII, or contains whitespace.
+    """
+    api_key = application.state.settings.api_key
+    if (
+        not api_key
+        or not api_key.isascii()
+        or any(character.isspace() for character in api_key)
+    ):
+        raise ValueError(
+            "RAG_API_KEY must be set to a nonempty ASCII token without whitespace"
+        )
+    yield
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -19,33 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     Returns:
         Application with isolated settings, storage, and authenticated routers.
     """
-    active_settings = settings or get_settings()
-    storage = Database(active_settings.database_url)
-
-    @asynccontextmanager
-    async def lifespan(application: FastAPI):
-        """Validate the API token before the application starts serving requests.
-
-        Args:
-            application: FastAPI application managed by the lifespan.
-
-        Yields:
-            None after successful token validation.
-
-        Raises:
-            ValueError: The configured token is missing, non-ASCII, or contains whitespace.
-        """
-        api_key = active_settings.api_key
-        if (
-            not api_key
-            or not api_key.isascii()
-            or any(character.isspace() for character in api_key)
-        ):
-            raise ValueError(
-                "RAG_API_KEY must be set to a nonempty ASCII token without whitespace"
-            )
-        yield
-
+    active_settings = settings if settings is not None else get_settings()
     application = FastAPI(
         title="rag-mtst",
         version="0.1.0",
@@ -53,12 +53,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=[Depends(authenticate)],
     )
     application.state.settings = active_settings
-    application.state.storage = storage
-    application.include_router(sources.router)
-    application.include_router(jobs.router)
-    application.include_router(search.router)
-    application.include_router(answers.router)
-    application.include_router(conversations.router)
+    application.state.storage = Database(active_settings.database_url)
+    application.include_router(api_router)
     return application
 
 

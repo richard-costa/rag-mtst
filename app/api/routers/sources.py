@@ -7,7 +7,7 @@ from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.dependencies import SettingsDependency, StorageDependency
-from app.api.schemas import SourceDetailsResponse, SourceResponse
+from app.api.schemas.sources import SourceDetailsResponse, SourceResponse
 from app.ingestion import cleanup_ingestion_inputs, enqueue_bytes
 from app.storage import documents
 from app.storage.documents import SourceBusy, SourceNotFound

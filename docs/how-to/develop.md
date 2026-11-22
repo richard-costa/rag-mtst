@@ -15,11 +15,12 @@ this table tells you where to make a change.
 | CLI arguments and output | `app/cli.py` |
 | Local lifecycle (`start/status/stop/reset`) | `app/local.py` |
 | Defaults and environment parsing | `app/config.py` |
-| FastAPI factory, lifespan and router registration | `app/api/main.py` |
+| FastAPI factory and lifespan | `app/api/main.py` |
+| Central HTTP router registration | `app/api/router.py` |
 | HTTP authentication and application resources | `app/api/dependencies.py` |
 | Source, job, search, answer and conversation endpoints | `app/api/routers/` |
 | Shared API answer orchestration and response conversion | `app/api/services.py` |
-| HTTP request and response models | `app/api/schemas.py` |
+| HTTP request and response models | `app/api/schemas/` |
 | Ingestion submission, staging and deduplication | `app/ingestion.py` |
 | Job execution, child supervision and heartbeats | `app/worker.py` |
 | Native/visual document extraction | `app/extraction/` |
@@ -40,8 +41,8 @@ this table tells you where to make a change.
 Each feature module under `app/api/routers/` declares a module-level `APIRouter`:
 `sources.py`, `jobs.py`, `search.py`, `answers.py`, and `conversations.py`.
 Search and answer generation are separate API concerns; `/ask` is not a retrieval
-endpoint. `main.py` registers these routers directly and applies shared bearer
-authentication. The ASGI entry point remains `app.api.main:app`.
+endpoint. `router.py` registers these routers centrally; `main.py` includes
+that router and applies shared bearer authentication. The ASGI entry point remains `app.api.main:app`.
 
 `create_app(settings)` stores that application's settings and `Database` handle
 on `application.state`. Routes receive them through the `SettingsDependency` and

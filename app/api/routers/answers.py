@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.api.dependencies import SettingsDependency, StorageDependency
-from app.api.schemas import AskRequest, AskResponse
+from app.api.schemas.answers import AskRequest, AskResponse
 from app.api.services import generate_answer
 from app.embeddings import EmbeddingError
 from app.generation import GenerationError

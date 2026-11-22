@@ -7,8 +7,8 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.api.dependencies import SettingsDependency, StorageDependency
-from app.api.schemas import (
-    AskResponse,
+from app.api.schemas.answers import AskResponse
+from app.api.schemas.conversations import (
     ConversationResponse,
     ConversationTurnRequest,
     MessageResponse,

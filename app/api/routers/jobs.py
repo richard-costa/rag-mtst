@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 
 from app.api.dependencies import SettingsDependency, StorageDependency
-from app.api.schemas import JobResponse
+from app.api.schemas.jobs import JobResponse
 from app.storage import jobs
 
 router = APIRouter(tags=["jobs"])

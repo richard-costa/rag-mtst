@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.api.dependencies import SettingsDependency, StorageDependency
-from app.api.schemas import SearchMatchResponse, SearchRequest
+from app.api.schemas.search import SearchMatchResponse, SearchRequest
 from app.api.services import search_match_response
 from app.embeddings import EmbeddingError
 from app.retrieval import search
