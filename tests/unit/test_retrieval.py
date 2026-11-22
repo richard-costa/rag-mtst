@@ -193,7 +193,7 @@ async def test_window_score_assembly_prioritizes_seeds_and_deduplicates(monkeypa
     monkeypatch.setattr(retrieval.documents, "get_chunk_window", neighbors)
     settings = Settings()
     storage = Database(settings.database_url)
-    kwargs = dict(limit=2, window=2, settings=settings, storage=storage)
+    kwargs = {"limit": 2, "window": 2, "settings": settings, "storage": storage}
 
     default = await retrieval.search_with_windows([1.0], **kwargs)
     scored = await retrieval.search_with_windows([1.0], assembly="score", **kwargs)

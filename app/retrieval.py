@@ -214,7 +214,9 @@ async def search_with_windows(
         for seed in seeds:
             ordered.setdefault((seed.source_id, seed.chunk_index), seed)
 
-            for index in range(seed.chunk_index - window, seed.chunk_index + window + 1):
+            for index in range(
+                seed.chunk_index - window, seed.chunk_index + window + 1
+            ):
                 identity = (seed.source_id, index)
                 if identity in matches and identity not in seed_ids:
                     ordered.setdefault(identity, matches[identity])
