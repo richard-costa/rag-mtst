@@ -70,9 +70,11 @@ async def enqueue_file(
     Returns:
         Submitted source and optional queued job.
     """
+
     validate_extraction_method(extraction_method)
     source_path = Path(path)
     content = await asyncio.to_thread(source_path.read_bytes)
+
     return await enqueue_bytes(
         content,
         source_name=source_path.name,
@@ -105,20 +107,25 @@ async def enqueue_bytes(
     Returns:
         Submitted source and optional queued job.
     """
+
     validate_extraction_method(extraction_method)
     safe_name = Path(source_name).name
     if not safe_name.strip() or safe_name in {".", ".."}:
         raise ValueError("A source name is required")
+
     if not content:
         raise ValueError("The source is empty")
+
     active_settings = settings or get_settings()
     profile = get_extraction_profile(
         Path(safe_name).suffix,
         extraction_method=extraction_method,
         settings=active_settings,
     )
+
     if active_settings.chunk_size <= 0:
         raise ValueError("Chunk size must be greater than zero")
+
     configuration = {
         "chunk_size": active_settings.chunk_size,
         "chunk_group_adjacent": active_settings.chunk_group_adjacent,
@@ -126,17 +133,20 @@ async def enqueue_bytes(
         "embedding_model": active_settings.embedding_model_name,
         "embedding_base_url": embedding_endpoint(active_settings),
     }
+
     content_hash = sha256(content).hexdigest()
     active_storage = storage or Database(active_settings.database_url)
     job_id = uuid4()
     input_path = active_settings.data_dir / "ingestion" / str(job_id) / safe_name
     writing = asyncio.create_task(asyncio.to_thread(_write_input, input_path, content))
+
     try:
         await asyncio.shield(writing)
     except BaseException:
         await asyncio.gather(writing, return_exceptions=True)
         await asyncio.to_thread(_remove_input, input_path, active_settings)
         raise
+
     try:
         source, job = await jobs.create_ingestion_job(
             active_storage,
@@ -151,21 +161,26 @@ async def enqueue_bytes(
             reindex=reindex,
             job_id=job_id,
         )
+
     except BaseException:
         try:
             async with asyncio.timeout(5):
                 accepted = await jobs.get_ingestion_job_input(
                     active_storage, active_settings.tenant_id, job_id
                 )
+
         # Preserve staged input when database acceptance cannot be determined.
         except Exception:  # noqa: BLE001, S110
             pass
         else:
             if accepted is None:
                 await asyncio.to_thread(_remove_input, input_path, active_settings)
+
         raise
+
     if job is None or job.id != job_id:
         await asyncio.to_thread(_remove_input, input_path, active_settings)
+
     return IngestionSubmission(source=source, job=job)
 
 
@@ -195,9 +210,11 @@ async def add_file(
     Returns:
         Persisted source and indexed-chunk count.
     """
+
     validate_extraction_method(extraction_method)
     source_path = Path(path)
     content = await asyncio.to_thread(source_path.read_bytes)
+
     return await add_bytes(
         content,
         source_name=source_path.name,
@@ -230,6 +247,7 @@ async def add_bytes(
     Returns:
         Persisted source and indexed-chunk count.
     """
+
     validate_extraction_method(extraction_method)
     if not source_name:
         raise ValueError("A source name is required")
@@ -241,6 +259,7 @@ async def add_bytes(
         extraction_method=extraction_method,
         settings=active_settings,
     )
+
     active_storage = storage or Database(active_settings.database_url)
     content_hash = sha256(content).hexdigest()
     existing = await documents.get_source_by_content_hash(
@@ -248,17 +267,20 @@ async def add_bytes(
         active_settings.tenant_id,
         content_hash,
     )
+
     if existing is not None and not reindex:
         indexed_profile = await documents.get_source_extraction_profile(
             active_storage,
             active_settings.tenant_id,
             existing.id,
         )
+
         if indexed_profile != requested_profile:
             raise ValueError(
                 "The source has a different or unknown extraction profile; "
                 "explicit reindexing is required (reindex=True)"
             )
+
         return IngestionResult(source=existing, created=False, chunk_count=0)
 
     embedded_chunks = await _prepare_chunks(
@@ -267,6 +289,7 @@ async def add_bytes(
         settings=active_settings,
         extraction_method=extraction_method,
     )
+
     source = existing
     if source is None:
         source = await documents.insert_source_with_chunks(
@@ -278,6 +301,7 @@ async def add_bytes(
             content_hash=content_hash,
             chunks=embedded_chunks,
         )
+
     else:
         await documents.replace_chunks(
             active_storage,
@@ -285,6 +309,7 @@ async def add_bytes(
             source_id=source.id,
             chunks=embedded_chunks,
         )
+
     return IngestionResult(
         source=source, created=existing is None, chunk_count=len(embedded_chunks)
     )
@@ -310,41 +335,53 @@ async def _prepare_chunks(
     Returns:
         Extracted, chunked, and embedded source passages.
     """
+
     suffix = Path(source_name).suffix
     requested_profile = get_extraction_profile(
         suffix, extraction_method=extraction_method, settings=settings
     )
+
     if progress is not None:
         await progress("extracting", None, None)
+
     extracted = await extract_source(
         content,
         suffix,
         settings=settings,
         extraction_method=extraction_method,
     )
+
     if extracted.profile != requested_profile:
         raise ValueError(
             "Extracted content profile does not match the requested extraction profile"
         )
+
     if progress is not None:
         await progress("chunking", None, None)
+
     chunks = chunk_markdown(
         extracted.text,
         settings.chunk_size,
         group_adjacent=settings.chunk_group_adjacent,
         pages=extracted.pages,
     )
+
     if not chunks:
         raise ValueError("The source contains no searchable text")
+
     chunks = [
         replace(chunk, metadata={**chunk.metadata, "extraction": extracted.profile})
         for chunk in chunks
     ]
+
     chunks = await prepare_chunks_for_embedding(chunks, settings=settings)
+
     if progress is not None:
         await progress("embedding", 0, len(chunks))
+
     vectors = await embed_texts([chunk.content for chunk in chunks], settings=settings)
     embedded_chunks = []
+
     for chunk, vector in zip(chunks, vectors, strict=True):
         embedded_chunks.append(
             replace(
@@ -357,8 +394,10 @@ async def _prepare_chunks(
                 },
             )
         )
+
     if progress is not None:
         await progress("storing", len(chunks), len(chunks))
+
     return embedded_chunks
 
 
@@ -372,13 +411,17 @@ async def process_ingestion_job(
         settings: Runtime settings for extraction, storage, or models.
         storage: Database handle; uses configured storage when omitted.
     """
+
     if job.claim_token is None:
         raise ValueError("The ingestion job has not been claimed")
+
     queued = await jobs.get_ingestion_job_input(storage, settings.tenant_id, job.id)
     if queued is None:
         raise ValueError("The ingestion input is missing")
+
     if queued.input_path is None:
         raise ValueError("The ingestion input has been removed")
+
     input_path = Path(queued.input_path)
     if (
         input_path.parent.name != str(job.id)
@@ -386,6 +429,7 @@ async def process_ingestion_job(
         != (settings.data_dir / "ingestion").resolve()
     ):
         raise ValueError("The ingestion input is outside the job directory")
+
     content = await asyncio.to_thread(input_path.read_bytes)
     configuration = queued.configuration
     restored = replace(
@@ -396,6 +440,7 @@ async def process_ingestion_job(
         embedding_model=configuration["embedding_model"],
         openai_base_url=configuration["embedding_base_url"],
     )
+
     method = str(queued.extraction_profile["method"])
     if method == "visual":
         restored = replace(
@@ -404,15 +449,19 @@ async def process_ingestion_job(
             visual_model=str(queued.extraction_profile["model"]),
             visual_base_url=str(queued.extraction_profile["endpoint"]),
         )
+
     profile = get_extraction_profile(
         Path(queued.source_name).suffix, extraction_method=method, settings=restored
     )
+
     if profile != queued.extraction_profile:
         raise ValueError("The worker cannot reproduce the queued extraction profile")
+
     content_hash = sha256(content).hexdigest()
     source = await documents.get_source_by_content_hash(
         storage, settings.tenant_id, content_hash
     )
+
     if source is None or source.id != job.source_id:
         raise ValueError("The queued source identity does not match its original bytes")
 
@@ -424,6 +473,7 @@ async def process_ingestion_job(
             processed: Number of items completed, if known.
             total: Total number of items, if known.
         """
+
         assert job.claim_token is not None
         if not await jobs.update_ingestion_job_progress(
             storage,
@@ -443,6 +493,7 @@ async def process_ingestion_job(
         extraction_method=method,
         progress=progress,
     )
+
     if not await jobs.complete_ingestion_job(
         storage, settings.tenant_id, job, reference=queued.source_name, chunks=chunks
     ):
@@ -462,7 +513,9 @@ def _write_input(path: Path, content: bytes) -> None:
         path: Input file path or staged input path.
         content: Original document bytes to extract or index.
     """
+
     path.parent.mkdir(parents=True, mode=0o700)
+
     with path.open("xb") as stream:
         stream.write(content)
         stream.flush()
@@ -476,9 +529,12 @@ def _remove_input(path: Path, settings: Settings) -> None:
         path: Input file path or staged input path.
         settings: Runtime settings for extraction, storage, or models.
     """
+
     if path.resolve().parent.parent != (settings.data_dir / "ingestion").resolve():
         raise ValueError("The ingestion input is outside the staging directory")
+
     UUID(path.parent.name)
+
     try:
         shutil.rmtree(path.parent)
     except FileNotFoundError:
@@ -496,6 +552,7 @@ async def cleanup_ingestion_inputs(*, settings: Settings, storage: Database) -> 
         settings: Runtime settings for extraction, storage, or models.
         storage: Database handle; uses configured storage when omitted.
     """
+
     for queued in await jobs.list_finished_ingestion_inputs(
         storage, settings.tenant_id
     ):
@@ -507,11 +564,13 @@ async def cleanup_ingestion_inputs(*, settings: Settings, storage: Database) -> 
                 "job_id=%s stage=cleanup error_category=unsafe_input_path",
                 queued.job_id,
             )
+
         except OSError:
             logger.warning(
                 "job_id=%s stage=cleanup error_category=cleanup", queued.job_id
             )
             continue
+
         await jobs.clear_ingestion_input_path(
             storage, settings.tenant_id, queued.job_id, queued.input_path
         )

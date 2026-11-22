@@ -38,11 +38,15 @@ async def test_worker_loop_survives_database_errors_and_stops_mid_job(
     async def run_once(**kwargs):
         nonlocal calls, cancelled
         calls += 1
+
         if calls == 1:
             raise psycopg.OperationalError("database unavailable")
+
         if calls == 2:
             return False
+
         stop.set()
+
         try:
             await asyncio.Event().wait()
         except asyncio.CancelledError:
@@ -51,7 +55,9 @@ async def test_worker_loop_survives_database_errors_and_stops_mid_job(
 
     monkeypatch.setattr(worker, "run_once", run_once)
     monkeypatch.setattr(worker, "POLL_SECONDS", 0.01)
+
     async with asyncio.timeout(5):
         await worker.run_worker(settings=Settings(), stop_event=stop)
+
     assert calls == 3 and cancelled
     assert "Worker database operation failed" in capsys.readouterr().err

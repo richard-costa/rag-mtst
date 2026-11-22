@@ -35,6 +35,7 @@ def main(arguments: list[str] | None = None) -> int:
     Returns:
         Process exit code.
     """
+
     try:
         return asyncio.run(_run(arguments))
     except KeyboardInterrupt:
@@ -42,6 +43,7 @@ def main(arguments: list[str] | None = None) -> int:
             "Stopped waiting; the submitted job remains available to the worker.",
             file=sys.stderr,
         )
+
         return 130
 
 
@@ -60,6 +62,7 @@ async def _run(arguments: list[str] | None = None) -> int:
     Returns:
         Process exit code.
     """
+
     parser = _build_parser()
     namespace = parser.parse_args(arguments)
     if namespace.data_dir is not None and namespace.command in {
@@ -73,20 +76,27 @@ async def _run(arguments: list[str] | None = None) -> int:
             "Set RAG_DATA_DIR in .env before starting the worker so all commands "
             "share the same staging directory."
         )
+
     try:
         local.load_environment()
+
         if namespace.command == "start":
             return local.start()
+
         if namespace.command == "status":
             return local.status()
+
         if namespace.command == "stop":
             return local.stop()
+
         if namespace.command == "reset":
             return local.reset(yes=namespace.yes)
 
         settings = get_settings()
+
         if namespace.data_dir is not None:
             settings = replace(settings, data_dir=namespace.data_dir)
+
         if namespace.command == "add":
             result = await enqueue_file(
                 namespace.source,
@@ -94,20 +104,27 @@ async def _run(arguments: list[str] | None = None) -> int:
                 reindex=namespace.reindex,
                 extraction_method=namespace.extraction_method,
             )
+
             if result.job is None:
                 print(f"{result.source.title} is already indexed.")
                 return 0
+
             print(f"Queued {result.source.title} (job {result.job.id}).")
+
             if namespace.no_wait:
                 return 0
+
             storage = Database(settings.database_url)
             previous = None
+
             while True:
                 job = await jobs.get_ingestion_job(
                     storage, settings.tenant_id, result.job.id
                 )
+
                 if job is None:
                     raise ValueError("The ingestion job was not found")
+
                 progress = (job.status, job.stage, job.processed, job.total)
                 if progress != previous:
                     counts = (
@@ -115,28 +132,37 @@ async def _run(arguments: list[str] | None = None) -> int:
                         if job.processed is not None and job.total is not None
                         else ""
                     )
+
                     print(
                         f"{job.status}: {job.stage or 'waiting for worker'}{counts}",
                         file=sys.stderr,
                     )
+
                     previous = progress
+
                 if job.status == "completed":
                     action = "Reindexed" if namespace.reindex else "Added"
                     print(f"{action} {result.source.title} ({job.total} chunks).")
                     return 0
+
                 if job.status == "failed":
                     raise ValueError(job.error or "Ingestion failed")
+
                 await asyncio.sleep(0.25)
 
         if namespace.command == "job":
             job = await jobs.get_ingestion_job(
                 Database(settings.database_url), settings.tenant_id, namespace.job_id
             )
+
             if job is None:
                 raise ValueError("The ingestion job was not found")
+
             print(f"{job.id}: {job.status} ({job.stage or 'waiting for worker'})")
+
             if job.error:
                 print(job.error, file=sys.stderr)
+
             return int(job.status == "failed")
 
         if namespace.command == "search":
@@ -150,6 +176,7 @@ async def _run(arguments: list[str] | None = None) -> int:
                     settings=settings,
                 )
             )
+
             return 0
 
         if namespace.command == "ask":
@@ -161,15 +188,20 @@ async def _run(arguments: list[str] | None = None) -> int:
                 assembly=namespace.assembly,
                 settings=settings,
             )
+
             print(result.text)
+
             if result.citations:
                 print("\nReferences:")
+
                 for citation in result.citations:
                     print(
                         f"[{citation.id}] {citation.source_title} "
                         f"(chunk {citation.chunk_index}, source {citation.source_id})"
                     )
+
             return 0
+
     except (
         OSError,
         ValueError,
@@ -182,6 +214,7 @@ async def _run(arguments: list[str] | None = None) -> int:
         return 1
 
     parser.error("A command is required")
+
     return 2
 
 
@@ -197,23 +230,28 @@ def _build_parser() -> argparse.ArgumentParser:
     Returns:
         Parser with the supported CLI subcommands.
     """
+
     parser = argparse.ArgumentParser(prog="rag")
     parser.add_argument(
         "--data-dir",
         type=Path,
         help="Temporary staging directory; not supported by start/status/stop/reset.",
     )
+
     commands = parser.add_subparsers(dest="command")
     commands.add_parser(
         "start", help="Start local PostgreSQL and the background ingestion worker."
     )
+
     commands.add_parser("status", help="Check local PostgreSQL and worker readiness.")
     commands.add_parser(
         "stop", help="Stop local services while preserving indexed data."
     )
+
     reset_parser = commands.add_parser(
         "reset", help="Delete local indexed data (requires confirmation)."
     )
+
     reset_parser.add_argument(
         "--yes",
         action="store_true",
@@ -225,11 +263,13 @@ def _build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument(
         "--reindex", action="store_true", help="Replace existing chunks and embeddings."
     )
+
     add_parser.add_argument(
         "--no-wait",
         action="store_true",
         help="Return after durable submission without waiting for the worker.",
     )
+
     add_parser.add_argument(
         "--extraction-method",
         choices=["parser", "visual"],
@@ -246,23 +286,29 @@ def _build_parser() -> argparse.ArgumentParser:
     ask_parser = commands.add_parser(
         "ask", help="Generate an answer grounded in retrieved sources."
     )
+
     ask_parser.add_argument("question")
+
     for command_parser in (search_parser, ask_parser):
         command_parser.add_argument(
             "--limit", type=int, help="Number of matches (window: seed chunks)."
         )
+
         command_parser.add_argument(
             "--method", choices=["window", "cosine", "lexical", "hybrid"]
         )
+
         command_parser.add_argument(
             "--window", type=int, help="Neighbors on each side of a seed (default: 2)."
         )
+
         command_parser.add_argument(
             "--assembly",
             choices=["document", "score"],
             default="document",
             help="Window assembly: merged document order (default) or ranked seeds first.",
         )
+
     return parser
 
 
@@ -278,6 +324,7 @@ def _print_matches(matches: list[SearchResult]) -> None:
     Args:
         matches: Retrieved source passages to display.
     """
+
     if not matches:
         print("No matching source chunks found.")
         return

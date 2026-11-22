@@ -37,11 +37,14 @@ async def ask_source(
     This endpoint never reads or persists stored conversations; callers that keep
     their own history pass it in `history`.
     """
+
     try:
         return await generate_answer(
             request, settings=settings, storage=storage, history=request.history
         )
+
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
     except (EmbeddingError, GenerationError) as error:
         raise HTTPException(status_code=502, detail=str(error)) from error

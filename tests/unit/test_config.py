@@ -74,6 +74,7 @@ def test_model_settings_are_independent_and_secrets_are_hidden(monkeypatch) -> N
     assert settings.visual_provider == "anthropic"
     assert settings.visual_model == "vision-model"
     assert settings.visual_base_url == "https://visual.example/v1"
+
     for field_name, variable_name in (
         ("api_key", "RAG_API_KEY"),
         ("openai_api_key", "OPENAI_API_KEY"),

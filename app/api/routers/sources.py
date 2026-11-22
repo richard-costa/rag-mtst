@@ -25,6 +25,7 @@ def _source_details(source: SourceSummary) -> SourceDetailsResponse:
     Returns:
         Public source metadata.
     """
+
     return SourceDetailsResponse(
         id=source.id,
         source_type=source.source_type,
@@ -59,9 +60,11 @@ async def list_sources(
 
     A source with pending first-time indexing reports zero chunks.
     """
+
     sources = await documents.list_sources(
         storage, settings.tenant_id, limit=limit, offset=offset
     )
+
     return [_source_details(source) for source in sources]
 
 
@@ -84,9 +87,11 @@ async def get_source(
     - **404**: Source is missing or belongs to another tenant.
     - **422**: Invalid source UUID.
     """
+
     source = await documents.get_source(storage, settings.tenant_id, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
+
     return _source_details(source)
 
 
@@ -108,13 +113,16 @@ async def delete_source(
 
     Saved conversation citations are snapshots and remain unchanged.
     """
+
     await cleanup_ingestion_inputs(settings=settings, storage=storage)
+
     try:
         await documents.delete_source(storage, settings.tenant_id, source_id)
     except SourceNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except SourceBusy as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
     return Response(status_code=204)
 
 
@@ -148,6 +156,7 @@ async def add_source_file(
     A separate worker processes queued jobs. File bytes are staged temporarily,
     not permanently archived; unsuccessful reindexing preserves the prior index.
     """
+
     if not file.filename:
         raise HTTPException(
             status_code=422, detail="The uploaded file needs a filename"
@@ -162,8 +171,10 @@ async def add_source_file(
             reindex=reindex,
             extraction_method=extraction_method,
         )
+
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
     job = result.job
     response = SourceResponse(
         id=str(result.source.id),
@@ -171,6 +182,8 @@ async def add_source_file(
         job_id=str(job.id) if job is not None else None,
         status_url=f"/jobs/{job.id}" if job is not None else None,
     )
+
     if job is not None:
         return response
+
     return JSONResponse(status_code=200, content=response.model_dump())

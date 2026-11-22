@@ -90,18 +90,23 @@ def get_extraction_profile(suffix: str, settings: Settings) -> dict[str, object]
     Returns:
         Reproducible extractor configuration metadata.
     """
+
     normalized = suffix.casefold()
     if normalized not in OFFICE_SUFFIXES | {".pdf"}:
         raise ValueError("Visual extraction supports only PDF, DOCX, and PPTX")
+
     if settings.visual_provider not in llm.PROVIDERS:
         raise ValueError(
             "RAG_VISUAL_PROVIDER must be openai, deepseek, ollama, or anthropic"
         )
+
     if not settings.visual_model or not settings.visual_model.strip():
         raise ValueError("Set RAG_VISUAL_MODEL to a vision-capable model")
+
     endpoint = llm.endpoint(
         settings.visual_provider, settings, settings.visual_base_url
     )
+
     try:
         url = urlsplit(endpoint)
         valid = (
@@ -112,12 +117,15 @@ def get_extraction_profile(suffix: str, settings: Settings) -> dict[str, object]
             and not url.query
             and not url.fragment
         )
+
     except ValueError:
         valid = False
+
     if not valid:
         raise ValueError(
             "The visual endpoint must be HTTP(S), without embedded credentials, query, or fragment"
         )
+
     return {
         "method": "visual",
         "format": normalized.removeprefix("."),
@@ -145,13 +153,16 @@ def _read_page(page: _PageResponse, tokens: int | None) -> tuple[str, int]:
     Returns:
         Extracted text and the validated token count.
     """
+
     if tokens is None or not 0 < tokens <= MAX_OUTPUT_TOKENS:
         raise ValueError(
             "Visual extraction returned invalid content or missing output-token usage"
         )
+
     markdown = page.markdown.strip()
     if page.blank != (not markdown):
         raise ValueError("Visual extraction returned an empty or contradictory page")
+
     return markdown, tokens
 
 
@@ -168,15 +179,19 @@ async def extract_with_visual(
     Returns:
         Model-extracted document content and page metadata.
     """
+
     profile = get_extraction_profile(suffix, settings)
     api_key = llm.api_key(settings.visual_provider, settings)
+
     if not content or len(content) > MAX_SOURCE_BYTES:
         raise ValueError(
             "Visual extraction requires a nonempty source of at most 20 MiB"
         )
+
     try:
         async with asyncio.timeout(DOCUMENT_TIMEOUT_SECONDS):
             pdf = content
+
             if suffix.casefold() in OFFICE_SUFFIXES:
                 conversion = asyncio.create_task(
                     asyncio.to_thread(
@@ -187,6 +202,7 @@ async def extract_with_visual(
                         port=settings.office_port,
                     )
                 )
+
                 try:
                     pdf = await asyncio.shield(conversion)
                 except asyncio.CancelledError:
@@ -196,8 +212,10 @@ async def extract_with_visual(
                     raise ValueError(
                         "Visual Office conversion failed; check the optional Office service"
                     ) from error
+
             if len(pdf) > MAX_SOURCE_BYTES:
                 raise ValueError("The visual PDF exceeds the 20 MiB limit")
+
             with TemporaryDirectory(prefix="rag-visual-") as temporary_directory:
                 directory = Path(temporary_directory)
                 source = directory / "source.pdf"
@@ -205,6 +223,7 @@ async def extract_with_visual(
                 count = await _page_count(source)
                 pages: list[ExtractedPage] = []
                 output_tokens = 0
+
                 async with llm.create_client(
                     settings.visual_provider,
                     api_key=api_key,
@@ -216,6 +235,7 @@ async def extract_with_visual(
                             raise ValueError(
                                 "Visual extraction exhausted its document output-token budget"
                             )
+
                         image = await _render_page(source, number, directory)
                         context = pages[-1].text[-CONTEXT_CHARS:] if pages else ""
                         response, tokens = await llm.generate_structured_response(
@@ -233,6 +253,7 @@ async def extract_with_visual(
                             image=image,
                             max_tokens=MAX_OUTPUT_TOKENS,
                         )
+
                         text, used = _read_page(response, tokens)
                         output_tokens += used
                         pages.append(
@@ -242,15 +263,19 @@ async def extract_with_visual(
                                 "slide" if suffix.casefold() == ".pptx" else "page",
                             )
                         )
+
                 if not any(page.text for page in pages):
                     raise ValueError("The visual source contains no searchable content")
+
                 return ExtractedContent.from_pages(
                     tuple(pages),
                     format=suffix.casefold().removeprefix("."),
                     profile=profile,
                 )
+
     except llm.StructuredOutputError as error:
         raise ValueError(f"Visual extraction {error}") from error
+
     except TimeoutError as error:
         raise ValueError("Visual extraction timed out") from error
 
@@ -264,6 +289,7 @@ async def _run_tool(*arguments: str) -> bytes:
     Returns:
         Raw standard output from the external process.
     """
+
     try:
         process = await asyncio.create_subprocess_exec(
             *arguments,
@@ -271,20 +297,25 @@ async def _run_tool(*arguments: str) -> bytes:
             stderr=asyncio.subprocess.DEVNULL,
             env={**os.environ, "LC_ALL": "C"},
         )
+
     except FileNotFoundError as error:
         raise ValueError(
             f"Visual extraction requires {arguments[0]}; install Poppler"
         ) from error
+
     try:
         async with asyncio.timeout(TOOL_TIMEOUT_SECONDS):
             output, _ = await process.communicate()
     except TimeoutError, asyncio.CancelledError:
         if process.returncode is None:
             process.kill()
+
         await process.communicate()
         raise
+
     if process.returncode:
         raise ValueError(f"Visual extraction tool failed: {arguments[0]}")
+
     return output
 
 
@@ -297,13 +328,16 @@ async def _page_count(source: Path) -> int:
     Returns:
         Number of pages in the PDF.
     """
+
     metadata = await _run_tool("pdfinfo", str(source))
     match = re.search(rb"(?m)^Pages:\s+([0-9]+)\s*$", metadata)
     if len(metadata) > 65536 or match is None:
         raise ValueError("Could not determine the visual PDF page count")
+
     count = int(match.group(1))
     if not 1 <= count <= MAX_PAGES:
         raise ValueError(f"Visual extraction supports 1 to {MAX_PAGES} pages")
+
     return count
 
 
@@ -318,8 +352,10 @@ async def _render_page(source: Path, number: int, directory: Path) -> bytes:
     Returns:
         Encoded image bytes for the requested page.
     """
+
     prefix = directory / "page"
     image_path = prefix.with_suffix(".png")
+
     try:
         await _run_tool(
             "pdftoppm",
@@ -336,8 +372,10 @@ async def _render_page(source: Path, number: int, directory: Path) -> bytes:
             str(source),
             str(prefix),
         )
+
         if not image_path.is_file() or image_path.stat().st_size > 8 * 1024 * 1024:
             raise ValueError("Visual rendering produced a missing or oversized image")
+
         image = image_path.read_bytes()
         if (
             len(image) < 24
@@ -345,9 +383,12 @@ async def _render_page(source: Path, number: int, directory: Path) -> bytes:
             or image[12:16] != b"IHDR"
         ):
             raise ValueError("Visual rendering did not produce a PNG image")
+
         width, height = struct.unpack(">II", image[16:24])
         if min(width, height) < 1 or max(width, height) > IMAGE_DIMENSION:
             raise ValueError("Visual rendering exceeded its image dimension limit")
+
         return image
+
     finally:
         image_path.unlink(missing_ok=True)

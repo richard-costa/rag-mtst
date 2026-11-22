@@ -40,6 +40,7 @@ async def search_sources(
     - **422**: Invalid request or retrieval settings.
     - **502**: Embedding provider failure.
     """
+
     try:
         matches = await search(
             request.query,
@@ -50,8 +51,11 @@ async def search_sources(
             settings=settings,
             storage=storage,
         )
+
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
     except EmbeddingError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
+
     return [search_match_response(match) for match in matches]

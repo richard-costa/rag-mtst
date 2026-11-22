@@ -76,6 +76,7 @@ def openai_response():
 def vision_reply(monkeypatch, tmp_path, openai_response):
     if not shutil.which("pdftoppm") or not shutil.which("pdfinfo"):
         pytest.skip("Poppler is required")
+
     requests = []
     temporary_root = tmp_path / "visual-temporary"
     temporary_root.mkdir()
@@ -103,11 +104,14 @@ def vision_reply(monkeypatch, tmp_path, openai_response):
                 if request.url.path.endswith("/messages")
                 else Response
             )
+
             if status != 200:
                 return response_type(
                     status, json={"error": {"message": "private provider detail"}}
                 )
+
             page = pages[len(requests) - 1]
+
             if request.url.path.endswith("/messages"):
                 return AnthropicResponse(
                     200,
@@ -127,6 +131,7 @@ def vision_reply(monkeypatch, tmp_path, openai_response):
                         "usage": {"input_tokens": 100, "output_tokens": tokens},
                     },
                 )
+
             if request.url.path.endswith("/responses"):
                 return Response(
                     200,
@@ -139,6 +144,7 @@ def vision_reply(monkeypatch, tmp_path, openai_response):
                         refusal=refusal,
                     ),
                 )
+
             return Response(
                 200,
                 json={
@@ -170,6 +176,7 @@ def vision_reply(monkeypatch, tmp_path, openai_response):
         def client(**kwargs):
             assert kwargs["max_retries"] == 0
             assert kwargs["timeout"] == visual.REQUEST_TIMEOUT_SECONDS
+
             return AsyncOpenAI(
                 **kwargs, http_client=AsyncClient(transport=MockTransport(respond))
             )
@@ -177,6 +184,7 @@ def vision_reply(monkeypatch, tmp_path, openai_response):
         def anthropic_client(**kwargs):
             assert kwargs["max_retries"] == 0
             assert kwargs["timeout"] == visual.REQUEST_TIMEOUT_SECONDS
+
             return AsyncAnthropic(
                 **kwargs,
                 http_client=AnthropicHTTPClient(transport=AnthropicTransport(respond)),
@@ -184,9 +192,11 @@ def vision_reply(monkeypatch, tmp_path, openai_response):
 
         monkeypatch.setattr(llm, "AsyncOpenAI", client)
         monkeypatch.setattr(llm, "AsyncAnthropic", anthropic_client)
+
         return requests
 
     yield install
+
     assert not list(temporary_root.iterdir()), (
         "Visual extraction must remove temporary PDFs and images"
     )
@@ -202,11 +212,13 @@ def pdf_document():
             f"<< /Type /Pages /Kids [{children}] /Count {len(pages)} >>".encode(),
             b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         ]
+
         for number, text in zip(page_ids, pages, strict=True):
             escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
             stream = (
                 f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode() if text else b""
             )
+
             objects.extend(
                 [
                     f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {number + 1} 0 R >>".encode(),
@@ -217,18 +229,24 @@ def pdf_document():
                     + b"\nendstream",
                 ]
             )
+
         document = bytearray(b"%PDF-1.4\n")
         offsets = [0]
+
         for number, body in enumerate(objects, start=1):
             offsets.append(len(document))
             document.extend(f"{number} 0 obj\n".encode() + body + b"\nendobj\n")
+
         xref_offset = len(document)
         document.extend(f"xref\n0 {len(offsets)}\n0000000000 65535 f \n".encode())
+
         for offset in offsets[1:]:
             document.extend(f"{offset:010d} 00000 n \n".encode())
+
         document.extend(
             f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode()
         )
+
         return bytes(document)
 
     return build
@@ -238,6 +256,7 @@ def pdf_document():
 def office_document():
     def build(suffix: str) -> bytes:
         package = BytesIO()
+
         if suffix == ".docx":
             members = {
                 "word/styles.xml": """<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -247,6 +266,7 @@ def office_document():
 <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Material</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Count</w:t></w:r></w:p></w:tc></w:tr>
 <w:tr><w:tc><w:p><w:r><w:t>Bricks</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>42</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>""",
             }
+
         else:
             members = {
                 "ppt/presentation.xml": """<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
@@ -262,25 +282,30 @@ xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTre
 <a:tr><a:tc><a:txBody><a:p><a:r><a:t>Bricks</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>42</a:t></a:r></a:p></a:txBody></a:tc></a:tr>
 </a:tbl></a:graphicData></a:graphic></p:graphicFrame></p:spTree></p:cSld></p:sld>""",
             }
+
         main_part = "word/document.xml" if suffix == ".docx" else "ppt/presentation.xml"
         main_type = (
             "wordprocessingml.document"
             if suffix == ".docx"
             else "presentationml.presentation"
         )
+
         members[
             "[Content_Types].xml"
         ] = f"""<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
 <Override PartName="/{main_part}" ContentType="application/vnd.openxmlformats-officedocument.{main_type}.main+xml"/></Types>"""
+
         members[
             "_rels/.rels"
         ] = f'''<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="{main_part}"/></Relationships>'''
+
         with ZipFile(package, "w") as archive:
             for name, content in members.items():
                 archive.writestr(name, content)
+
         return package.getvalue()
 
     return build

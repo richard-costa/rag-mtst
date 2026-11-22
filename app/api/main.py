@@ -24,6 +24,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     Raises:
         ValueError: The configured token is missing, non-ASCII, or contains whitespace.
     """
+
     api_key = application.state.settings.api_key
     if (
         not api_key
@@ -33,6 +34,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         raise ValueError(
             "RAG_API_KEY must be set to a nonempty ASCII token without whitespace"
         )
+
     yield
 
 
@@ -45,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     Returns:
         Application with isolated settings, storage, and authenticated routers.
     """
+
     active_settings = settings if settings is not None else get_settings()
     application = FastAPI(
         title="rag-mtst",
@@ -52,9 +55,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
         dependencies=[Depends(authenticate)],
     )
+
     application.state.settings = active_settings
     application.state.storage = Database(active_settings.database_url)
     application.include_router(api_router)
+
     return application
 
 

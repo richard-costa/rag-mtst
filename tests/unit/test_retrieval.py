@@ -38,6 +38,7 @@ async def test_search_rejects_invalid_inputs_before_embedding_or_sql(
 @pytest.mark.parametrize("strategy", [search_mmr, search_multi_query])
 async def test_future_strategies_are_explicit_stubs(strategy):
     settings = Settings()
+
     with pytest.raises(NotImplementedError, match="not implemented yet"):
         await strategy(
             "text", limit=5, settings=settings, storage=Database(settings.database_url)
@@ -106,6 +107,7 @@ async def test_hybrid_fuses_ranks_not_raw_scores(
     assert len({(match.source_id, match.chunk_index) for match in results}) == len(
         results
     )
+
     for match in results:
         identity = (match.source_id, match.chunk_index)
         expected_score = sum(
@@ -113,7 +115,9 @@ async def test_hybrid_fuses_ranks_not_raw_scores(
             for identities in [cosine_ids, lexical_ids]
             if identity in identities
         )
+
         assert match.score == pytest.approx(expected_score)
+
     assert [match.score for match in cosine_matches] == [
         1000 * (index + 1) for index in range(len(cosine_ids))
     ]
@@ -138,6 +142,7 @@ async def test_hybrid_expands_candidate_budget_and_returns_only_requested_limit(
     monkeypatch.setattr(retrieval, "search_cosine", candidates)
     monkeypatch.setattr(retrieval, "search_lexical", candidates)
     settings = Settings()
+
     results = await search_hybrid(
         "query", limit=6, settings=settings, storage=Database(settings.database_url)
     )
@@ -151,6 +156,7 @@ async def test_hybrid_does_not_silently_fall_back_after_provider_failure(monkeyp
         raise EmbeddingError("provider unavailable")
 
     monkeypatch.setattr(retrieval, "embed_texts", fail)
+
     with pytest.raises(EmbeddingError, match="provider unavailable"):
         await search("query", method="hybrid", settings=Settings())
 
@@ -159,6 +165,7 @@ async def test_hybrid_does_not_silently_fall_back_after_provider_failure(monkeyp
 async def test_keyword_methods_reject_punctuation_before_embedding_or_sql(method):
     with pytest.raises(ValueError, match="at least one word"):
         await search("!!!", method=method, settings=Settings())
+
 
 async def test_window_score_assembly_prioritizes_seeds_and_deduplicates(monkeypatch):
     source = "00000000-0000-0000-0000-000000000001"
@@ -187,6 +194,7 @@ async def test_window_score_assembly_prioritizes_seeds_and_deduplicates(monkeypa
     settings = Settings()
     storage = Database(settings.database_url)
     kwargs = dict(limit=2, window=2, settings=settings, storage=storage)
+
     default = await retrieval.search_with_windows([1.0], **kwargs)
     scored = await retrieval.search_with_windows([1.0], assembly="score", **kwargs)
 

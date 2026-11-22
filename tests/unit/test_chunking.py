@@ -20,6 +20,7 @@ def test_source_page_ranges_include_blank_pages_without_fabricating_text(
         format="pdf",
         profile={"method": "test"},
     )
+
     chunks = chunk_markdown(
         extracted.text, 100, group_adjacent=group_adjacent, pages=extracted.pages
     )
@@ -33,6 +34,7 @@ def test_source_page_ranges_include_blank_pages_without_fabricating_text(
         "end": 3 if group_adjacent else 1,
         "scope": "body",
     }
+
     if not group_adjacent:
         assert chunks[1].metadata["source_pages"] == {
             "kind": kind,
@@ -155,6 +157,7 @@ def test_adjacent_grouping_can_be_enabled_or_disabled(group_adjacent: bool) -> N
         ]
         assert chunks[0].metadata["start_line"] == 3
         assert chunks[0].metadata["end_line"] == 5
+
     else:
         assert [chunk.content for chunk in chunks] == [
             "# Setup\n\nFirst paragraph.",

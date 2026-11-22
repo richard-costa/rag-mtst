@@ -42,6 +42,7 @@ async def test_hosted_generation_workflow(
         pytest.fail(
             f"Set {key_name} before running the hosted smoke test", pytrace=False
         )
+
     settings = replace(
         settings,
         generation_provider=provider,
@@ -51,6 +52,7 @@ async def test_hosted_generation_workflow(
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         deepseek_api_key=os.getenv("DEEPSEEK_API_KEY"),
     )
+
     source = await documents.insert_source_with_chunks(
         storage,
         tenant_id=settings.tenant_id,
@@ -66,7 +68,9 @@ async def test_hosted_generation_workflow(
             )
         ],
     )
+
     report = {"provider": provider, "model": settings.generation_model, "answers": []}
+
     async with AsyncClient(
         transport=ASGITransport(app=create_app(settings)),
         base_url="http://test",
@@ -80,6 +84,7 @@ async def test_hosted_generation_workflow(
             response = await client.post(
                 "/ask", json={"query": question, "method": "lexical", "limit": 1}
             )
+
             assert response.status_code == 200, response.text
             result = response.json()
             assert result["answer"].strip()
@@ -89,6 +94,7 @@ async def test_hosted_generation_workflow(
                 citation["source_id"] == str(source.id)
                 for citation in result["citations"]
             )
+
             report["answers"].append(
                 {
                     "question": question,
@@ -97,6 +103,7 @@ async def test_hosted_generation_workflow(
                     "seconds": round(perf_counter() - started, 2),
                 }
             )
+
     print(
         "Hosted generation smoke:\n" + json.dumps(report, ensure_ascii=False, indent=2)
     )
@@ -120,6 +127,7 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
         ),
         generation_max_tokens=256,
     )
+
     model = local_module.SentenceTransformer(
         settings.embedding_model_name,
         device="cpu",
@@ -127,9 +135,11 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
         local_files_only=True,
         revision="e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
     )
+
     monkeypatch.setattr(embeddings, "_load_local_model", lambda name: model)
     monkeypatch.setattr(ingestion, "embed_texts", embeddings.embed_texts)
     monkeypatch.setattr(retrieval, "embed_texts", embeddings.embed_texts)
+
     document = (
         "# Housing support / Atendimento habitacional\n\n"
         "## Documents / Documentos\n\n"
@@ -142,7 +152,9 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
         "Arrive fifteen minutes before your appointment. "
         "Chegue quinze minutos antes do hor\u00e1rio marcado."
     )
+
     report = {"model": settings.generation_model, "answers": []}
+
     async with AsyncClient(
         transport=ASGITransport(app=create_app(settings)),
         base_url="http://test",
@@ -153,9 +165,11 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
         assert uploaded.status_code == 202, uploaded.text
         assert await worker.run_once(settings=settings, storage=storage)
         source_id = uploaded.json()["id"]
+
         duplicate = await client.post("/sources/file", files=files)
         assert duplicate.status_code == 200
         assert duplicate.json()["status"] == "unchanged"
+
         reindexed = await client.post("/sources/file?reindex=true", files=files)
         assert reindexed.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
@@ -169,12 +183,16 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
                 "SELECT vector_dims(embedding) AS dimensions FROM chunks WHERE tenant_id = %s",
                 (settings.tenant_id,),
             )
+
             dimensions = await cursor.fetchall()
+
         assert dimensions and all(row["dimensions"] == 384 for row in dimensions)
+
         for method in ["cosine", "window", "lexical", "hybrid"]:
             result = await client.post(
                 "/search", json={"query": "documentos", "method": method, "limit": 1}
             )
+
             assert result.status_code == 200, result.text
             assert result.json()
             assert all(match["source_id"] == source_id for match in result.json())
@@ -188,9 +206,11 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
             response = await client.post(
                 "/ask", json={"query": question, "limit": 1, "window": window}
             )
+
             assert response.status_code == 200, response.text
             result = response.json()
             assert result["answer"] and result["matches"]
+
             for citation in result["citations"]:
                 assert citation["source_id"] == source_id
                 assert citation["content"]
@@ -201,6 +221,7 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
                     and match["content"].startswith(citation["content"])
                     for match in result["matches"]
                 )
+
             report["answers"].append(
                 {
                     "question": question,
@@ -212,6 +233,7 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
             )
 
     empty_app = create_app(replace(settings, tenant_id="empty-ollama-smoke"))
+
     async with AsyncClient(
         transport=ASGITransport(app=empty_app),
         base_url="http://test",
@@ -220,9 +242,11 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
         empty = await client.post("/ask", json={"query": "Any sources?"})
         assert empty.status_code == 200
         assert empty.json()["matches"] == empty.json()["citations"] == []
+
     missing_app = create_app(
         replace(settings, generation_model="rag-mtst-smoke-missing-model")
     )
+
     async with AsyncClient(
         transport=ASGITransport(app=missing_app),
         base_url="http://test",
@@ -231,6 +255,7 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
         missing = await client.post(
             "/ask", json={"query": "documents", "limit": 1, "window": 0}
         )
+
         assert missing.status_code == 502
 
     for name, value in {
@@ -244,9 +269,11 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
         "RAG_GENERATION_MAX_TOKENS": "256",
     }.items():
         monkeypatch.setenv(name, value)
+
     document_path = settings.data_dir.parent / "ollama-smoke.md"
     document_path.write_text(document, encoding="utf-8")
     capsys.readouterr()
+
     assert await asyncio.to_thread(main, ["add", str(document_path)]) == 0
     assert "already indexed" in capsys.readouterr().out
     assert (
@@ -264,6 +291,7 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
         == 0
     )
     assert capsys.readouterr().out.strip()
+
     print(
         "Ollama local workflow smoke:\n"
         + json.dumps(report, ensure_ascii=False, indent=2)
@@ -279,6 +307,7 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
     settings = replace(
         settings, embedding_provider="local", chunk_size=180, retrieval_window=2
     )
+
     revision = "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"
     model = local_module.SentenceTransformer(
         settings.embedding_model_name,
@@ -287,9 +316,11 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
         local_files_only=True,
         revision=revision,
     )
+
     monkeypatch.setattr(embeddings, "_load_local_model", lambda name: model)
     monkeypatch.setattr(ingestion, "embed_texts", embeddings.embed_texts)
     monkeypatch.setattr(retrieval, "embed_texts", embeddings.embed_texts)
+
     document = (
         "# Atendimento habitacional\n\n"
         "## Inscri\u00e7\u00e3o\n\n"
@@ -317,6 +348,7 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
         "A cozinha comunit\u00e1ria oferece almo\u00e7o gratuito aos domingos, no sal\u00e3o do bairro. "
         "N\u00e3o \u00e9 necess\u00e1rio fazer cadastro para receber uma refei\u00e7\u00e3o."
     )
+
     cases = [
         (
             "Q1",
@@ -354,12 +386,14 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
             {"Agendamento", "Chegada"},
         ),
     ]
+
     result = await ingestion.add_bytes(
         document.encode("utf-8"),
         source_name="atendimento-baseline.md",
         settings=settings,
         storage=storage,
     )
+
     chunks = await documents.list_chunks(storage, settings.tenant_id)
     headings = {chunk.chunk_index: chunk.metadata["heading"] for chunk in chunks}
     report = {
@@ -375,6 +409,7 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
         "hybrid_candidates_per_branch": 20,
         "cases": [],
     }
+
     for case_id, query, expected in cases:
         cosine = await search(
             query, method="cosine", limit=1, settings=settings, storage=storage
@@ -389,13 +424,16 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
         hybrid = await search(
             query, method="hybrid", limit=1, settings=settings, storage=storage
         )
+
         assert zero_window == cosine
         assert windows[: len(cosine)] == cosine
         assert all(match.score is None for match in windows[len(cosine) :])
         assert len({(match.source_id, match.chunk_index) for match in windows}) == len(
             windows
         )
+
         case_report = {"id": case_id, "query": query, "expected": sorted(expected)}
+
         for method, matches in [
             ("cosine", cosine),
             ("window", windows),
@@ -411,7 +449,9 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
                 ],
                 "all_expected_present": expected.issubset(returned),
             }
+
         report["cases"].append(case_report)
+
     print(
         "\nPortuguese local retrieval baseline:\n"
         + json.dumps(report, ensure_ascii=False, indent=2)

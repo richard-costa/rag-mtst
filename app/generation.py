@@ -31,11 +31,13 @@ class ConversationMessage(Protocol):
     @property
     def role(self) -> str:
         """Message author: user or assistant."""
+
         ...
 
     @property
     def content(self) -> str:
         """Message text."""
+
         ...
 
 
@@ -116,6 +118,7 @@ async def answer(
     Returns:
         Answer text, retrieved passages, and validated citations.
     """
+
     active_settings = settings or get_settings()
     api_key, base_url = generation_endpoint(active_settings)
     matches = await search(
@@ -127,6 +130,7 @@ async def answer(
         settings=active_settings,
         storage=storage,
     )
+
     if not matches:
         return Answer(
             text="I could not find matching sources to answer this question.",
@@ -137,14 +141,18 @@ async def answer(
     system = llm.system_prompt(
         _SYSTEM_PROMPT, _AnswerResponse, active_settings.generation_provider
     )
+
     budget = active_settings.generation_input_tokens - 64
+
     if active_settings.generation_provider != "deepseek":
         budget -= _token_count(
             json.dumps(_AnswerResponse.model_json_schema(), ensure_ascii=False)
         )
+
     user_prompt, sources = _build_context(
         question, matches, budget, history=history, system=system
     )
+
     try:
         async with llm.create_client(
             active_settings.generation_provider,
@@ -161,6 +169,7 @@ async def answer(
                 user=user_prompt,
                 max_tokens=active_settings.generation_max_tokens,
             )
+
     except llm.StructuredOutputError as error:
         raise GenerationError(f"The generation {error}") from error
 
@@ -170,6 +179,7 @@ async def answer(
         raise GenerationError(
             "The generation API returned an empty answer or invalid citations"
         )
+
     return Answer(
         text, matches, [source for source in sources if source.id in cited_ids]
     )
@@ -184,14 +194,17 @@ def generation_endpoint(settings: Settings) -> tuple[str, str]:
     Returns:
         Provider API key and API endpoint.
     """
+
     if settings.generation_provider not in llm.PROVIDERS:
         raise ValueError(
             "RAG_GENERATION_PROVIDER must be openai, deepseek, ollama, or anthropic"
         )
+
     if not settings.generation_model or not settings.generation_model.strip():
         raise ValueError(
             "Set RAG_GENERATION_MODEL to an available chat model for the selected provider"
         )
+
     if (
         min(
             settings.generation_input_tokens,
@@ -203,6 +216,7 @@ def generation_endpoint(settings: Settings) -> tuple[str, str]:
         raise ValueError(
             "Generation prompt, output, and timeout limits must be positive"
         )
+
     return (
         llm.api_key(settings.generation_provider, settings),
         llm.endpoint(
@@ -226,9 +240,12 @@ def _user_prompt(
     Returns:
         Serialized user prompt.
     """
+
     payload: dict[str, object] = {"question": question, "sources": sources}
+
     if history:
         payload["history"] = history
+
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -252,16 +269,19 @@ def _build_context(
     Returns:
         Serialized context and citations permitted by the prompt budget.
     """
+
     system_tokens = _token_count(system)
     empty_prompt_size = _token_count(_user_prompt(question, []))
     if system_tokens + empty_prompt_size >= budget:
         raise ValueError("Question exceeds the generation prompt budget; shorten it")
+
     selected_history: list[dict[str, str]] = []
     minimum_sources = [{"id": 1, "content": matches[0].content[:1]}] if matches else []
     history_budget = min(
         budget // 3,
         budget - system_tokens - _token_count(_user_prompt(question, minimum_sources)),
     )
+
     recent = history[-20:]
     for index in range(len(recent) - 2, -1, -2):
         pair = recent[index : index + 2]
@@ -269,18 +289,23 @@ def _build_context(
             raise ValueError(
                 "Conversation history must contain complete user/assistant turns"
             )
+
         candidate_history = [
             {"role": message.role, "content": message.content} for message in pair
         ] + selected_history
+
         if (
             _token_count(_user_prompt(question, [], candidate_history))
             - empty_prompt_size
             > history_budget
         ):
             break
+
         selected_history = candidate_history
+
     sources: list[dict[str, int | str]] = []
     citations = []
+
     for match in matches:
         source_id = len(sources) + 1
         lower, upper = 0, len(match.content) + 1
@@ -295,8 +320,10 @@ def _build_context(
                 lower = middle
             else:
                 upper = middle
+
         if not lower:
             break
+
         content = match.content[:lower]
         sources.append({"id": source_id, "content": content})
         citations.append(
@@ -310,12 +337,15 @@ def _build_context(
                 truncated=lower < len(match.content),
             )
         )
+
         if lower < len(match.content):
             break
+
     if not sources:
         raise ValueError(
             "Generation prompt budget is too small to include a source passage"
         )
+
     return _user_prompt(question, sources, selected_history), citations
 
 
@@ -328,4 +358,5 @@ def _token_count(text: str) -> int:
     Returns:
         Estimated number of tokens.
     """
+
     return len(tiktoken.get_encoding("cl100k_base").encode_ordinary(text))

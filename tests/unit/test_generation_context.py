@@ -16,6 +16,7 @@ from app.storage.records import Message
 def history_messages():
     def build(contents):
         conversation_id = uuid4()
+
         return [
             Message(
                 id=uuid4(),
@@ -42,6 +43,7 @@ async def test_context_budget_counts_tokens_and_keeps_exact_truncated_passage(
     passages[0] = replace(
         passages[0], content='Habita\u00e7\u00e3o "quoted" <|endoftext|>\n' * 500
     )
+
     requests = completion("Use the supplied passage [1].")
     settings = replace(
         generation_settings,
@@ -55,6 +57,7 @@ async def test_context_budget_counts_tokens_and_keeps_exact_truncated_passage(
     result = await generation.answer("Explain", settings=settings)
 
     payload = json.loads(requests[0].content)
+
     if provider == "anthropic":
         system = payload["system"]
         user = payload["messages"][0]["content"][0]["text"]
@@ -63,10 +66,12 @@ async def test_context_budget_counts_tokens_and_keeps_exact_truncated_passage(
         user = payload["input"][0]["content"][0]["text"]
     else:
         system, user = [message["content"] for message in payload["messages"]]
+
     encoding = tiktoken.get_encoding("cl100k_base")
     tokens = sum(
         len(encoding.encode(text, disallowed_special=())) for text in [system, user]
     )
+
     if provider != "deepseek":
         tokens += len(
             encoding.encode(
@@ -75,6 +80,7 @@ async def test_context_budget_counts_tokens_and_keeps_exact_truncated_passage(
                 )
             )
         )
+
     assert tokens + 64 <= settings.generation_input_tokens
     sources = json.loads(user)["sources"]
     assert len(sources) == 1
@@ -99,6 +105,7 @@ async def test_default_token_budget_keeps_evidence_beyond_old_character_limit(
         )
         for index in range(14)
     ]
+
     requests = completion(
         "The final passage provides the evidence [14].", citations=[14]
     )
@@ -109,6 +116,7 @@ async def test_default_token_budget_keeps_evidence_beyond_old_character_limit(
 
     payload = json.loads(requests[0].content)
     system, user = [message["content"] for message in payload["messages"]]
+
     assert len(system) + len(user) > 6000
     assert len(json.loads(user)["sources"]) == 14
     assert result.citations[0].chunk_index == 13
@@ -124,11 +132,14 @@ async def test_history_keeps_recent_complete_turns_as_untrusted_context(
 ):
     history = history_messages([f"Previous message {index}" for index in range(24)])
     requests = completion()
+
     result = await generation.answer(
         "What about booking?", settings=generation_settings, history=history
     )
+
     payload = json.loads(requests[0].content)
     prompt = json.loads(payload["messages"][1]["content"])
+
     assert prompt["history"] == [
         {"role": message.role, "content": message.content} for message in history[-20:]
     ]
@@ -150,10 +161,13 @@ async def test_history_budget_drops_whole_older_turns_and_preserves_source_space
     history = history_messages(
         ["Old question " * 500, "Old answer " * 500, "Latest question", "Latest answer"]
     )
+
     passages[0] = replace(passages[0], content='A long "source"\n' * 500)
     requests = completion("Use the current source [1].")
     settings = replace(generation_settings, generation_input_tokens=800)
+
     result = await generation.answer("Follow up", settings=settings, history=history)
+
     payload = json.loads(requests[0].content)
     system, user = [message["content"] for message in payload["messages"]]
     prompt = json.loads(user)
@@ -166,6 +180,7 @@ async def test_history_budget_drops_whole_older_turns_and_preserves_source_space
             )
         )
     )
+
     assert tokens + 64 <= settings.generation_input_tokens
     assert prompt["history"] == [
         {"role": message.role, "content": message.content} for message in history[-2:]
@@ -182,6 +197,7 @@ async def test_history_citations_do_not_authorize_previous_source_ids(
 ):
     history = history_messages(["Earlier question", "Earlier answer [99]."])
     completion("Reuse an earlier citation [99].", citations=[99])
+
     with pytest.raises(generation.GenerationError, match="invalid citations"):
         await generation.answer(
             "Follow up", settings=generation_settings, history=history
@@ -196,9 +212,11 @@ async def test_unusable_prompt_budget_never_calls_provider(
     completion,
 ):
     requests = completion()
+
     with pytest.raises(ValueError, match="prompt budget"):
         await generation.answer(
             "Question" * 100,
             settings=replace(generation_settings, generation_input_tokens=budget),
         )
+
     assert requests == []

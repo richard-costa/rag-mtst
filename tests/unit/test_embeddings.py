@@ -19,6 +19,7 @@ def local_model(monkeypatch):
     def tokenize(text, *, truncation, add_special_tokens):
         assert truncation is False
         assert add_special_tokens is True
+
         return {"input_ids": [101, *list(text), 102]}
 
     model = SimpleNamespace(
@@ -28,7 +29,9 @@ def local_model(monkeypatch):
         prompts={"document": "passage: "},
         _first_module=lambda: SimpleNamespace(do_lower_case=False),
     )
+
     monkeypatch.setattr(embeddings, "_load_local_model", lambda name: model)
+
     return model
 
 
@@ -57,6 +60,7 @@ async def test_local_chunk_preparation_preserves_all_text_and_provenance(
 
     assert len(prepared) > 1
     assert "".join(chunk.content for chunk in prepared) == original.content
+
     offset = 0
     for split_index, chunk in enumerate(prepared):
         assert chunk.content
@@ -81,7 +85,9 @@ async def test_local_chunk_preparation_preserves_all_text_and_provenance(
             original.content[chunk.metadata["start_char"] : chunk.metadata["end_char"]]
             == chunk.content
         )
+
         offset += len(chunk.content)
+
     assert "parent_chunk_index" not in original.metadata
 
 
@@ -112,12 +118,15 @@ async def test_local_page_ranges_are_explicitly_inherited_from_parent_body(local
         format="pdf",
         profile={"method": "test"},
     )
+
     chunks = chunk_markdown(extracted.text, 1000, pages=extracted.pages)
     chunks = [
         replace(chunk, metadata={**chunk.metadata, "extraction": extracted.profile})
         for chunk in chunks
     ]
+
     assert len(chunks) == 1
+
     prepared = await embeddings.prepare_chunks_for_embedding(
         chunks, settings=Settings(embedding_provider="local")
     )
@@ -134,6 +143,7 @@ async def test_local_page_ranges_are_explicitly_inherited_from_parent_body(local
         assert chunk.metadata["extraction"] == extracted.profile
         assert chunk.metadata["parent_chunk_index"] == 0
         assert chunk.page_number is None
+
     assert chunks[0].metadata["source_pages"]["scope"] == "body"
 
 
@@ -167,6 +177,7 @@ async def test_hosted_and_empty_preparation_do_not_load_a_local_model(monkeypatc
 
     monkeypatch.setattr(embeddings, "_load_local_model", unexpected_load)
     chunks = [ChunkInput("long text " * 100, {})]
+
     assert (
         await embeddings.prepare_chunks_for_embedding(chunks, settings=Settings())
         is chunks
@@ -210,6 +221,7 @@ async def test_local_token_measurement_matches_normalization(local_model):
 
     local_model.tokenizer = tokenize
     local_model.default_prompt_name = "document"
+
     assert embeddings._local_token_count(local_model, "  TEXT  ") == 3
     assert measured == ["passage:   text"]
 
@@ -219,6 +231,7 @@ async def test_unprepared_local_overflow_is_rejected_before_inference(local_mode
         pytest.fail("Oversized input must not reach inference")
 
     local_model.encode = unexpected_encode
+
     with pytest.raises(ValueError, match=r"input 0 uses 35 tokens.*allows 34"):
         await embeddings.embed_texts(
             ["x" * 33], settings=Settings(embedding_provider="local")
@@ -230,6 +243,7 @@ async def test_local_preparation_requires_a_real_positive_model_limit(
     limit, local_model
 ):
     local_model.max_seq_length = limit
+
     with pytest.raises(ValueError, match="positive max_seq_length"):
         await embeddings.prepare_chunks_for_embedding(
             [ChunkInput("hello", {})],
@@ -241,6 +255,7 @@ async def test_local_preparation_cannot_silently_drop_an_unencodable_character(
     local_model,
 ):
     local_model.max_seq_length = 2
+
     with pytest.raises(ValueError, match="cannot fit a source character"):
         await embeddings.prepare_chunks_for_embedding(
             [ChunkInput("x", {})],
@@ -257,6 +272,7 @@ async def test_local_preparation_cannot_silently_drop_an_unencodable_character(
 )
 def test_provider_defaults_and_model_override(provider, model) -> None:
     settings = Settings(embedding_provider=provider)
+
     assert settings.embedding_model_name == model
     assert (
         replace(settings, embedding_model="another-model").embedding_model_name
@@ -298,6 +314,7 @@ async def test_openai_batches_and_restores_input_order(monkeypatch, base_url) ->
         body = json.loads(request.content)
         requests.append(body)
         request_urls.append(str(request.url))
+
         return Response(
             200,
             json={
@@ -323,6 +340,7 @@ async def test_openai_batches_and_restores_input_order(monkeypatch, base_url) ->
             **kwargs, http_client=AsyncClient(transport=MockTransport(respond))
         ),
     )
+
     settings = Settings(openai_api_key="test-key", openai_base_url=base_url)
     vectors = await embeddings.embed_texts(
         [str(index) for index in range(130)], settings=settings
@@ -342,6 +360,7 @@ async def test_local_model_encodes_without_api_credentials(local_model) -> None:
         return SimpleNamespace(tolist=lambda: [[1.0, 0.0], [0.0, 1.0]])
 
     local_model.encode = encode
+
     vectors = await embeddings.embed_texts(
         ["ola", "hello"], settings=Settings(embedding_provider="local")
     )

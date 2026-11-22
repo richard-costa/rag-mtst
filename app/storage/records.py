@@ -29,6 +29,7 @@ class Source:
         Returns:
             Reference basename for file sources; the full reference otherwise.
         """
+
         return (
             Path(self.reference).name if self.source_type == "file" else self.reference
         )
@@ -85,6 +86,7 @@ class StoredChunk:
         Returns:
             Reference basename for file sources; the full reference otherwise.
         """
+
         return (
             Path(self.source_reference).name
             if self.source_type == "file"

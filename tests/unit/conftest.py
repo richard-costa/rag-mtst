@@ -21,6 +21,7 @@ from app.retrieval import SearchResult
 @pytest.fixture
 def api_client():
     """Authenticated test client for an API with default settings."""
+
     with TestClient(
         create_app(Settings(api_key="test-key")),
         headers={"Authorization": "Bearer test-key"},
@@ -48,6 +49,7 @@ def passages(monkeypatch):
         return matches
 
     monkeypatch.setattr(generation, "search", search)
+
     return matches
 
 
@@ -70,20 +72,24 @@ def completion(monkeypatch, openai_response):
             requests.append(request)
             native = request.url.path.endswith("/messages")
             response_type = AnthropicResponse if native else Response
+
             if status != 200:
                 return response_type(
                     status, json={"error": {"message": "private provider detail"}}
                 )
+
             references = (
                 citations
                 if citations is not None
                 else [int(value) for value in re.findall(r"\[([12])\]", text or "")]
             )
+
             content = (
                 raw
                 if raw is not None
                 else json.dumps({"text": text, "citations": references})
             )
+
             if native:
                 return AnthropicResponse(
                     200,
@@ -98,10 +104,12 @@ def completion(monkeypatch, openai_response):
                         "usage": {"input_tokens": 100, "output_tokens": 32},
                     },
                 )
+
             if request.url.path.endswith("/responses"):
                 body = openai_response(content, finish=finish, refusal=refusal)
                 body.update(response_changes or {})
                 return Response(200, json=body)
+
             return Response(
                 200,
                 json={
@@ -127,12 +135,14 @@ def completion(monkeypatch, openai_response):
 
         def client(**kwargs):
             assert kwargs["max_retries"] == 0
+
             return AsyncOpenAI(
                 **kwargs, http_client=AsyncClient(transport=MockTransport(respond))
             )
 
         def anthropic_client(**kwargs):
             assert kwargs["max_retries"] == 0
+
             return AsyncAnthropic(
                 **kwargs,
                 http_client=AnthropicHTTPClient(transport=AnthropicTransport(respond)),
@@ -140,6 +150,7 @@ def completion(monkeypatch, openai_response):
 
         monkeypatch.setattr(llm, "AsyncOpenAI", client)
         monkeypatch.setattr(llm, "AsyncAnthropic", anthropic_client)
+
         return requests
 
     return install

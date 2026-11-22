@@ -33,8 +33,10 @@ def _sqlalchemy_url(url: str) -> str:
     Returns:
         SQLAlchemy-compatible database URL.
     """
+
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+psycopg://", 1)
+
     return url
 
 
@@ -55,12 +57,14 @@ target_metadata = None
 
 def run_migrations_offline() -> None:
     """Emit schema migrations as SQL without opening a database connection."""
+
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
+
     with context.begin_transaction():
         context.run_migrations()
 
@@ -73,11 +77,13 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Apply schema migrations using a temporary database connection."""
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():

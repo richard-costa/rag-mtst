@@ -23,6 +23,7 @@ def validate_extraction_method(method: str) -> None:
     Args:
         method: Optional retrieval algorithm override.
     """
+
     if method not in {"parser", "visual"}:
         raise ValueError(
             f"Unsupported extraction method {method!r}; choose parser or visual"
@@ -45,9 +46,12 @@ def get_extraction_profile(
     Returns:
         Reproducible extractor configuration metadata.
     """
+
     validate_extraction_method(extraction_method)
+
     if extraction_method == "visual":
         return visual.get_extraction_profile(suffix, settings or get_settings())
+
     return parser.get_extraction_profile(suffix)
 
 
@@ -75,12 +79,15 @@ async def extract_source(
     Returns:
         Extracted text with page or slide metadata.
     """
+
     validate_extraction_method(extraction_method)
     active_settings = settings or get_settings()
+
     if extraction_method == "visual":
         return await visual.extract_with_visual(
             content, suffix, settings=active_settings
         )
+
     return await asyncio.to_thread(
         parser.extract_with_parser,
         content,

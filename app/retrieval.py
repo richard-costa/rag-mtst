@@ -65,6 +65,7 @@ async def search(
     Returns:
         Passages ranked by the selected retrieval strategy.
     """
+
     if not query.strip():
         raise ValueError("The search query must not be empty")
 
@@ -72,26 +73,32 @@ async def search(
     result_limit = limit if limit is not None else active_settings.retrieval_limit
     if result_limit <= 0:
         raise ValueError("limit must be greater than zero")
+
     selected_method = method if method is not None else active_settings.retrieval_method
     if selected_method not in {"cosine", "window", "lexical", "hybrid"}:
         raise ValueError("method must be 'cosine', 'window', 'lexical', or 'hybrid'")
+
     context_window = window if window is not None else active_settings.retrieval_window
     if context_window < 0:
         raise ValueError("window must be zero or greater")
+
     if assembly not in {"document", "score"}:
         raise ValueError("assembly must be 'document' or 'score'")
 
     active_storage = storage or Database(active_settings.database_url)
+
     if selected_method == "lexical":
         return await search_lexical(
             query, limit=result_limit, settings=active_settings, storage=active_storage
         )
+
     if selected_method == "hybrid":
         return await search_hybrid(
             query, limit=result_limit, settings=active_settings, storage=active_storage
         )
 
     vectors = await embed_texts([query], settings=active_settings)
+
     if selected_method == "cosine":
         return await search_cosine(
             vectors[0],
@@ -99,6 +106,7 @@ async def search(
             settings=active_settings,
             storage=active_storage,
         )
+
     return await search_with_windows(
         vectors[0],
         limit=result_limit,
@@ -129,6 +137,7 @@ async def search_cosine(
     Returns:
         Passages ranked by vector similarity.
     """
+
     chunks = await documents.vector_search(
         storage,
         tenant_id=settings.tenant_id,
@@ -137,6 +146,7 @@ async def search_cosine(
         embedding_model=settings.embedding_model_name,
         limit=limit,
     )
+
     return [_search_result(chunk, score=chunk.score) for chunk in chunks]
 
 
@@ -168,18 +178,22 @@ async def search_with_windows(
     Returns:
         Seed hits and adjacent passages, deduplicated by source span.
     """
+
     seeds = await search_cosine(
         embedding, limit=limit, settings=settings, storage=storage
     )
+
     if window == 0:
         return seeds
 
     matches = {(seed.source_id, seed.chunk_index): seed for seed in seeds}
     windows = []
+
     for rank, seed in enumerate(seeds):
         windows.append(
             (seed.source_id, seed.chunk_index - window, seed.chunk_index + window, rank)
         )
+
         neighbors = await documents.get_chunk_window(
             storage,
             tenant_id=settings.tenant_id,
@@ -187,6 +201,7 @@ async def search_with_windows(
             chunk_index=seed.chunk_index,
             window=window,
         )
+
         for chunk in neighbors:
             identity = (str(chunk.source_id), chunk.chunk_index)
             if identity not in matches:
@@ -195,15 +210,19 @@ async def search_with_windows(
     if assembly == "score":
         seed_ids = {(seed.source_id, seed.chunk_index) for seed in seeds}
         ordered: dict[tuple[str, int], SearchResult] = {}
+
         for seed in seeds:
             ordered.setdefault((seed.source_id, seed.chunk_index), seed)
+
             for index in range(seed.chunk_index - window, seed.chunk_index + window + 1):
                 identity = (seed.source_id, index)
                 if identity in matches and identity not in seed_ids:
                     ordered.setdefault(identity, matches[identity])
+
         return list(ordered.values())
 
     merged: list[tuple[str, int, int, int]] = []
+
     for source_id, start, end, rank in sorted(windows):
         if merged and merged[-1][0] == source_id and start <= merged[-1][2]:
             previous = merged[-1]
@@ -213,8 +232,10 @@ async def search_with_windows(
                 max(end, previous[2]),
                 min(rank, previous[3]),
             )
+
         else:
             merged.append((source_id, start, end, rank))
+
     return [
         match
         for source_id, start, end, rank in sorted(merged, key=lambda group: group[3])
@@ -249,14 +270,17 @@ async def search_lexical(
     Returns:
         Passages ranked by lexical relevance.
     """
+
     if not _terms(query):
         raise ValueError("The search query must contain at least one word")
+
     chunks = await documents.full_text_search(
         storage,
         tenant_id=settings.tenant_id,
         query=query,
         limit=limit,
     )
+
     return [_search_result(chunk, score=chunk.score) for chunk in chunks]
 
 
@@ -280,8 +304,10 @@ async def search_hybrid(
     Returns:
         Passages ranked by combined reciprocal rank.
     """
+
     if not _terms(query):
         raise ValueError("The search query must contain at least one word")
+
     candidate_limit = max(20, 4 * limit)
     vectors = await embed_texts([query], settings=settings)
     cosine = await search_cosine(
@@ -290,20 +316,25 @@ async def search_hybrid(
         settings=settings,
         storage=storage,
     )
+
     lexical = await search_lexical(
         query,
         limit=candidate_limit,
         settings=settings,
         storage=storage,
     )
+
     scores: dict[tuple[str, int], float] = {}
     matches: dict[tuple[str, int], SearchResult] = {}
+
     for ranking in (cosine, lexical):
         for rank, match in enumerate(ranking, start=1):
             identity = (match.source_id, match.chunk_index)
             scores[identity] = scores.get(identity, 0.0) + 1 / (60 + rank)
             matches.setdefault(identity, match)
+
     ordered = sorted(scores, key=lambda identity: (-scores[identity], *identity))
+
     return [
         replace(matches[identity], score=scores[identity])
         for identity in ordered[:limit]
@@ -330,6 +361,7 @@ async def search_mmr(
     Raises:
         NotImplementedError: This retrieval strategy is not implemented.
     """
+
     raise NotImplementedError("MMR retrieval is not implemented yet")
 
 
@@ -347,6 +379,7 @@ async def search_multi_query(
     Raises:
         NotImplementedError: This retrieval strategy is not implemented.
     """
+
     raise NotImplementedError("Multi-query retrieval is not implemented yet")
 
 
@@ -366,6 +399,7 @@ def _search_result(chunk: StoredChunk, *, score: float | None) -> SearchResult:
     Returns:
         Public retrieval result.
     """
+
     return SearchResult(
         source_id=str(chunk.source_id),
         source_title=chunk.source_title,
@@ -386,4 +420,5 @@ def _terms(text: str) -> list[str]:
     Returns:
         Normalized query terms.
     """
+
     return re.findall(r"[^\W_]+", text.casefold())

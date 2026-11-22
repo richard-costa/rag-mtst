@@ -27,7 +27,9 @@ async def test_valid_structured_citations_preserve_source_order(
     completion,
 ):
     completion(text, citations=citations)
+
     result = await generation.answer("Question", settings=generation_settings)
+
     assert result.text == text
     assert result.matches == passages
     assert [citation.id for citation in result.citations] == expected_ids
@@ -50,5 +52,6 @@ async def test_unknown_structured_citations_are_rejected(
     completion,
 ):
     completion(text, citations=citations)
+
     with pytest.raises(generation.GenerationError, match="invalid citations"):
         await generation.answer("Question", settings=generation_settings)

@@ -26,10 +26,13 @@ def test_env_loader_preserves_exported_values_and_anchors_staging(
     (tmp_path / ".env").write_text(
         "# Comment\nOPENAI_API_KEY=from-file\nRAG_GENERATION_MODEL='some-model'\n"
     )
+
     monkeypatch.setenv("OPENAI_API_KEY", "from-shell")
     monkeypatch.delenv("RAG_GENERATION_MODEL", raising=False)
     monkeypatch.delenv("RAG_DATA_DIR", raising=False)
+
     local.load_environment()
+
     assert local.os.environ["OPENAI_API_KEY"] == "from-shell"
     assert local.os.environ["RAG_GENERATION_MODEL"] == "some-model"
     assert local.os.environ["RAG_DATA_DIR"] == str(tmp_path / ".rag-data")
@@ -38,6 +41,7 @@ def test_env_loader_preserves_exported_values_and_anchors_staging(
 def test_env_loader_reports_invalid_lines(monkeypatch, tmp_path):
     _checkout(tmp_path, monkeypatch)
     (tmp_path / ".env").write_text("invalid line")
+
     with pytest.raises(local.LocalError, match="line 1"):
         local.load_environment()
 
@@ -49,15 +53,19 @@ def test_start_creates_private_env_template_and_stops_before_docker(
     monkeypatch.setattr(
         local, "_docker", lambda *a, **k: pytest.fail("Docker should not start")
     )
+
     with pytest.raises(local.LocalError, match="Created .env"):
         local.start()
+
     assert (tmp_path / ".env").read_text() == (tmp_path / ".env.example").read_text()
 
 
 def test_configuration_identifies_missing_provider_values(monkeypatch):
     monkeypatch.setattr("app.config.get_settings", lambda: Settings())
+
     with pytest.raises(local.LocalError, match="OPENAI_API_KEY") as err:
         local._verify_configuration()
+
     assert "RAG_GENERATION_MODEL" in str(err.value)
 
 
@@ -78,6 +86,7 @@ def test_start_reuses_ready_worker_and_runs_migrations(monkeypatch, tmp_path, ca
     monkeypatch.setattr(
         local.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0)
     )
+
     assert local.start() == 0
     assert ("up", "-d", "--wait", "db") in calls
     assert "Ingestion worker already running" in capsys.readouterr().out
@@ -92,12 +101,14 @@ def test_stop_ignores_stale_pid_and_preserves_db(monkeypatch, tmp_path):
     monkeypatch.setattr(
         local.os, "kill", lambda *args: pytest.fail("must not signal unrelated PID")
     )
+
     calls = []
     monkeypatch.setattr(
         local,
         "_docker",
         lambda *a, **k: calls.append(a) or SimpleNamespace(returncode=0),
     )
+
     assert local.stop() == 0
     assert calls == [("stop", "db")]
     assert not (runtime / "worker.json").exists()
@@ -109,6 +120,7 @@ def test_reset_requires_explicit_confirmation(monkeypatch, tmp_path):
     monkeypatch.setattr(
         local, "_docker", lambda *a, **k: pytest.fail("reset must not touch Docker")
     )
+
     assert local.reset() == 1
 
 
@@ -120,6 +132,7 @@ def test_worker_identity_requires_matching_launch_token(monkeypatch):
             returncode=0, stdout="python -m app.local worker " + "b" * 32
         ),
     )
+
     assert not local._worker_alive((1234, "a" * 32))
     assert local._worker_alive((1234, "b" * 32))
 
@@ -129,6 +142,7 @@ def test_configuration_accepts_complete_settings(monkeypatch):
         "app.config.get_settings",
         lambda: Settings(openai_api_key="key", generation_model="model"),
     )
+
     local._verify_configuration()
 
 
@@ -164,6 +178,7 @@ def test_configuration_accepts_complete_settings(monkeypatch):
 )
 def test_configuration_reports_invalid_settings(monkeypatch, settings, message):
     monkeypatch.setattr("app.config.get_settings", lambda: settings)
+
     with pytest.raises(local.LocalError, match=message):
         local._verify_configuration()
 
@@ -173,7 +188,9 @@ def test_configuration_requires_local_embedding_extra(monkeypatch):
         "app.config.get_settings",
         lambda: Settings(embedding_provider="local", generation_model="model"),
     )
+
     monkeypatch.setattr("importlib.util.find_spec", lambda name: None)
+
     with pytest.raises(local.LocalError, match="--extra local"):
         local._verify_configuration()
 
@@ -191,6 +208,7 @@ def test_docker_failures_become_actionable_errors(
         raise error
 
     monkeypatch.setattr(local.subprocess, "run", fail)
+
     with pytest.raises(local.LocalError, match=message):
         local._docker("version")
 
@@ -212,6 +230,7 @@ def test_database_readiness_requires_a_healthy_container(
         "_docker",
         lambda *a, **k: SimpleNamespace(returncode=returncode, stdout=stdout),
     )
+
     assert local._docker_ready() is ready
 
 
@@ -229,8 +248,10 @@ def test_worker_record_is_validated(monkeypatch, tmp_path, record, expected):
     _checkout(tmp_path, monkeypatch)
     runtime = local._state_dir()
     runtime.mkdir(parents=True)
+
     if record is not None:
         (runtime / "worker.json").write_text(record)
+
     assert local._worker_info() == expected
 
 
@@ -241,6 +262,7 @@ def test_worker_readiness_requires_its_own_marker(monkeypatch, tmp_path, marker,
     runtime.mkdir(parents=True)
     (runtime / "ready").write_text(marker)
     monkeypatch.setattr(local, "_worker_alive", lambda info: True)
+
     assert local._worker_ready((42, "a" * 32)) is ready
 
 
@@ -252,6 +274,7 @@ def _prepare_start(monkeypatch, tmp_path, *, docker=None, migrated=0):
     monkeypatch.setattr(
         local, "_docker", docker or (lambda *a, **k: SimpleNamespace(returncode=0))
     )
+
     monkeypatch.setattr(local, "_docker_ready", lambda: True)
     monkeypatch.setattr(
         local.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=migrated)
@@ -275,13 +298,16 @@ def test_start_stops_at_the_first_failed_dependency(
     _prepare_start(
         monkeypatch, tmp_path, docker=docker, migrated=int(failure == "migration")
     )
+
     if failure == "database":
         monkeypatch.setattr(local, "_docker_ready", lambda: False)
+
     monkeypatch.setattr(
         local.subprocess,
         "Popen",
         lambda *a, **k: pytest.fail("The worker must not start"),
     )
+
     with pytest.raises(local.LocalError, match=message):
         local.start()
 
@@ -308,6 +334,7 @@ def test_start_launches_worker_and_waits_for_readiness(monkeypatch, tmp_path, ca
     monkeypatch.setattr(local.subprocess, "Popen", launch)
     monkeypatch.setattr(local, "_worker_alive", lambda info: False)
     monkeypatch.setattr(local, "_worker_ready", lambda info: next(readiness))
+
     assert local.start() == 0
     record = json.loads((local._state_dir() / "worker.json").read_text())
     assert record["pid"] == 4321
@@ -333,8 +360,10 @@ def test_start_reports_worker_startup_failures(
     monkeypatch.setattr(
         local.subprocess, "Popen", lambda *a, **k: _FakeWorker(exit_code)
     )
+
     monkeypatch.setattr(local, "_worker_alive", lambda info: alive)
     monkeypatch.setattr(local, "_worker_ready", lambda info: False)
+
     with pytest.raises(local.LocalError, match=message):
         local.start()
 
@@ -348,6 +377,7 @@ def test_status_reports_both_services(
     _checkout(tmp_path, monkeypatch)
     monkeypatch.setattr(local, "_docker_ready", lambda: database)
     monkeypatch.setattr(local, "_worker_ready", lambda info: worker)
+
     assert local.status() == code
     output = capsys.readouterr().out
     assert f"PostgreSQL: {'ready' if database else 'stopped or unhealthy'}" in output
@@ -362,6 +392,7 @@ def test_status_treats_missing_docker_as_stopped(monkeypatch, tmp_path):
 
     monkeypatch.setattr(local, "_docker_ready", missing)
     monkeypatch.setattr(local, "_worker_ready", lambda info: True)
+
     assert local.status() == 1
 
 
@@ -371,6 +402,7 @@ def _record_worker(monkeypatch, tmp_path):
     runtime.mkdir(parents=True)
     (runtime / "worker.json").write_text(json.dumps({"pid": 4321, "token": "a" * 32}))
     monkeypatch.setattr(local.time, "sleep", lambda seconds: None)
+
     return runtime
 
 
@@ -386,6 +418,7 @@ def test_stop_terminates_live_worker_then_database(monkeypatch, tmp_path):
         "_docker",
         lambda *a, **k: docker.append(a) or SimpleNamespace(returncode=0),
     )
+
     assert local.stop() == 0
     assert signals == [(4321, local.signal.SIGTERM)]
     assert docker == [("stop", "db")]
@@ -400,6 +433,7 @@ def test_stop_reports_worker_that_does_not_exit(monkeypatch, tmp_path):
     monkeypatch.setattr(
         local, "_docker", lambda *a, **k: pytest.fail("Database must keep running")
     )
+
     with pytest.raises(local.LocalError, match="did not exit"):
         local.stop()
 
@@ -408,6 +442,7 @@ def test_stop_reports_database_failure(monkeypatch, tmp_path):
     _record_worker(monkeypatch, tmp_path)
     monkeypatch.setattr(local, "_worker_alive", lambda info: False)
     monkeypatch.setattr(local, "_docker", lambda *a, **k: SimpleNamespace(returncode=1))
+
     with pytest.raises(local.LocalError, match="Could not stop PostgreSQL"):
         local.stop()
 
@@ -428,6 +463,7 @@ def test_reset_removes_database_and_default_staging(
         "_docker",
         lambda *a, **k: calls.append(a) or SimpleNamespace(returncode=0),
     )
+
     assert local.reset(yes=confirmation == "flag") == 0
     assert calls == [("down", "--volumes")]
     assert not staging.exists()
@@ -440,6 +476,7 @@ def test_reset_preserves_custom_staging_path(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("RAG_DATA_DIR", str(custom))
     monkeypatch.setattr(local, "_worker_alive", lambda info: False)
     monkeypatch.setattr(local, "_docker", lambda *a, **k: SimpleNamespace(returncode=0))
+
     assert local.reset(yes=True) == 0
     assert (custom / "ingestion").exists()
     assert "Custom staging path was preserved" in capsys.readouterr().out
@@ -449,6 +486,7 @@ def test_reset_reports_database_removal_failure(monkeypatch, tmp_path):
     _checkout(tmp_path, monkeypatch)
     monkeypatch.setattr(local, "_worker_alive", lambda info: False)
     monkeypatch.setattr(local, "_docker", lambda *a, **k: SimpleNamespace(returncode=1))
+
     with pytest.raises(local.LocalError, match="Could not remove"):
         local.reset(yes=True)
 
@@ -476,6 +514,7 @@ def test_worker_child_marks_readiness_only_while_running(monkeypatch, tmp_path):
     monkeypatch.setattr(local, "load_environment", lambda: None)
     monkeypatch.setattr("psycopg.connect", lambda *a, **k: _Connection())
     monkeypatch.setattr(local, "_run_worker", run)
+
     assert local.worker_child("a" * 32) == 0
     assert observed == ["a" * 32]
     assert not (runtime / "ready").exists()
@@ -494,5 +533,6 @@ def test_worker_child_fails_without_database(monkeypatch, tmp_path):
     monkeypatch.setattr(
         local, "_run_worker", lambda: pytest.fail("Worker must not start")
     )
+
     assert local.worker_child("a" * 32) == 1
     assert not (runtime / "ready").exists()

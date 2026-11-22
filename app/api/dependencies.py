@@ -19,6 +19,7 @@ async def get_api_settings(request: Request) -> Settings:
     Returns:
         Server configuration, including its fixed tenant scope.
     """
+
     return request.app.state.settings
 
 
@@ -31,6 +32,7 @@ async def get_storage(request: Request) -> Database:
     Returns:
         Application database handle; no connection is opened here.
     """
+
     return request.app.state.storage
 
 
@@ -53,6 +55,7 @@ async def authenticate(
     Raises:
         HTTPException: A 401 response for missing or invalid credentials.
     """
+
     configured_key = (settings.api_key or "").encode("utf-8")
     if (
         credentials is None

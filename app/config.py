@@ -17,9 +17,11 @@ def _positive_integer(name: str, default: int) -> int:
     Returns:
         Positive integer read from the environment or default.
     """
+
     value = int(os.getenv(name, default))
     if value <= 0:
         raise ValueError(f"{name} must be greater than zero")
+
     return value
 
 
@@ -61,6 +63,7 @@ class Settings:
         Returns:
             Directory used to stage source files.
         """
+
         return self.data_dir / "sources"
 
     @property
@@ -70,10 +73,13 @@ class Settings:
         Returns:
             Configured embedding model identifier.
         """
+
         if self.embedding_model:
             return self.embedding_model
+
         if self.embedding_provider == "local":
             return "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
         return "text-embedding-3-small"
 
     @classmethod
@@ -83,7 +89,9 @@ class Settings:
         Returns:
             Validated runtime settings.
         """
+
         defaults = cls()
+
         return cls(
             data_dir=Path(
                 os.getenv("RAG_DATA_DIR", str(defaults.data_dir))
@@ -118,4 +126,5 @@ def get_settings() -> Settings:
     Returns:
         Settings loaded from the environment.
     """
+
     return Settings.from_environment()

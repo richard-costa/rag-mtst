@@ -37,6 +37,7 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
     text = "# Housing\n\n" + body
     original_chunks = chunk_markdown(text, settings.chunk_size)
     assert len(original_chunks) == 1
+
     encoded = []
 
     class LocalModel:
@@ -50,6 +51,7 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
         def tokenizer(self, text, *, truncation, add_special_tokens):
             assert truncation is False
             assert add_special_tokens is True
+
             return {"input_ids": [101, *list(text), 102]}
 
         def encode(self, texts, **kwargs):
@@ -57,6 +59,7 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
             vectors = [
                 [1.0, float("TAILMARKER" in text.strip()[:64]), 0.0] for text in texts
             ]
+
             return SimpleNamespace(tolist=lambda: vectors)
 
     model = LocalModel()
@@ -71,10 +74,12 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
         storage=storage,
     )
     chunks = await documents.list_chunks(storage, settings.tenant_id)
+
     assert result.chunk_count == len(chunks) == len(encoded) > 1
     assert "".join(chunk.content for chunk in chunks) == original_chunks[0].content
     assert [chunk.chunk_index for chunk in chunks] == list(range(len(chunks)))
     assert encoded == [chunk.content for chunk in chunks]
+
     for chunk in chunks:
         assert (
             len(
@@ -107,6 +112,7 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
     matches = await search(
         "TAILMARKER", method="cosine", limit=1, settings=settings, storage=storage
     )
+
     assert len(matches) == 1
     assert "TAILMARKER" in matches[0].content
     assert matches[0].source_id == str(result.source.id)
@@ -118,6 +124,7 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
         settings=settings,
         storage=storage,
     )
+
     assert duplicate.created is False
     assert duplicate.source.id == result.source.id
     assert duplicate.chunk_count == 0
@@ -127,6 +134,7 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
         raise RuntimeError("inference failed")
 
     monkeypatch.setattr(model, "encode", fail_encode)
+
     with pytest.raises(EmbeddingError, match="could not load or encode"):
         await ingestion.add_bytes(
             text.encode("utf-8"),
@@ -135,6 +143,7 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
             settings=settings,
             storage=storage,
         )
+
     assert await documents.list_chunks(storage, settings.tenant_id) == chunks
 
 
@@ -150,10 +159,12 @@ async def test_native_office_upload_persists_searchable_chunks(
     monkeypatch.setattr(parser, "_convert_office_to_pdf", reject_conversion)
     content = office_document(".docx")
     source_name = "native.docx"
+
     async with api_client() as client:
         uploaded = await client.post(
             "/sources/file", files={"file": (source_name, content)}
         )
+
         assert uploaded.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
         source_id = uploaded.json()["id"]
@@ -166,6 +177,7 @@ async def test_native_office_upload_persists_searchable_chunks(
         matches = await client.post(
             "/search", json={"query": "Bricks", "method": "lexical"}
         )
+
         assert matches.status_code == 200
         assert matches.json()[0]["source_id"] == source_id
 
@@ -182,12 +194,14 @@ async def test_extraction_profile_conflict_requires_explicit_reindex(
     original = await ingestion.add_bytes(
         content, source_name="profile.md", settings=settings, storage=storage
     )
+
     await documents.replace_chunks(
         storage,
         tenant_id=settings.tenant_id,
         source_id=original.source.id,
         chunks=[ChunkInput("Old searchable text", {"extraction": stored_profile})],
     )
+
     old_chunks = await documents.list_chunks(storage, settings.tenant_id)
 
     def reject_extraction(*args, **kwargs):
@@ -199,6 +213,7 @@ async def test_extraction_profile_conflict_requires_explicit_reindex(
             await ingestion.add_bytes(
                 content, source_name="profile.md", settings=settings, storage=storage
             )
+
     assert await documents.list_chunks(storage, settings.tenant_id) == old_chunks
     assert original.source.reference == "profile.md"
 
@@ -209,15 +224,18 @@ async def test_extraction_profile_conflict_requires_explicit_reindex(
         storage=storage,
         reindex=True,
     )
+
     assert reindexed.source.id == original.source.id
     assert await documents.get_source_extraction_profile(
         storage,
         settings.tenant_id,
         original.source.id,
     ) == get_extraction_profile(".md")
+
     duplicate = await ingestion.add_bytes(
         content, source_name="profile.md", settings=settings, storage=storage
     )
+
     assert duplicate.created is False and duplicate.chunk_count == 0
 
 
@@ -229,19 +247,25 @@ async def test_explicit_extraction_selection_and_profile_conflicts_through_http_
 
     content = b"Profile-aware searchable document."
     files = {"file": ("profile.md", content, "text/markdown")}
+
     async with api_client() as client:
         first = await client.post("/sources/file?extraction_method=parser", files=files)
+
         assert first.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
         source = await documents.get_source_by_content_hash(
             storage, settings.tenant_id, ingestion.sha256(content).hexdigest()
         )
+
         assert source is not None
+
         for method in ("Visual", "unknown", "Parser"):
             rejected = await client.post(
                 "/sources/file", params={"extraction_method": method}, files=files
             )
+
             assert rejected.status_code == 422
+
             with pytest.raises(ValueError, match="Unsupported extraction method"):
                 await ingestion.add_bytes(
                     content,
@@ -250,6 +274,7 @@ async def test_explicit_extraction_selection_and_profile_conflicts_through_http_
                     storage=storage,
                     extraction_method=method,
                 )
+
         with pytest.raises(ValueError, match="Unsupported extraction method"):
             await add_file(
                 "missing-file.md", settings=settings, extraction_method="unknown"
@@ -261,9 +286,11 @@ async def test_explicit_extraction_selection_and_profile_conflicts_through_http_
             source_id=source.id,
             chunks=[ChunkInput("Searchable text without an extraction profile", {})],
         )
+
         unprofiled = await client.post(
             "/sources/file?extraction_method=parser", files=files
         )
+
         assert unprofiled.status_code == 422
         assert "explicit reindexing is required" in unprofiled.json()["detail"]
 
@@ -272,6 +299,7 @@ async def test_explicit_extraction_selection_and_profile_conflicts_through_http_
         monkeypatch.setenv("DATABASE_URL", settings.database_url)
         monkeypatch.setenv("RAG_DATA_DIR", str(settings.data_dir))
         monkeypatch.setenv("RAG_TENANT_ID", settings.tenant_id)
+
         assert (
             await asyncio.to_thread(
                 main, ["add", str(document), "--extraction-method", "parser"]
@@ -287,9 +315,11 @@ async def test_explicit_extraction_selection_and_profile_conflicts_through_http_
         assert await documents.get_source_extraction_profile(
             storage, settings.tenant_id, source.id
         ) == get_extraction_profile(".md")
+
         reused = await client.post(
             "/sources/file?extraction_method=parser", files=files
         )
+
         assert reused.status_code == 200
         assert reused.json() == {
             "id": str(source.id),
@@ -311,6 +341,7 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
     settings = replace(
         settings, visual_model="vision-model", openai_api_key="synthetic-key"
     )
+
     document = pdf_document(("First", "", "Table"))
     pages = [
         {"markdown": "# Inventory", "blank": False},
@@ -320,12 +351,15 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
             "blank": False,
         },
     ]
+
     requests = vision_reply(pages)
+
     async with api_client(settings) as client:
         files = {"file": ("visual.pdf", document, "application/pdf")}
         uploaded = await client.post(
             "/sources/file?extraction_method=visual", files=files
         )
+
         assert uploaded.status_code == 202, uploaded.text
         assert await worker.run_once(settings=settings, storage=storage)
         chunks = await documents.list_chunks(storage, settings.tenant_id)
@@ -334,18 +368,23 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
         )
         assert any(chunk.metadata["source_pages"]["end"] == 3 for chunk in chunks)
         assert len(requests) == 3
+
         repeated = await client.post(
             "/sources/file?extraction_method=visual", files=files
         )
+
         assert repeated.status_code == 200 and repeated.json()["status"] == "unchanged"
         assert len(requests) == 3
+
         parsed = await client.post(
             "/sources/file?extraction_method=parser", files=files
         )
+
         assert parsed.status_code == 422 and "reindex" in parsed.json()["detail"]
 
         path = settings.data_dir.parent / "visual.pdf"
         path.write_bytes(document)
+
         for name, value in {
             "DATABASE_URL": settings.database_url,
             "RAG_DATA_DIR": str(settings.data_dir),
@@ -353,6 +392,7 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
             "RAG_VISUAL_MODEL": "vision-model",
         }.items():
             monkeypatch.setenv(name, value)
+
         assert (
             await asyncio.to_thread(
                 main, ["add", str(path), "--extraction-method", "visual"]
@@ -360,6 +400,7 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
             == 0
         )
         assert len(requests) == 3
+
         monkeypatch.setenv("RAG_VISUAL_MODEL", "other-vision-model")
         assert (
             await asyncio.to_thread(
@@ -373,6 +414,7 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
         failed = await client.post(
             "/sources/file?extraction_method=visual&reindex=true", files=files
         )
+
         assert failed.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
         assert (await client.get(failed.json()["status_url"])).json()[
@@ -405,6 +447,7 @@ async def test_paged_extraction_preserves_body_ranges_and_profiles_in_storage(
 
     monkeypatch.setattr(ingestion, "extract_source", extract)
     settings = replace(settings, chunk_size=100, chunk_group_adjacent=group_adjacent)
+
     result = await ingestion.add_bytes(
         b"synthetic page source",
         source_name="pages.pdf",
@@ -412,12 +455,15 @@ async def test_paged_extraction_preserves_body_ranges_and_profiles_in_storage(
         storage=storage,
     )
     chunks = await documents.list_chunks(storage, settings.tenant_id)
+
     assert result.chunk_count == len(chunks) == (1 if group_adjacent else 2)
+
     for chunk in chunks:
         assert chunk.metadata["extraction"] == profile
         assert chunk.metadata["headings"] == ["Shared heading"]
         assert chunk.metadata["source_pages"]["kind"] == kind
         assert chunk.metadata["source_pages"]["scope"] == "body"
+
     assert chunks[0].metadata["source_pages"]["start"] == 1
     assert chunks[-1].metadata["source_pages"]["end"] == 3
     assert (

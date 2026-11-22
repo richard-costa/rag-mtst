@@ -52,9 +52,11 @@ class AskRequest(GenerationRequest):
         Returns:
             The unchanged history.
         """
+
         roles = [message.role for message in history]
         if roles != ["user", "assistant"] * (len(roles) // 2):
             raise ValueError("history must contain complete user/assistant turns")
+
         return history
 
 

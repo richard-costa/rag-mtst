@@ -31,11 +31,14 @@ async def get_job(
 
     Worker claim tokens, staged paths, and credentials are not exposed.
     """
+
     job = await jobs.get_ingestion_job(storage, settings.tenant_id, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Ingestion job not found")
+
     fields = asdict(job)
     fields.pop("claim_token")
     fields["id"] = str(job.id)
     fields["source_id"] = str(job.source_id)
+
     return JobResponse(**fields)

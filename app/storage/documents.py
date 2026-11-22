@@ -46,6 +46,7 @@ async def list_sources(
     Returns:
         Sources with their indexed chunk counts.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             f"""
@@ -57,7 +58,9 @@ async def list_sources(
             """,
             (tenant_id, limit, offset),
         )
+
         rows = await cursor.fetchall()
+
     return [SourceSummary(**row) for row in rows]
 
 
@@ -74,6 +77,7 @@ async def get_source(
     Returns:
         Source with its indexed chunk count, or ``None`` if absent.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             f"""
@@ -83,7 +87,9 @@ async def get_source(
             """,
             (tenant_id, source_id),
         )
+
         row = await cursor.fetchone()
+
     return SourceSummary(**row) if row is not None else None
 
 
@@ -99,13 +105,16 @@ async def delete_source(database: Database, tenant_id: str, source_id: UUID) -> 
         SourceNotFound: The source is absent from the tenant.
         SourceBusy: A job is active or a staged input awaits cleanup.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             "SELECT id FROM sources WHERE tenant_id = %s AND id = %s FOR UPDATE",
             (tenant_id, source_id),
         )
+
         if await cursor.fetchone() is None:
             raise SourceNotFound("Source not found")
+
         cursor = await connection.execute(
             """
             SELECT 1 FROM ingestion_jobs AS jobs
@@ -116,8 +125,10 @@ async def delete_source(database: Database, tenant_id: str, source_id: UUID) -> 
             """,
             (source_id,),
         )
+
         if await cursor.fetchone() is not None:
             raise SourceBusy("The source has ingestion work in progress")
+
         await connection.execute("DELETE FROM sources WHERE id = %s", (source_id,))
 
 
@@ -136,6 +147,7 @@ async def get_source_by_content_hash(
     Returns:
         Matching source, or ``None`` if absent.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -146,7 +158,9 @@ async def get_source_by_content_hash(
             """,
             (tenant_id, content_hash),
         )
+
         row = await cursor.fetchone()
+
     return Source(**row) if row is not None else None
 
 
@@ -165,6 +179,7 @@ async def get_source_extraction_profile(
     Returns:
         Stored extraction metadata, or ``None`` when unavailable.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -176,9 +191,12 @@ async def get_source_extraction_profile(
             """,
             (tenant_id, source_id),
         )
+
         rows = await cursor.fetchall()
+
     if len(rows) == 1 and isinstance(rows[0]["profile"], dict):
         return rows[0]["profile"]
+
     return None
 
 
@@ -204,6 +222,7 @@ async def insert_source(
     Returns:
         Newly inserted source.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -214,8 +233,11 @@ async def insert_source(
             """,
             (uuid4(), tenant_id, source_type, reference, mime_type, content_hash),
         )
+
         row = await cursor.fetchone()
+
     assert row is not None
+
     return Source(**row)
 
 
@@ -243,6 +265,7 @@ async def insert_source_with_chunks(
     Returns:
         Source with its chunks committed.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -253,10 +276,13 @@ async def insert_source_with_chunks(
             """,
             (uuid4(), tenant_id, source_type, reference, mime_type, content_hash),
         )
+
         row = await cursor.fetchone()
         assert row is not None
         source = Source(**row)
+
         await _insert_chunks(connection, tenant_id, source.id, chunks)
+
     return source
 
 
@@ -275,11 +301,13 @@ async def replace_chunks(
         source_id: UUID identifying the source.
         chunks: Prepared chunks and vectors to persist.
     """
+
     async with database.connection() as connection:
         await connection.execute(
             "DELETE FROM chunks WHERE source_id = %s",
             (source_id,),
         )
+
         await _insert_chunks(connection, tenant_id, source_id, chunks)
 
 
@@ -297,6 +325,7 @@ async def _insert_chunks(
         source_id: UUID identifying the source.
         chunks: Prepared chunks and vectors to persist.
     """
+
     for index, chunk in enumerate(chunks):
         await connection.execute(
             """
@@ -329,6 +358,7 @@ async def list_chunks(database: Database, tenant_id: str) -> list[StoredChunk]:
     Returns:
         Indexed chunks for the tenant.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -342,7 +372,9 @@ async def list_chunks(database: Database, tenant_id: str) -> list[StoredChunk]:
             """,
             (tenant_id,),
         )
+
         rows = await cursor.fetchall()
+
     return [
         StoredChunk(
             id=row["id"],
@@ -375,6 +407,7 @@ async def full_text_search(
     Returns:
         Chunks with lexical relevance scores.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -402,7 +435,9 @@ async def full_text_search(
             """,
             (query, tenant_id, limit),
         )
+
         rows = await cursor.fetchall()
+
     return [ScoredChunk(**row) for row in rows]
 
 
@@ -428,6 +463,7 @@ async def vector_search(
     Returns:
         Compatible chunks with vector similarity scores.
     """
+
     vector = Vector(embedding)
     async with database.connection() as connection:
         cursor = await connection.execute(
@@ -450,7 +486,9 @@ async def vector_search(
             """,
             (vector, tenant_id, embedding_provider, embedding_model, vector, limit),
         )
+
         rows = await cursor.fetchall()
+
     return [ScoredChunk(**row) for row in rows]
 
 
@@ -474,6 +512,7 @@ async def get_chunk_window(
     Returns:
         Seed chunk and its neighboring chunks.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -489,5 +528,7 @@ async def get_chunk_window(
             """,
             (tenant_id, source_id, chunk_index - window, chunk_index + window),
         )
+
         rows = await cursor.fetchall()
+
     return [StoredChunk(**row) for row in rows]

@@ -18,6 +18,7 @@ class Database:
         Args:
             database_url: PostgreSQL connection URL.
         """
+
         self.database_url = database_url
 
     @asynccontextmanager
@@ -29,14 +30,17 @@ class Database:
         Yields:
             Open PostgreSQL connection.
         """
+
         connection = await psycopg.AsyncConnection.connect(
             self.database_url,
             row_factory=dict_row,
         )
+
         try:
             await register_vector_async(connection)
             async with connection:
                 yield connection
+
         finally:
             if not connection.closed:
                 await connection.close()

@@ -18,8 +18,10 @@ async def test_lifecycle_rejects_data_dir_before_loading_environment(
         "load_environment",
         lambda: pytest.fail("Invalid arguments must not load configuration"),
     )
+
     with pytest.raises(SystemExit) as error:
         await cli._run(["--data-dir", str(tmp_path), command])
+
     assert error.value.code == 2
     assert "RAG_DATA_DIR" in capsys.readouterr().err
 
@@ -32,7 +34,9 @@ async def test_add_preserves_explicit_staging_override(monkeypatch, tmp_path):
             source=SimpleNamespace(title="sample.md"), job=None
         )
     )
+
     monkeypatch.setattr(cli, "enqueue_file", submit)
+
     assert await cli._run(["--data-dir", str(tmp_path), "add", "sample.md"]) == 0
     assert submit.call_args.kwargs["settings"].data_dir == tmp_path
 
@@ -53,14 +57,17 @@ async def test_lifecycle_commands_delegate_to_local_management(
     calls = []
     monkeypatch.setattr(cli.local, "load_environment", lambda: None)
     monkeypatch.setattr(cli.local, command, lambda **kwargs: calls.append(kwargs) or 7)
+
     assert await cli._run(arguments) == 7
     assert calls == [keywords]
 
 
 async def test_missing_command_is_a_usage_error(monkeypatch):
     monkeypatch.setattr(cli.local, "load_environment", lambda: None)
+
     with pytest.raises(SystemExit) as error:
         await cli._run([])
+
     assert error.value.code == 2
 
 
@@ -89,6 +96,7 @@ async def test_job_command_reports_status_and_failures(
     monkeypatch.setattr(cli.local, "load_environment", lambda: None)
     monkeypatch.setattr(cli, "get_settings", lambda: Settings())
     monkeypatch.setattr(cli.jobs, "get_ingestion_job", AsyncMock(return_value=job))
+
     assert await cli._run(["job", "00000000-0000-0000-0000-000000000001"]) == code
     assert stderr in capsys.readouterr().err
 
@@ -106,7 +114,9 @@ async def test_add_reports_a_job_that_disappears_while_waiting(monkeypatch, caps
             )
         ),
     )
+
     monkeypatch.setattr(cli.jobs, "get_ingestion_job", AsyncMock(return_value=None))
+
     assert await cli._run(["add", "sample.md"]) == 1
     assert "The ingestion job was not found" in capsys.readouterr().err
 
@@ -115,6 +125,7 @@ async def test_search_without_matches_says_so(monkeypatch, capsys):
     monkeypatch.setattr(cli.local, "load_environment", lambda: None)
     monkeypatch.setattr(cli, "get_settings", lambda: Settings())
     monkeypatch.setattr(cli, "search", AsyncMock(return_value=[]))
+
     assert await cli._run(["search", "anything"]) == 0
     assert capsys.readouterr().out == "No matching source chunks found.\n"
 
@@ -125,8 +136,10 @@ def test_interrupted_wait_leaves_the_job_queued(monkeypatch, capsys):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(cli.asyncio, "run", interrupted)
+
     assert cli.main(["add", "sample.md"]) == 130
     assert "remains available to the worker" in capsys.readouterr().err
+
 
 @pytest.mark.parametrize("command", ["search", "ask"])
 async def test_cli_forwards_window_assembly(monkeypatch, command):
@@ -135,6 +148,7 @@ async def test_cli_forwards_window_assembly(monkeypatch, command):
     backend = AsyncMock(
         return_value=[] if command == "search" else SimpleNamespace(text="ok", citations=[])
     )
+
     monkeypatch.setattr(cli, "search" if command == "search" else "answer", backend)
 
     assert await cli._run(

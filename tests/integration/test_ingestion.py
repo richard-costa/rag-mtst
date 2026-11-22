@@ -24,6 +24,7 @@ async def test_enqueue_stages_shared_files_without_inference(
 
     monkeypatch.setattr(ingestion, "extract_source", unexpected)
     monkeypatch.setattr(ingestion, "embed_texts", unexpected)
+
     settings = replace(
         settings,
         openai_api_key="private-openai",
@@ -31,8 +32,10 @@ async def test_enqueue_stages_shared_files_without_inference(
         deepseek_api_key="private-deepseek",
         api_key="private-api",
     )
+
     document = settings.data_dir.parent / "queued.md"
     document.write_bytes(b"# Queued\n\nOriginal document.")
+
     submitted = await ingestion.enqueue_file(
         document, settings=settings, storage=storage
     )
@@ -43,6 +46,7 @@ async def test_enqueue_stages_shared_files_without_inference(
     queued_input = await jobs.get_ingestion_job_input(
         restarted_storage, settings.tenant_id, submitted.job.id
     )
+
     assert queued_input is not None
     assert queued_input.input_path is not None
     staged = Path(queued_input.input_path)
@@ -73,7 +77,9 @@ async def test_enqueue_stages_shared_files_without_inference(
         settings=replace(settings, openai_api_key="rotated"),
         storage=restarted_storage,
     )
+
     assert duplicate.job == submitted.job
+
     with pytest.raises(ValueError, match="active ingestion job"):
         await ingestion.enqueue_bytes(
             staged.read_bytes(),
@@ -81,6 +87,7 @@ async def test_enqueue_stages_shared_files_without_inference(
             settings=replace(settings, chunk_size=50),
             storage=storage,
         )
+
     assert [
         path for path in (settings.data_dir / "ingestion").rglob("*") if path.is_file()
     ] == [staged]
@@ -92,6 +99,7 @@ async def test_enqueue_failure_removes_its_staged_file(settings, storage, monkey
         raise ValueError("Synthetic enqueue rejection")
 
     monkeypatch.setattr(jobs, "create_ingestion_job", fail_enqueue)
+
     with pytest.raises(ValueError, match="Synthetic enqueue rejection"):
         await ingestion.enqueue_bytes(
             b"Temporary input",
@@ -99,6 +107,7 @@ async def test_enqueue_failure_removes_its_staged_file(settings, storage, monkey
             settings=settings,
             storage=storage,
         )
+
     assert not list((settings.data_dir / "ingestion").iterdir())
 
 
@@ -109,10 +118,12 @@ async def test_enqueue_existing_source_requires_explicit_profile_change_and_pres
     indexed = await ingestion.add_bytes(
         content, source_name="existing.md", settings=settings, storage=storage
     )
+
     original_chunks = await documents.list_chunks(storage, settings.tenant_id)
     duplicate = await ingestion.enqueue_bytes(
         content, source_name="existing.md", settings=settings, storage=storage
     )
+
     assert duplicate.source == indexed.source and duplicate.job is None
 
     await documents.replace_chunks(
@@ -123,10 +134,12 @@ async def test_enqueue_existing_source_requires_explicit_profile_change_and_pres
             ChunkInput("Keep this old profile", {"extraction": {"method": "different"}})
         ],
     )
+
     with pytest.raises(ValueError, match="explicit reindexing"):
         await ingestion.enqueue_bytes(
             content, source_name="existing.md", settings=settings, storage=storage
         )
+
     before_reindex = await documents.list_chunks(storage, settings.tenant_id)
     submitted = await ingestion.enqueue_bytes(
         content,
@@ -135,6 +148,7 @@ async def test_enqueue_existing_source_requires_explicit_profile_change_and_pres
         storage=storage,
         reindex=True,
     )
+
     assert submitted.source == indexed.source
     assert submitted.job is not None and submitted.job.status == "pending"
     assert await documents.list_chunks(storage, settings.tenant_id) == before_reindex
@@ -176,6 +190,7 @@ async def test_reindex_replaces_embeddings_and_preserves_source_identity(
 
     unchanged = await add_file(document, settings=changed_settings, storage=storage)
     assert unchanged.chunk_count == 0
+
     reindexed = await add_file(
         document, reindex=True, settings=changed_settings, storage=storage
     )
@@ -203,6 +218,7 @@ async def test_chunk_insert_failure_rolls_back_new_source_and_preserves_reindex(
 
     monkeypatch.setattr(documents, "_insert_chunks", fail_insert_chunks)
     new_content = b"New source text."
+
     with pytest.raises(RuntimeError, match="chunk insert failed"):
         await ingestion.add_bytes(
             new_content,
@@ -210,6 +226,7 @@ async def test_chunk_insert_failure_rolls_back_new_source_and_preserves_reindex(
             settings=settings,
             storage=storage,
         )
+
     with pytest.raises(RuntimeError, match="chunk insert failed"):
         await add_file(document, reindex=True, settings=settings, storage=storage)
 
@@ -240,8 +257,10 @@ async def _claimed_job(settings, storage):
     await ingestion.enqueue_bytes(
         b"Guarded input", source_name="guarded.md", settings=settings, storage=storage
     )
+
     job = await jobs.claim_ingestion_job(storage, settings.tenant_id)
     assert job is not None
+
     return job
 
 
@@ -262,6 +281,7 @@ async def test_claimed_job_rejects_altered_queue_records(
     outside = settings.data_dir.parent / "elsewhere" / str(job.id) / "guarded.md"
     outside.parent.mkdir(parents=True)
     outside.write_bytes(b"Guarded input")
+
     statements = {
         "missing": "DELETE FROM ingestion_job_inputs WHERE job_id = %(job)s",
         "removed": "UPDATE ingestion_job_inputs SET input_path = NULL WHERE job_id = %(job)s",
@@ -271,28 +291,35 @@ async def test_claimed_job_rejects_altered_queue_records(
             'extraction_profile || \'{"engine": "changed"}\' WHERE job_id = %(job)s'
         ),
     }
+
     if tamper in statements:
         async with storage.connection() as connection:
             await connection.execute(
                 statements[tamper], {"job": job.id, "path": str(outside)}
             )
+
     if tamper == "unclaimed":
         job = replace(job, claim_token=None)
+
     with pytest.raises(ValueError, match=message):
         await ingestion.process_ingestion_job(job, settings=settings, storage=storage)
+
     assert await documents.list_chunks(storage, settings.tenant_id) == []
     assert outside.exists()
 
 
 async def test_processing_stops_when_job_ownership_is_lost(settings, storage):
     job = await _claimed_job(settings, storage)
+
     async with storage.connection() as connection:
         await connection.execute(
             "UPDATE ingestion_jobs SET claim_token = gen_random_uuid() WHERE id = %s",
             (job.id,),
         )
+
     with pytest.raises(RuntimeError, match="ownership was lost"):
         await ingestion.process_ingestion_job(job, settings=settings, storage=storage)
+
     assert await documents.list_chunks(storage, settings.tenant_id) == []
 
 
@@ -304,17 +331,22 @@ async def test_cleanup_never_deletes_outside_the_staging_directory(
     assert await jobs.fail_ingestion_job(
         storage, settings.tenant_id, job.id, job.claim_token, error="Failed."
     )
+
     outside = settings.data_dir.parent / "keep" / str(job.id) / "guarded.md"
     outside.parent.mkdir(parents=True)
     outside.write_bytes(b"Unrelated file")
+
     async with storage.connection() as connection:
         await connection.execute(
             "UPDATE ingestion_job_inputs SET input_path = %s WHERE job_id = %s",
             (str(outside), job.id),
         )
+
     monkeypatch.setattr(ingestion.logger, "disabled", False)
     caplog.set_level("WARNING", logger=ingestion.__name__)
+
     await ingestion.cleanup_ingestion_inputs(settings=settings, storage=storage)
+
     assert outside.exists()
     assert f"job_id={job.id}" in caplog.text and "unsafe_input_path" in caplog.text
     assert str(outside) not in caplog.text
@@ -337,7 +369,9 @@ async def test_cleanup_keeps_the_reference_when_removal_fails(
     monkeypatch.setattr(ingestion.shutil, "rmtree", denied)
     monkeypatch.setattr(ingestion.logger, "disabled", False)
     caplog.set_level("WARNING", logger=ingestion.__name__)
+
     await ingestion.cleanup_ingestion_inputs(settings=settings, storage=storage)
+
     assert "error_category=cleanup" in caplog.text
     queued = await jobs.get_ingestion_job_input(storage, settings.tenant_id, job.id)
     assert queued is not None and queued.input_path is not None

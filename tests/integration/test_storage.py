@@ -22,6 +22,7 @@ from app.storage.records import ChunkInput
 
 async def test_migrations_create_application_tables(database_url: str) -> None:
     connection = await psycopg.AsyncConnection.connect(database_url)
+
     async with connection:
         cursor = await connection.execute(
             """
@@ -31,10 +32,12 @@ async def test_migrations_create_application_tables(database_url: str) -> None:
             """
         )
         tables = {row[0] for row in await cursor.fetchall()}
+
         extension = await connection.execute(
             "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')"
         )
         extension_row = await extension.fetchone()
+
         vector_type = await connection.execute(
             """
             SELECT format_type(atttypid, atttypmod)
@@ -43,6 +46,7 @@ async def test_migrations_create_application_tables(database_url: str) -> None:
             """
         )
         vector_type_row = await vector_type.fetchone()
+
         search_column = await connection.execute(
             """
             SELECT format_type(atttypid, atttypmod), attgenerated
@@ -51,6 +55,7 @@ async def test_migrations_create_application_tables(database_url: str) -> None:
             """
         )
         search_column_row = await search_column.fetchone()
+
         search_index = await connection.execute(
             """
             SELECT access_method.amname
@@ -60,6 +65,7 @@ async def test_migrations_create_application_tables(database_url: str) -> None:
             """
         )
         search_index_row = await search_index.fetchone()
+
         revision = await connection.execute("SELECT version_num FROM alembic_version")
         revision_row = await revision.fetchone()
 
@@ -86,6 +92,7 @@ def test_offline_migrations_accept_encoded_database_passwords(
     monkeypatch.setenv(
         "DATABASE_URL", f"{scheme}://rag:example%40password@127.0.0.1/rag"
     )
+
     output = StringIO()
     config = Config("alembic.ini", output_buffer=output)
 
@@ -135,6 +142,7 @@ async def test_document_records_preserve_metadata(
         mime_type="text/markdown",
         content_hash="abc123",
     )
+
     await documents.replace_chunks(
         storage,
         tenant_id="test-tenant",
@@ -150,6 +158,7 @@ async def test_document_records_preserve_metadata(
             ),
         ],
     )
+
     chunks = await documents.list_chunks(storage, "test-tenant")
 
     assert source.reference == reference
@@ -170,8 +179,10 @@ async def test_document_records_preserve_metadata(
 
 async def test_conversation_turns_are_ordered_tenant_scoped_and_atomic(storage):
     conversation = await conversations.create_conversation(storage, "test-tenant")
+
     with pytest.raises(ConversationNotFound):
         await conversations.list_messages(storage, "other-tenant", conversation.id)
+
     with pytest.raises(ConversationNotFound):
         async with conversations.conversation_turn(
             storage, "other-tenant", conversation.id, "private"
@@ -184,6 +195,7 @@ async def test_conversation_turns_are_ordered_tenant_scoped_and_atomic(storage):
         assert turn.history == []
         turn.answer = "First answer [1]"
         turn.citations = [{"id": 1, "content": "An exact source snapshot"}]
+
     first = await conversations.list_messages(storage, "test-tenant", conversation.id)
     assert [message.sequence for message in first] == [1, 2]
     assert [message.role for message in first] == ["user", "assistant"]
@@ -197,6 +209,7 @@ async def test_conversation_turns_are_ordered_tenant_scoped_and_atomic(storage):
             assert turn.history == first
             turn.answer = "Must not be committed"
             raise RuntimeError("generation failed")
+
     assert (
         await conversations.list_messages(storage, "test-tenant", conversation.id)
         == first
@@ -206,9 +219,11 @@ async def test_conversation_turns_are_ordered_tenant_scoped_and_atomic(storage):
         storage, "test-tenant", conversation.id, "Next question"
     ) as turn:
         turn.answer = "Next answer"
+
     recent = await conversations.list_messages(
         storage, "test-tenant", conversation.id, limit=2
     )
+
     assert [message.sequence for message in recent] == [3, 4]
     assert (
         await conversations.list_messages(
@@ -223,6 +238,7 @@ async def test_conversation_lock_rejects_overlap_but_allows_other_conversations(
 ):
     conversation = await conversations.create_conversation(storage, "test-tenant")
     other = await conversations.create_conversation(storage, "test-tenant")
+
     with pytest.raises(asyncio.CancelledError):
         async with conversations.conversation_turn(
             storage, "test-tenant", conversation.id, "Cancelled question"
@@ -232,17 +248,21 @@ async def test_conversation_lock_rejects_overlap_but_allows_other_conversations(
                     storage, "test-tenant", conversation.id, "Overlapping question"
                 ):
                     pytest.fail("Overlapping turns must not enter")
+
             async with conversations.conversation_turn(
                 storage, "test-tenant", other.id, "Independent question"
             ) as turn:
                 turn.answer = "Independent answer"
+
             assert (
                 await conversations.list_messages(
                     storage, "test-tenant", conversation.id
                 )
                 == []
             )
+
             raise asyncio.CancelledError
+
     async with conversations.conversation_turn(
         storage, "test-tenant", conversation.id, "Retry"
     ) as turn:
@@ -254,6 +274,7 @@ async def test_conversation_turn_history_is_bounded_without_reusing_sequence_num
     storage,
 ):
     conversation = await conversations.create_conversation(storage, "test-tenant")
+
     for index in range(12):
         async with conversations.conversation_turn(
             storage, "test-tenant", conversation.id, f"Question {index}"
@@ -261,10 +282,13 @@ async def test_conversation_turn_history_is_bounded_without_reusing_sequence_num
             assert len(turn.history) == min(index * 2, 20)
             if turn.history:
                 assert turn.history[-1].sequence == index * 2
+
             turn.answer = f"Answer {index}"
+
     messages = await conversations.list_messages(
         storage, "test-tenant", conversation.id
     )
+
     assert [message.sequence for message in messages] == list(range(1, 25))
 
 
@@ -272,6 +296,7 @@ async def test_conversations_can_be_listed_read_and_deleted_per_tenant(storage):
     first = await conversations.create_conversation(storage, "test-tenant")
     second = await conversations.create_conversation(storage, "test-tenant")
     await conversations.create_conversation(storage, "other-tenant")
+
     async with conversations.conversation_turn(
         storage, "test-tenant", first.id, "Question"
     ) as turn:
@@ -291,21 +316,26 @@ async def test_conversations_can_be_listed_read_and_deleted_per_tenant(storage):
 
     with pytest.raises(ConversationNotFound):
         await conversations.delete_conversation(storage, "other-tenant", first.id)
+
     async with conversations.conversation_turn(
         storage, "test-tenant", first.id, "Locked"
     ) as turn:
         with pytest.raises(ConversationBusy):
             await conversations.delete_conversation(storage, "test-tenant", first.id)
+
         turn.answer = "Still saved"
+
     await conversations.delete_conversation(storage, "test-tenant", first.id)
     assert (
         await conversations.get_conversation(storage, "test-tenant", first.id) is None
     )
+
     async with storage.connection() as connection:
         cursor = await connection.execute(
             "SELECT count(*) AS count FROM messages WHERE conversation_id = %s",
             (first.id,),
         )
+
         assert (await cursor.fetchone())["count"] == 0
 
 
@@ -319,6 +349,7 @@ async def test_sources_can_be_listed_read_and_deleted_when_idle(storage):
         content_hash="indexed",
         chunks=[ChunkInput(content="kept", metadata={})],
     )
+
     source, job = await jobs.create_ingestion_job(
         storage,
         tenant_id="test-tenant",
@@ -331,6 +362,7 @@ async def test_sources_can_be_listed_read_and_deleted_when_idle(storage):
         configuration={},
         reindex=False,
     )
+
     assert job is not None
 
     listed = await documents.list_sources(storage, "test-tenant")
@@ -345,20 +377,26 @@ async def test_sources_can_be_listed_read_and_deleted_when_idle(storage):
 
     with pytest.raises(SourceNotFound):
         await documents.delete_source(storage, "other-tenant", indexed.id)
+
     with pytest.raises(SourceBusy):
         await documents.delete_source(storage, "test-tenant", source.id)
+
     claimed = await jobs.claim_ingestion_job(storage, "test-tenant")
     assert claimed is not None and claimed.claim_token is not None
     await jobs.fail_ingestion_job(
         storage, "test-tenant", claimed.id, claimed.claim_token, error="failed"
     )
+
     with pytest.raises(SourceBusy):
         await documents.delete_source(storage, "test-tenant", source.id)
+
     await jobs.clear_ingestion_input_path(
         storage, "test-tenant", claimed.id, "/tmp/queued.md"
     )
+
     await documents.delete_source(storage, "test-tenant", source.id)
     await documents.delete_source(storage, "test-tenant", indexed.id)
+
     assert await documents.list_sources(storage, "test-tenant") == []
     assert await documents.list_chunks(storage, "test-tenant") == []
     assert await jobs.get_ingestion_job(storage, "test-tenant", job.id) is None
@@ -377,6 +415,7 @@ async def test_ingestion_job_inputs_are_atomic_durable_and_tenant_scoped(storage
         configuration={"chunk_size": 180},
         reindex=False,
     )
+
     assert job is not None and job.status == "pending" and job.source_id == source.id
     assert await documents.list_chunks(storage, "test-tenant") == []
     assert await jobs.get_ingestion_job(storage, "test-tenant", job.id) == job
@@ -401,6 +440,7 @@ async def test_ingestion_job_inputs_are_atomic_durable_and_tenant_scoped(storage
             configuration={},
             reindex=False,
         )
+
     assert (
         await documents.get_source_by_content_hash(storage, "test-tenant", "rollback")
         is None
@@ -421,11 +461,14 @@ async def test_ingestion_job_submissions_serialize_duplicates_and_reject_conflic
         "configuration": {"chunk_size": 180},
         "reindex": False,
     }
+
     results = await asyncio.gather(
         *(jobs.create_ingestion_job(storage, **arguments) for _ in range(4))
     )
+
     assert len({source.id for source, _job in results}) == 1
     assert len({job.id for _source, job in results if job is not None}) == 1
+
     for changes in (
         {"configuration": {"chunk_size": 90}},
         {"extraction_profile": {"method": "visual"}},
@@ -433,9 +476,11 @@ async def test_ingestion_job_submissions_serialize_duplicates_and_reject_conflic
     ):
         with pytest.raises(ValueError, match="active ingestion job"):
             await jobs.create_ingestion_job(storage, **{**arguments, **changes})
+
     other_source, other_job = await jobs.create_ingestion_job(
         storage, **{**arguments, "tenant_id": "other-tenant"}
     )
+
     assert other_source.id != results[0][0].id
     assert other_job is not None and other_job.id != results[0][1].id
 
@@ -454,25 +499,31 @@ async def test_ingestion_job_active_constraint_and_new_submission_after_failure(
         "configuration": {"chunk_size": 180},
         "reindex": False,
     }
+
     source, job = await jobs.create_ingestion_job(storage, **arguments)
     assert job is not None
+
     with pytest.raises(psycopg.errors.UniqueViolation):
         async with storage.connection() as connection:
             await connection.execute(
                 "INSERT INTO ingestion_jobs (id, source_id) VALUES (%s, %s)",
                 (uuid4(), source.id),
             )
+
     async with storage.connection() as connection:
         await connection.execute(
             "UPDATE ingestion_jobs SET status = 'failed', finished_at = now() WHERE id = %s",
             (job.id,),
         )
+
     next_source, next_job = await jobs.create_ingestion_job(
         storage,
         **{**arguments, "configuration": {"chunk_size": 90}},
     )
+
     assert next_source == source
     assert next_job is not None and next_job.id != job.id
+
     first_input = await jobs.get_ingestion_job_input(storage, "test-tenant", job.id)
     next_input = await jobs.get_ingestion_job_input(storage, "test-tenant", next_job.id)
     assert first_input is not None and first_input.configuration == {"chunk_size": 180}
@@ -492,11 +543,14 @@ async def test_worker_claims_are_exclusive_and_stale_workers_cannot_commit(stora
         configuration={},
         reindex=False,
     )
+
     assert submitted is not None
     assert await jobs.claim_ingestion_job(storage, "other-tenant") is None
+
     claims = await asyncio.gather(
         *(jobs.claim_ingestion_job(storage, "test-tenant") for _ in range(4))
     )
+
     claimed = [job for job in claims if job is not None]
     assert len(claimed) == 1
     job = claimed[0]
@@ -525,11 +579,13 @@ async def test_worker_claims_are_exclusive_and_stale_workers_cannot_commit(stora
         )
         == 0
     )
+
     async with storage.connection() as connection:
         await connection.execute(
             "UPDATE ingestion_jobs SET heartbeat_at = now() - interval '2 minutes' WHERE id = %s",
             (job.id,),
         )
+
     assert (
         await jobs.fail_interrupted_ingestion_jobs(
             storage, "other-tenant", stale_seconds=60
@@ -553,6 +609,7 @@ async def test_worker_claims_are_exclusive_and_stale_workers_cannot_commit(stora
         storage, "test-tenant", job.id, job.claim_token, error="late"
     )
     assert await documents.list_chunks(storage, "test-tenant") == []
+
     failed = await jobs.get_ingestion_job(storage, "test-tenant", job.id)
     assert (
         failed is not None and failed.status == "failed" and failed.claim_token is None
@@ -578,12 +635,14 @@ async def test_worker_completion_is_atomic_with_chunk_replacement(storage, monke
         configuration={},
         reindex=True,
     )
+
     await documents.replace_chunks(
         storage,
         tenant_id="test-tenant",
         source_id=source.id,
         chunks=[ChunkInput("old content", {})],
     )
+
     old_chunks = await documents.list_chunks(storage, "test-tenant")
     job = await jobs.claim_ingestion_job(storage, "test-tenant")
     assert submitted is not None and job is not None
@@ -601,6 +660,7 @@ async def test_worker_completion_is_atomic_with_chunk_replacement(storage, monke
                 reference="new.md",
                 chunks=[ChunkInput("new content", {})],
             )
+
     assert await documents.list_chunks(storage, "test-tenant") == old_chunks
     running = await jobs.get_ingestion_job(storage, "test-tenant", job.id)
     assert running is not None and running.status == "running"
@@ -611,6 +671,7 @@ async def test_worker_completion_is_atomic_with_chunk_replacement(storage, monke
         reference="new.md",
         chunks=[ChunkInput("new content", {})],
     )
+
     completed = await jobs.get_ingestion_job(storage, "test-tenant", job.id)
     assert (
         completed is not None
@@ -640,6 +701,7 @@ async def test_source_extraction_profile_is_consistent_and_tenant_scoped(storage
             ChunkInput("second", {"extraction": profile}),
         ],
     )
+
     assert (
         await documents.get_source_extraction_profile(storage, "test-tenant", source.id)
         == profile
@@ -650,19 +712,23 @@ async def test_source_extraction_profile_is_consistent_and_tenant_scoped(storage
         )
         is None
     )
+
     await documents.replace_chunks(
         storage,
         tenant_id="test-tenant",
         source_id=source.id,
         chunks=[ChunkInput("first", {"extraction": profile}), ChunkInput("second", {})],
     )
+
     assert (
         await documents.get_source_extraction_profile(storage, "test-tenant", source.id)
         is None
     )
+
     await documents.replace_chunks(
         storage, tenant_id="test-tenant", source_id=source.id, chunks=[]
     )
+
     assert (
         await documents.get_source_extraction_profile(storage, "test-tenant", source.id)
         is None
@@ -703,6 +769,7 @@ async def test_full_text_search_matches_without_language_detection(
     )
 
     assert len(results) == int(matches)
+
     if matches:
         assert results[0].source_id == source.id
         assert results[0].content == content
@@ -726,6 +793,7 @@ async def test_full_text_search_ranks_limits_filters_tenants_and_updates_generat
             ChunkInput("housing", {}),
         ],
     )
+
     await documents.insert_source_with_chunks(
         storage,
         tenant_id="another-tenant",
@@ -739,6 +807,7 @@ async def test_full_text_search_ranks_limits_filters_tenants_and_updates_generat
     results = await documents.full_text_search(
         storage, tenant_id="test-tenant", query="housing", limit=2
     )
+
     assert [chunk.chunk_index for chunk in results] == [1, 2]
     assert all(chunk.source_id == source.id for chunk in results)
     assert results[0].score == results[1].score
@@ -755,15 +824,18 @@ async def test_full_text_search_ranks_limits_filters_tenants_and_updates_generat
         source_id=source.id,
         chunks=[ChunkInput("newterm", {})],
     )
+
     assert (
         await documents.full_text_search(
             storage, tenant_id="test-tenant", query="housing", limit=5
         )
         == []
     )
+
     updated = await documents.full_text_search(
         storage, tenant_id="test-tenant", query="newterm", limit=5
     )
+
     assert [chunk.chunk_index for chunk in updated] == [0]
 
 
@@ -775,6 +847,7 @@ async def test_initial_migration_can_be_reversed_and_recreated(
 
     try:
         await asyncio.to_thread(command.downgrade, config, "base")
+
         async with storage.connection() as connection:
             cursor = await connection.execute(
                 """
@@ -783,12 +856,14 @@ async def test_initial_migration_can_be_reversed_and_recreated(
                        to_regclass('ingestion_jobs') AS jobs
                 """
             )
+
             assert await cursor.fetchone() == {
                 "chunks": None,
                 "sources": None,
                 "inputs": None,
                 "jobs": None,
             }
+
     finally:
         await asyncio.to_thread(command.upgrade, config, "head")
 
@@ -801,10 +876,13 @@ async def test_initial_migration_can_be_reversed_and_recreated(
         content_hash="recreated",
         chunks=[ChunkInput("Recreated housing content", {})],
     )
+
     results = await documents.full_text_search(
         storage, tenant_id="test-tenant", query="housing", limit=5
     )
+
     assert [chunk.source_id for chunk in results] == [source.id]
+
     queued_source, job = await jobs.create_ingestion_job(
         storage,
         tenant_id="test-tenant",
@@ -817,6 +895,7 @@ async def test_initial_migration_can_be_reversed_and_recreated(
         configuration={},
         reindex=True,
     )
+
     assert queued_source == source and job is not None
     queued_input = await jobs.get_ingestion_job_input(storage, "test-tenant", job.id)
     assert queued_input is not None and queued_input.input_path == "/tmp/recreated.md"

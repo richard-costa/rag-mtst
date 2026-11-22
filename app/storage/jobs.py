@@ -42,6 +42,7 @@ async def create_ingestion_job(
     Returns:
         Source record and a new job, or ``None`` for an unchanged source.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -51,6 +52,7 @@ async def create_ingestion_job(
             """,
             (uuid4(), tenant_id, reference, mime_type, content_hash),
         )
+
         cursor = await connection.execute(
             """
             SELECT id, tenant_id, type AS source_type, reference, mime_type,
@@ -61,9 +63,11 @@ async def create_ingestion_job(
             """,
             (tenant_id, content_hash),
         )
+
         source_row = await cursor.fetchone()
         assert source_row is not None
         source = Source(**source_row)
+
         cursor = await connection.execute(
             """
             SELECT * FROM ingestion_jobs
@@ -71,12 +75,14 @@ async def create_ingestion_job(
             """,
             (source.id,),
         )
+
         active_job = await cursor.fetchone()
         if active_job is not None:
             cursor = await connection.execute(
                 "SELECT * FROM ingestion_job_inputs WHERE job_id = %s",
                 (active_job["id"],),
             )
+
             active_input = await cursor.fetchone()
             if (
                 active_input is None
@@ -87,6 +93,7 @@ async def create_ingestion_job(
                 raise ValueError(
                     "The source already has an active ingestion job with different settings"
                 )
+
             return source, IngestionJob(**active_job)
 
         cursor = await connection.execute(
@@ -95,12 +102,14 @@ async def create_ingestion_job(
             "GROUP BY metadata->'extraction'",
             (source.id, tenant_id),
         )
+
         profiles = await cursor.fetchall()
         if profiles and not reindex:
             if len(profiles) != 1 or profiles[0]["profile"] != extraction_profile:
                 raise ValueError(
                     "The source has a different or unknown extraction profile; explicit reindexing is required"
                 )
+
             return source, None
 
         job_id = job_id or uuid4()
@@ -108,7 +117,9 @@ async def create_ingestion_job(
             "INSERT INTO ingestion_jobs (id, source_id) VALUES (%s, %s) RETURNING *",
             (job_id, source.id),
         )
+
         row = await cursor.fetchone()
+
         await connection.execute(
             """
             INSERT INTO ingestion_job_inputs (
@@ -124,7 +135,9 @@ async def create_ingestion_job(
                 reindex,
             ),
         )
+
     assert row is not None
+
     return source, IngestionJob(**row)
 
 
@@ -141,6 +154,7 @@ async def get_ingestion_job(
     Returns:
         Job record, or ``None`` if absent.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -150,7 +164,9 @@ async def get_ingestion_job(
             """,
             (job_id, tenant_id),
         )
+
         row = await cursor.fetchone()
+
     return IngestionJob(**row) if row is not None else None
 
 
@@ -167,6 +183,7 @@ async def get_ingestion_job_input(
     Returns:
         Staged input record, or ``None`` if absent.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -177,7 +194,9 @@ async def get_ingestion_job_input(
             """,
             (job_id, tenant_id),
         )
+
         row = await cursor.fetchone()
+
     return IngestionJobInput(**row) if row is not None else None
 
 
@@ -193,6 +212,7 @@ async def claim_ingestion_job(
     Returns:
         Claimed job with ownership token, or ``None`` if no job is pending.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -212,7 +232,9 @@ async def claim_ingestion_job(
             """,
             (tenant_id, uuid4()),
         )
+
         row = await cursor.fetchone()
+
     return IngestionJob(**row) if row is not None else None
 
 
@@ -228,6 +250,7 @@ async def list_finished_ingestion_inputs(
     Returns:
         Staged inputs belonging to completed or failed jobs.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -240,7 +263,9 @@ async def list_finished_ingestion_inputs(
             """,
             (tenant_id,),
         )
+
         rows = await cursor.fetchall()
+
     return [IngestionJobInput(**row) for row in rows]
 
 
@@ -255,6 +280,7 @@ async def clear_ingestion_input_path(
         job_id: UUID identifying the job; generated when omitted.
         input_path: Path to the temporarily staged source file.
     """
+
     async with database.connection() as connection:
         await connection.execute(
             """
@@ -282,6 +308,7 @@ async def heartbeat_ingestion_job(
     Returns:
         Whether the claim was still valid.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -291,6 +318,7 @@ async def heartbeat_ingestion_job(
             """,
             (tenant_id, job_id, claim_token),
         )
+
     return cursor.rowcount == 1
 
 
@@ -318,6 +346,7 @@ async def update_ingestion_job_progress(
     Returns:
         Whether the owner successfully updated progress.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -328,6 +357,7 @@ async def update_ingestion_job_progress(
             """,
             (stage, processed, total, tenant_id, job_id, claim_token),
         )
+
     return cursor.rowcount == 1
 
 
@@ -351,6 +381,7 @@ async def fail_ingestion_job(
     Returns:
         Whether the current owner successfully recorded failure.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -361,6 +392,7 @@ async def fail_ingestion_job(
             """,
             (error, tenant_id, job_id, claim_token),
         )
+
     return cursor.rowcount == 1
 
 
@@ -377,8 +409,10 @@ async def fail_interrupted_ingestion_jobs(
     Returns:
         Number of stale jobs marked failed.
     """
+
     if stale_seconds <= 0:
         raise ValueError("Stale heartbeat timeout must be greater than zero")
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -391,6 +425,7 @@ async def fail_interrupted_ingestion_jobs(
             """,
             (tenant_id, stale_seconds),
         )
+
     return cursor.rowcount
 
 
@@ -414,13 +449,16 @@ async def complete_ingestion_job(
     Returns:
         Whether the claim was valid and the completion committed.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             "SELECT id FROM sources WHERE tenant_id = %s AND id = %s FOR UPDATE",
             (tenant_id, job.source_id),
         )
+
         if await cursor.fetchone() is None:
             return False
+
         cursor = await connection.execute(
             """
             SELECT id FROM ingestion_jobs
@@ -429,16 +467,21 @@ async def complete_ingestion_job(
             """,
             (job.id, job.source_id, job.claim_token),
         )
+
         if await cursor.fetchone() is None:
             return False
+
         await connection.execute(
             "DELETE FROM chunks WHERE source_id = %s", (job.source_id,)
         )
+
         await documents._insert_chunks(connection, tenant_id, job.source_id, chunks)
+
         await connection.execute(
             "UPDATE sources SET reference = %s, updated_at = now() WHERE id = %s",
             (reference, job.source_id),
         )
+
         await connection.execute(
             """
             UPDATE ingestion_jobs SET status = 'completed', stage = 'completed',
@@ -447,4 +490,5 @@ async def complete_ingestion_job(
             """,
             (len(chunks), len(chunks), job.id),
         )
+
     return True

@@ -30,6 +30,7 @@ async def create_conversation(database: Database, tenant_id: str) -> Conversatio
     Returns:
         Newly created conversation record.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -39,8 +40,11 @@ async def create_conversation(database: Database, tenant_id: str) -> Conversatio
             """,
             (uuid4(), tenant_id),
         )
+
         row = await cursor.fetchone()
+
     assert row is not None
+
     return Conversation(**row)
 
 
@@ -58,6 +62,7 @@ async def list_conversations(
     Returns:
         Conversation records.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
@@ -68,7 +73,9 @@ async def list_conversations(
             """,
             (tenant_id, limit, offset),
         )
+
         rows = await cursor.fetchall()
+
     return [Conversation(**row) for row in rows]
 
 
@@ -85,12 +92,15 @@ async def get_conversation(
     Returns:
         Conversation record, or ``None`` if absent.
     """
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             "SELECT * FROM conversations WHERE tenant_id = %s AND id = %s",
             (tenant_id, conversation_id),
         )
+
         row = await cursor.fetchone()
+
     return Conversation(**row) if row is not None else None
 
 
@@ -108,6 +118,7 @@ async def delete_conversation(
         ConversationNotFound: The conversation is absent from the tenant.
         ConversationBusy: A turn currently holds the conversation lock.
     """
+
     async with database.connection() as connection:
         try:
             cursor = await connection.execute(
@@ -116,10 +127,12 @@ async def delete_conversation(
                 "FOR UPDATE NOWAIT) RETURNING id",
                 (tenant_id, conversation_id),
             )
+
         except psycopg.errors.LockNotAvailable as error:
             raise ConversationBusy(
                 "A turn is already active for this conversation"
             ) from error
+
         if await cursor.fetchone() is None:
             raise ConversationNotFound("Conversation not found")
 
@@ -142,23 +155,30 @@ async def conversation_turn(
     Yields:
         Locked turn holding recent history and its pending reply.
     """
+
     async with database.connection() as connection:
         try:
             cursor = await connection.execute(
                 "SELECT id FROM conversations WHERE tenant_id = %s AND id = %s FOR UPDATE NOWAIT",
                 (tenant_id, conversation_id),
             )
+
         except psycopg.errors.LockNotAvailable as error:
             raise ConversationBusy(
                 "A turn is already active for this conversation"
             ) from error
+
         if await cursor.fetchone() is None:
             raise ConversationNotFound("Conversation not found")
+
         history = await _conversation_messages(connection, conversation_id, limit=20)
         turn = ConversationTurn(history=history)
+
         yield turn
+
         if turn.answer is None:
             raise ValueError("The conversation turn has no answer")
+
         sequence = history[-1].sequence + 1 if history else 1
         await connection.execute(
             """
@@ -178,6 +198,7 @@ async def conversation_turn(
                 Jsonb(turn.citations),
             ),
         )
+
         await connection.execute(
             "UPDATE conversations SET updated_at = clock_timestamp() WHERE id = %s",
             (conversation_id,),
@@ -204,15 +225,19 @@ async def list_messages(
     Returns:
         Stored messages in descending sequence order.
     """
+
     if not 1 <= limit <= 100:
         raise ValueError("History limit must be between 1 and 100")
+
     async with database.connection() as connection:
         cursor = await connection.execute(
             "SELECT id FROM conversations WHERE tenant_id = %s AND id = %s",
             (tenant_id, conversation_id),
         )
+
         if await cursor.fetchone() is None:
             raise ConversationNotFound("Conversation not found")
+
         return await _conversation_messages(
             connection, conversation_id, limit=limit, before=before
         )
@@ -236,6 +261,7 @@ async def _conversation_messages(
     Returns:
         Messages selected by the pagination cursor.
     """
+
     cursor = await connection.execute(
         """
         SELECT * FROM messages
@@ -244,4 +270,5 @@ async def _conversation_messages(
         """,
         (conversation_id, before, before, limit),
     )
+
     return [Message(**row) for row in reversed(await cursor.fetchall())]

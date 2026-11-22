@@ -30,6 +30,7 @@ async def test_real_pdf_pages_render_in_order_with_bounded_images(
         width, height = struct.unpack(">II", image[16:24])
         assert 0 < width <= visual.IMAGE_DIMENSION
         assert 0 < height <= visual.IMAGE_DIMENSION
+
     assert list(tmp_path.iterdir()) == [source]
 
 
@@ -38,6 +39,7 @@ async def test_invalid_pdf_page_count_fails_before_rendering(
     monkeypatch, tmp_path, metadata
 ):
     monkeypatch.setattr(visual, "_run_tool", AsyncMock(return_value=metadata))
+
     with pytest.raises(ValueError):
         await visual._page_count(tmp_path / "source.pdf")
 
@@ -48,8 +50,10 @@ async def test_failed_render_removes_partial_image(monkeypatch, tmp_path):
         raise ValueError("render failed")
 
     monkeypatch.setattr(visual, "_run_tool", fail)
+
     with pytest.raises(ValueError, match="render failed"):
         await visual._render_page(tmp_path / "source.pdf", 1, tmp_path)
+
     assert not list(tmp_path.iterdir())
 
 
@@ -72,11 +76,14 @@ async def test_rendered_images_are_validated_and_removed(
     async def render(*arguments):
         if image is not None:
             (tmp_path / "page.png").write_bytes(image)
+
         return b""
 
     monkeypatch.setattr(visual, "_run_tool", render)
+
     with pytest.raises(ValueError, match=message):
         await visual._render_page(tmp_path / "source.pdf", 1, tmp_path)
+
     assert not list(tmp_path.iterdir())
 
 
@@ -86,6 +93,7 @@ async def test_missing_poppler_has_an_explicit_error(monkeypatch):
         "create_subprocess_exec",
         AsyncMock(side_effect=FileNotFoundError),
     )
+
     with pytest.raises(ValueError, match="install Poppler"):
         await visual._run_tool("pdfinfo", "source.pdf")
 
@@ -97,7 +105,9 @@ async def test_interrupted_tool_is_killed_and_reaped(monkeypatch, failure):
     monkeypatch.setattr(
         visual.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)
     )
+
     with pytest.raises(failure):
         await visual._run_tool("pdftoppm", "source.pdf")
+
     process.kill.assert_called_once()
     assert process.communicate.await_count == 2

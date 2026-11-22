@@ -51,20 +51,25 @@ async def test_generation_routes_providers_and_preserves_citation_provenance(
     assert len(requests) == 1
     assert str(requests[0].url) == url
     assert requests[0].headers["authorization"] == f"Bearer {token}"
+
     payload = json.loads(requests[0].content)
     assert payload["model"] == "test-model"
     token_parameter = "max_output_tokens" if provider == "openai" else "max_tokens"
     assert payload[token_parameter] == 4000
+
     system = llm.system_prompt(
         generation._SYSTEM_PROMPT, generation._AnswerResponse, provider
     )
+
     if provider == "anthropic":
         assert payload["system"] == system
         assert payload["output_config"]["format"]["schema"]["required"] == [
             "text",
             "citations",
         ]
+
         user = payload["messages"][0]["content"][0]["text"]
+
     elif provider == "openai":
         assert payload["store"] is False
         assert "previous_response_id" not in payload and "conversation" not in payload
@@ -72,14 +77,18 @@ async def test_generation_routes_providers_and_preserves_citation_provenance(
         assert payload["text"]["format"]["type"] == "json_schema"
         assert payload["text"]["format"]["strict"] is True
         assert payload["text"]["format"]["schema"]["required"] == ["text", "citations"]
+
         user = payload["input"][0]["content"][0]["text"]
+
     else:
         assert payload["stream"] is False
         assert payload["messages"][0] == {"role": "system", "content": system}
         assert payload["response_format"]["type"] == (
             "json_object" if provider == "deepseek" else "json_schema"
         )
+
         user = payload["messages"][1]["content"]
+
     assert json.loads(user) == {
         "question": "What should I do?",
         "sources": [
@@ -106,6 +115,7 @@ async def test_invalid_generation_is_not_returned_as_an_answer(
     completion,
 ):
     completion(text, finish=finish)
+
     with pytest.raises(generation.GenerationError):
         await generation.answer("Question", settings=generation_settings)
 
@@ -134,8 +144,10 @@ async def test_unusable_openai_responses_are_rejected_without_fallback(
     settings = replace(
         generation_settings, generation_provider="openai", openai_api_key="key"
     )
+
     with pytest.raises(generation.GenerationError) as error:
         await generation.answer("Question", settings=settings)
+
     assert "private provider detail" not in str(error.value)
     assert len(requests) == 1
 
@@ -150,20 +162,24 @@ async def test_openai_rejects_unusable_messages_even_with_parsed_output(
 ):
     body = openai_response(json.dumps({"text": "Supported [1].", "citations": [1]}))
     message = body["output"][0]
+
     if failure == "incomplete_message":
         message["status"] = "incomplete"
     else:
         message["content"].append(
             {"type": "refusal", "refusal": "private provider detail"}
         )
+
     requests = completion(response_changes=body)
     settings = replace(
         generation_settings, generation_provider="openai", openai_api_key="key"
     )
+
     with pytest.raises(
         generation.GenerationError, match="filtered or incomplete"
     ) as error:
         await generation.answer("Question", settings=settings)
+
     assert "private provider detail" not in str(error.value)
     assert len(requests) == 1
 
@@ -180,7 +196,9 @@ async def test_openai_reads_typed_message_after_reasoning_output(
     settings = replace(
         generation_settings, generation_provider="openai", openai_api_key="key"
     )
+
     result = await generation.answer("Question", settings=settings)
+
     assert result.text == "Supported [1]."
     assert [citation.id for citation in result.citations] == [1]
     assert len(requests) == 1
@@ -211,8 +229,10 @@ async def test_invalid_provider_records_are_sanitized_without_fallback(
         deepseek_api_key="key",
         anthropic_api_key="key",
     )
+
     with pytest.raises(generation.GenerationError) as error:
         await generation.answer("Question", settings=settings)
+
     assert "private" not in str(error.value)
     assert len(requests) == 1
 
@@ -232,10 +252,12 @@ async def test_provider_failure_does_not_leak_details_or_fall_back(
         deepseek_api_key="key",
         anthropic_api_key="key",
     )
+
     with pytest.raises(
         generation.GenerationError, match="generation API request failed"
     ) as caught:
         await generation.answer("Question", settings=settings)
+
     assert "private provider detail" not in str(caught.value)
     assert len(requests) == 1
 
@@ -245,7 +267,9 @@ async def test_no_matches_does_not_call_generation(
 ):
     passages.clear()
     requests = completion()
+
     result = await generation.answer("Question", settings=generation_settings)
+
     assert result.matches == result.citations == []
     assert "could not find" in result.text
     assert requests == []
@@ -259,6 +283,7 @@ async def test_malformed_completion_choices_are_provider_errors(
     completion,
 ):
     completion(choices=choices)
+
     with pytest.raises(generation.GenerationError):
         await generation.answer("Question", settings=generation_settings)
 
@@ -285,10 +310,12 @@ async def test_generation_rejects_invalid_configuration_before_calling_providers
     completion,
 ):
     requests = completion()
+
     with pytest.raises(ValueError, match=message):
         await generation.answer(
             "Question", settings=replace(generation_settings, **changes)
         )
+
     assert requests == []
 
 
@@ -305,6 +332,8 @@ async def test_generation_endpoint_override_does_not_change_embedding_settings(
         generation_base_url="https://generation.example/v1",
         openai_base_url="https://embeddings.example/v1",
     )
+
     await generation.answer("Question", settings=settings)
+
     assert str(requests[0].url) == "https://generation.example/v1/responses"
     assert settings.openai_base_url == "https://embeddings.example/v1"

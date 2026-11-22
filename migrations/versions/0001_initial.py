@@ -18,6 +18,7 @@ depends_on = None
 
 def upgrade() -> None:
     """Create the tenant-scoped source, chunk, job, and conversation schema."""
+
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     op.execute(
@@ -147,6 +148,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop the initial RAG schema in reverse dependency order."""
+
     op.execute("DROP TABLE IF EXISTS messages")
     op.execute("DROP TABLE IF EXISTS conversations")
     op.execute("DROP TABLE IF EXISTS ingestion_job_inputs")

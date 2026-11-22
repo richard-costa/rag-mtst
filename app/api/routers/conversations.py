@@ -32,6 +32,7 @@ def _conversation_response(conversation: Conversation) -> ConversationResponse:
     Returns:
         Public conversation identifiers and timestamps.
     """
+
     return ConversationResponse(
         id=conversation.id,
         created_at=conversation.created_at,
@@ -61,9 +62,11 @@ async def list_conversations(
     - **401**: Missing or invalid bearer token.
     - **422**: Invalid pagination parameters.
     """
+
     items = await conversations.list_conversations(
         storage, settings.tenant_id, limit=limit, offset=offset
     )
+
     return [_conversation_response(conversation) for conversation in items]
 
 
@@ -86,11 +89,14 @@ async def get_conversation(
     - **404**: Conversation is missing or belongs to another tenant.
     - **422**: Invalid conversation UUID.
     """
+
     conversation = await conversations.get_conversation(
         storage, settings.tenant_id, conversation_id
     )
+
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
     return _conversation_response(conversation)
 
 
@@ -114,14 +120,18 @@ async def delete_conversation(
     - **409**: A turn currently holds the conversation lock.
     - **422**: Invalid conversation UUID.
     """
+
     try:
         await conversations.delete_conversation(
             storage, settings.tenant_id, conversation_id
         )
+
     except ConversationNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
     except ConversationBusy as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
     return Response(status_code=204)
 
 
@@ -142,6 +152,7 @@ async def create_conversation(
     - **201**: Conversation ID and creation/update timestamps.
     - **401**: Missing or invalid bearer token.
     """
+
     conversation = await conversations.create_conversation(storage, settings.tenant_id)
     return _conversation_response(conversation)
 
@@ -172,6 +183,7 @@ async def conversation_messages(
     - **404**: Conversation is missing or belongs to another tenant.
     - **422**: Invalid UUID or pagination parameters.
     """
+
     try:
         messages = await conversations.list_messages(
             storage,
@@ -180,8 +192,10 @@ async def conversation_messages(
             limit=limit,
             before=before,
         )
+
     except ConversationNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
     return [MessageResponse(**asdict(message)) for message in messages]
 
 
@@ -217,6 +231,7 @@ async def conversation_answer(
 
     Failed or cancelled turns leave no partial messages in history.
     """
+
     try:
         async with conversations.conversation_turn(
             storage, settings.tenant_id, conversation_id, request.query
@@ -224,14 +239,20 @@ async def conversation_answer(
             response = await generate_answer(
                 request, settings=settings, storage=storage, history=turn.history
             )
+
             turn.answer = response.answer
             turn.citations = [citation.model_dump() for citation in response.citations]
+
     except ConversationNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
     except ConversationBusy as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
     except (EmbeddingError, GenerationError) as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
+
     return response

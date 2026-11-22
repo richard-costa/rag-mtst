@@ -19,6 +19,7 @@ async def test_retrieval_preserves_non_file_references(settings, storage, method
         "embedding_provider": settings.embedding_provider,
         "embedding_model": settings.embedding_model_name,
     }
+
     source = await documents.insert_source_with_chunks(
         storage,
         tenant_id=settings.tenant_id,
@@ -42,6 +43,7 @@ async def test_retrieval_preserves_non_file_references(settings, storage, method
         match.source_reference == reference and match.source_title == reference
         for match in matches
     )
+
     if method == "window":
         assert matches[1].score is None
 
@@ -58,6 +60,7 @@ async def test_cosine_uses_direction_not_vector_length_and_filters_models(
             [0.0, 0.0, 0.0],
         ]
     )
+
     await store_vectors([[1.0, 1.0, 0.0]], tenant_id="other-tenant")
     await store_vectors([[1.0, 1.0]], model="other-model")
 
@@ -128,8 +131,10 @@ async def test_windows_prioritize_best_hit_and_merge_connected_context(
     expected,
 ):
     vectors = [[1.0, 0.0, 0.0] for index in range(10)]
+
     for rank, chunk_index in enumerate(seed_indices):
         vectors[chunk_index] = [1.0, 1.0 - rank / 10, 0.0]
+
     source = await store_vectors(vectors)
 
     results = await search(
@@ -161,6 +166,7 @@ async def test_zero_window_matches_cosine_and_empty_tenant_returns_nothing(
     store_vectors, settings, storage
 ):
     await store_vectors([[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]])
+
     cosine = await search(
         "token", method="cosine", limit=1, settings=settings, storage=storage
     )
@@ -179,6 +185,7 @@ async def test_window_query_cannot_read_another_tenants_source(
     store_vectors, settings, storage
 ):
     source = await store_vectors([[1.0, 1.0, 0.0]], tenant_id="other")
+
     assert (
         await documents.get_chunk_window(
             storage,
@@ -198,6 +205,7 @@ async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_cross
         "embedding_provider": settings.embedding_provider,
         "embedding_model": settings.embedding_model_name,
     }
+
     source = await documents.insert_source_with_chunks(
         storage,
         tenant_id=settings.tenant_id,
@@ -213,6 +221,7 @@ async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_cross
             ChunkInput("token token", {}, embedding=None),
         ],
     )
+
     await documents.insert_source_with_chunks(
         storage,
         tenant_id="another-tenant",
@@ -265,4 +274,5 @@ async def test_lexical_does_not_embed_or_scan_chunks_in_python(
     results = await search(
         "moradia unknown", method="lexical", settings=settings, storage=storage
     )
+
     assert [match.content for match in results] == ["Moradia and housing support"]

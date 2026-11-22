@@ -34,8 +34,10 @@ async def generate_answer(
         EmbeddingError: Retrieval embeddings could not be produced.
         GenerationError: The provider failed or returned an unusable answer.
     """
+
     if request.generation_provider is not None and request.generation_model is None:
         raise ValueError("Select a model for the requested answer provider")
+
     answer_settings = replace(
         settings,
         generation_provider=request.generation_provider or settings.generation_provider,
@@ -48,6 +50,7 @@ async def generate_answer(
             else settings.generation_base_url
         ),
     )
+
     result = await answer(
         request.query,
         limit=request.limit,
@@ -58,6 +61,7 @@ async def generate_answer(
         storage=storage,
         history=history,
     )
+
     return AskResponse(
         answer=result.text,
         matches=[search_match_response(match) for match in result.matches],
@@ -76,6 +80,7 @@ def search_match_response(match: SearchResult) -> SearchMatchResponse:
     Returns:
         Search-match response preserving content, source identity, and score.
     """
+
     return SearchMatchResponse(
         source_id=match.source_id,
         source_title=match.source_title,

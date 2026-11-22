@@ -36,15 +36,18 @@ def database_url() -> Generator[str]:
         url = postgres.get_connection_url()
         original_database_url = os.environ.get("DATABASE_URL")
         os.environ["DATABASE_URL"] = url
+
         try:
             alembic = Config("alembic.ini")
             alembic.set_main_option("sqlalchemy.url", _sqlalchemy_url(url))
             command.upgrade(alembic, "head")
+
         finally:
             if original_database_url is None:
                 os.environ.pop("DATABASE_URL", None)
             else:
                 os.environ["DATABASE_URL"] = original_database_url
+
         yield url
 
 
@@ -74,6 +77,7 @@ def api_client(settings: Settings):
     @asynccontextmanager
     async def open_client(client_settings: Settings | None = None):
         active = client_settings or settings
+
         async with AsyncClient(
             transport=ASGITransport(app=create_app(active)),
             base_url="http://test",
@@ -86,6 +90,7 @@ def api_client(settings: Settings):
 
 async def _truncate(database_url: str) -> None:
     connection = await psycopg.AsyncConnection.connect(database_url)
+
     async with connection:
         await connection.execute(f"TRUNCATE {_TABLES} CASCADE")
 
@@ -93,7 +98,9 @@ async def _truncate(database_url: str) -> None:
 @pytest.fixture(autouse=True)
 async def clean_database(database_url: str):
     await _truncate(database_url)
+
     yield
+
     await _truncate(database_url)
 
 
@@ -101,12 +108,14 @@ async def clean_database(database_url: str):
 def deterministic_embeddings(monkeypatch):
     async def embed(texts, *, settings):
         vectors = []
+
         for text in texts:
             normalized = text.casefold()
             authentication = "token" in normalized or "authenticat" in normalized
             vectors.append(
                 [1.0, float(authentication), float("retention" in normalized)]
             )
+
         return vectors
 
     monkeypatch.setattr(ingestion, "embed_texts", embed)
@@ -127,6 +136,7 @@ def deterministic_generation(monkeypatch):
 
     def respond(request):
         requests.append(json.loads(request.content))
+
         return Response(
             200,
             json={
@@ -160,6 +170,7 @@ def deterministic_generation(monkeypatch):
     monkeypatch.setattr(llm, "AsyncOpenAI", client)
     monkeypatch.setenv("RAG_GENERATION_PROVIDER", "ollama")
     monkeypatch.setenv("RAG_GENERATION_MODEL", "test-model")
+
     return requests
 
 
@@ -177,6 +188,7 @@ def run_cli(inline_worker):
         running = asyncio.create_task(
             worker.run_worker(settings=get_settings(), stop_event=stop)
         )
+
         try:
             return await asyncio.to_thread(main, arguments)
         finally:
@@ -198,6 +210,7 @@ def store_vectors(storage, settings):
             mime_type="text/markdown",
             content_hash=str(uuid4()),
         )
+
         await documents.replace_chunks(
             storage,
             tenant_id=tenant_id,
@@ -214,6 +227,7 @@ def store_vectors(storage, settings):
                 for index, vector in enumerate(vectors)
             ],
         )
+
         return source
 
     return store

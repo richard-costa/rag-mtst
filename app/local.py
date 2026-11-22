@@ -39,11 +39,13 @@ def _checkout(root: Path | None = None) -> Path:
     Returns:
         Validated project root.
     """
+
     root = root or ROOT
     if not (root / "compose.yaml").is_file() or not (root / "alembic.ini").is_file():
         raise LocalError(
             "Local management needs a source checkout. Install with: uv tool install --editable ."
         )
+
     return root
 
 
@@ -56,7 +58,9 @@ def _state_dir(root: Path | None = None) -> Path:
     Returns:
         Directory containing local supervisor state.
     """
+
     root = root or ROOT
+
     return root / ".rag-data" / "local-runtime"
 
 
@@ -66,28 +70,37 @@ def load_environment(root: Path | None = None) -> None:
     Args:
         root: Optional project root; defaults to the current checkout.
     """
+
     root = root or ROOT
     path = root / ".env"
+
     if path.is_file():
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
+
             if line.startswith("export "):
                 line = line[7:].lstrip()
+
             name, separator, value = line.partition("=")
             name = name.strip()
             if not separator or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
                 raise LocalError(f"Invalid .env assignment on line {number}")
+
             value = value.strip()
             if value.startswith(('"', "'")):
                 quote = value[0]
                 if len(value) < 2 or value[-1] != quote:
                     raise LocalError(f"Invalid quoted .env value on line {number}")
+
                 value = value[1:-1]
+
             else:
                 value = re.split(r"\s+#", value, maxsplit=1)[0].rstrip()
+
             os.environ.setdefault(name, value)
+
     if (root / "compose.yaml").is_file():
         configured = Path(os.environ.get("RAG_DATA_DIR") or ".rag-data").expanduser()
         os.environ["RAG_DATA_DIR"] = str(
@@ -97,6 +110,7 @@ def load_environment(root: Path | None = None) -> None:
 
 def _verify_configuration() -> None:
     """Validate the local configuration before starting services."""
+
     from importlib.util import find_spec
 
     from app.config import get_settings
@@ -109,6 +123,7 @@ def _verify_configuration() -> None:
             "rag start manages the default local database only. Remove DATABASE_URL "
             "from .env (or use the manual setup for an external database)."
         )
+
     if (
         settings.embedding_provider == "local"
         and find_spec("sentence_transformers") is None
@@ -118,17 +133,22 @@ def _verify_configuration() -> None:
             "uv run --extra local rag start. "
             "Include --extra local in subsequent uv run commands too."
         )
+
     problems = []
+
     try:
         embedding_endpoint(settings)
         if settings.embedding_provider == "openai" and not settings.openai_api_key:
             raise ValueError("Set OPENAI_API_KEY for embeddings")
+
     except ValueError as error:
         problems.append(str(error))
+
     try:
         generation_endpoint(settings)
     except ValueError as error:
         problems.append(str(error))
+
     if problems:
         raise LocalError(
             "Fix the configuration in .env:\n  - " + "\n  - ".join(problems)
@@ -145,6 +165,7 @@ def _docker(*arguments: str, capture: bool = True) -> subprocess.CompletedProces
     Returns:
         Completed process result, including its output and status.
     """
+
     command = [
         "docker",
         "compose",
@@ -154,6 +175,7 @@ def _docker(*arguments: str, capture: bool = True) -> subprocess.CompletedProces
         str(_checkout() / "compose.yaml"),
         *arguments,
     ]
+
     try:
         return subprocess.run(
             command,
@@ -162,10 +184,12 @@ def _docker(*arguments: str, capture: bool = True) -> subprocess.CompletedProces
             capture_output=capture,
             check=False,
         )
+
     except FileNotFoundError as error:
         raise LocalError(
             "Docker is not installed. Install Docker with Compose, then retry."
         ) from error
+
     except OSError as error:
         raise LocalError(
             "Could not run Docker Compose. Check Docker installation and permissions."
@@ -178,7 +202,9 @@ def _docker_ready() -> bool:
     Returns:
         Whether the database service is ready.
     """
+
     listing = _docker("ps", "--status", "running", "--format", "{{.Health}}", "db")
+
     return listing.returncode == 0 and listing.stdout.split()[:1] == ["healthy"]
 
 
@@ -191,10 +217,12 @@ def _worker_info(root: Path | None = None) -> tuple[int, str] | None:
     Returns:
         Stored PID and ownership token, or ``None`` when missing.
     """
+
     try:
         record = json.loads(
             (_state_dir(root) / "worker.json").read_text(encoding="utf-8")
         )
+
         pid, token = record["pid"], record["token"]
         if (
             isinstance(pid, int)
@@ -203,8 +231,10 @@ def _worker_info(root: Path | None = None) -> tuple[int, str] | None:
             and len(token) == 32
         ):
             return pid, token
+
     except FileNotFoundError, ValueError, KeyError, TypeError, OSError:
         pass
+
     return None
 
 
@@ -217,9 +247,12 @@ def _worker_alive(info: tuple[int, str] | None) -> bool:
     Returns:
         Whether the recorded process is alive.
     """
+
     if info is None:
         return False
+
     pid, token = info
+
     try:
         # The token distinguishes our worker from a recycled PID or another Python process.
         result = subprocess.run(
@@ -228,11 +261,13 @@ def _worker_alive(info: tuple[int, str] | None) -> bool:
             capture_output=True,
             check=False,
         )
+
         return (
             result.returncode == 0
             and "app.local" in result.stdout
             and token in result.stdout
         )
+
     except OSError:
         return False
 
@@ -247,12 +282,15 @@ def _worker_ready(info: tuple[int, str] | None, root: Path | None = None) -> boo
     Returns:
         Whether the worker reports ready.
     """
+
     if not _worker_alive(info):
         return False
+
     try:
         return (_state_dir(root) / "ready").read_text(encoding="utf-8").strip() == info[
             1
         ]
+
     except OSError:
         return False
 
@@ -264,13 +302,16 @@ def _lock(root: Path | None = None):
     Args:
         root: Optional project root; defaults to the current checkout.
     """
+
     root = root or ROOT
     if os.name != "posix":
         raise LocalError("The local worker manager requires Linux, macOS, or WSL.")
+
     import fcntl
 
     directory = _state_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
+
     with (directory / "manager.lock").open("a+") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
@@ -285,6 +326,7 @@ def _clean_stale_record(root: Path | None = None) -> None:
     Args:
         root: Optional project root; defaults to the current checkout.
     """
+
     (_state_dir(root) / "worker.json").unlink(missing_ok=True)
     (_state_dir(root) / "ready").unlink(missing_ok=True)
 
@@ -295,19 +337,25 @@ def start() -> int:
     Returns:
         Process exit code.
     """
+
     root = _checkout()
     if not (root / ".env").exists():
         template = root / ".env.example"
         if not template.is_file():
             raise LocalError("Missing .env.example; cannot prepare local configuration")
+
         destination = root / ".env"
         descriptor = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             stream.write(template.read_text(encoding="utf-8"))
+
         raise LocalError(
             "Created .env. Fill in your provider key and RAG_GENERATION_MODEL, then run rag start again."
         )
+
     _verify_configuration()
+
     with _lock():
         print("Checking Docker...")
         available = _docker("version")
@@ -315,12 +363,14 @@ def start() -> int:
             raise LocalError(
                 "Docker Compose is unavailable. Start Docker and verify docker compose version."
             )
+
         print("Starting PostgreSQL...")
         database = _docker("up", "-d", "--wait", "db")
         if database.returncode != 0 or not _docker_ready():
             raise LocalError(
                 "PostgreSQL did not become healthy. Check the local Docker Compose database."
             )
+
         print("PostgreSQL ready.")
         print("Applying migrations...")
         migrated = subprocess.run(
@@ -339,11 +389,14 @@ def start() -> int:
             text=True,
             check=False,
         )
+
         if migrated.returncode != 0:
             raise LocalError(
                 "Database migration failed. Check the database connection and migration configuration."
             )
+
         print("Migrations complete.")
+
         if _worker_ready(_worker_info()):
             print("Ingestion worker already running.")
         else:
@@ -351,9 +404,11 @@ def start() -> int:
                 raise LocalError(
                     "Worker is running but not ready. See .rag-data/local-runtime/worker.log"
                 )
+
             _clean_stale_record()
             token = uuid4().hex
             directory = _state_dir()
+
             with (directory / "worker.log").open("a", encoding="utf-8") as log:
                 process = subprocess.Popen(
                     [sys.executable, "-m", "app.local", "worker", token],
@@ -364,25 +419,33 @@ def start() -> int:
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
                 )
+
             (directory / "worker.json").write_text(
                 json.dumps({"pid": process.pid, "token": token}), encoding="utf-8"
             )
+
             for _ in range(START_TIMEOUT * 10):
                 if _worker_ready((process.pid, token)):
                     break
+
                 if process.poll() is not None:
                     raise LocalError(
                         "Worker exited during startup. See .rag-data/local-runtime/worker.log"
                     )
+
                 time.sleep(0.1)
+
             else:
                 raise LocalError(
                     "Worker did not become ready. See .rag-data/local-runtime/worker.log"
                 )
+
             print("Ingestion worker ready.")
+
     print("\nReady! Try:")
     print("  uv run rag add docs/assets/sample.md")
     print('  uv run rag ask "When is the support desk open?"')
+
     return 0
 
 
@@ -392,34 +455,43 @@ def status() -> int:
     Returns:
         Process exit code.
     """
+
     _checkout()
+
     try:
         database = _docker_ready()
     except LocalError:
         database = False
+
     worker = _worker_ready(_worker_info())
     print(f"PostgreSQL: {'ready' if database else 'stopped or unhealthy'}")
     print(f"Worker:     {'ready' if worker else 'stopped or unhealthy'}")
+
     return 0 if database and worker else 1
 
 
 def _stop_worker() -> None:
     """Stop the managed ingestion worker if it is still alive."""
+
     info = _worker_info()
     if not _worker_alive(info):
         _clean_stale_record()
         print("Worker already stopped.")
         return
+
     assert info is not None
     pid, token = info
     print("Stopping ingestion worker...")
     os.kill(pid, signal.SIGTERM)
+
     for _ in range(STOP_TIMEOUT * 10):
         if not _worker_alive((pid, token)):
             _clean_stale_record()
             print("Worker stopped.")
             return
+
         time.sleep(0.1)
+
     raise LocalError(
         "Worker did not exit in time. Check .rag-data/local-runtime/worker.log"
     )
@@ -431,14 +503,18 @@ def stop() -> int:
     Returns:
         Process exit code.
     """
+
     _checkout()
+
     with _lock():
         _stop_worker()
         print("Stopping PostgreSQL (preserving indexed data)...")
         result = _docker("stop", "db")
         if result.returncode != 0:
             raise LocalError("Could not stop PostgreSQL. Check Docker Compose status.")
+
     print("Stopped. Indexed data and model caches were preserved.")
+
     return 0
 
 
@@ -451,15 +527,18 @@ def reset(*, yes: bool = False) -> int:
     Returns:
         Process exit code.
     """
+
     root = _checkout()
     if not yes:
         print(
             "This deletes the local Docker database and all indexed data/conversations."
         )
+
         print("Original documents and shared model caches are not deleted.")
         if input("Type RESET to continue: ").strip() != "RESET":
             print("Cancelled.")
             return 1
+
     with _lock():
         _stop_worker()
         result = _docker("down", "--volumes")
@@ -467,6 +546,7 @@ def reset(*, yes: bool = False) -> int:
             raise LocalError(
                 "Could not remove local database volume. Check Docker Compose status."
             )
+
         from app.config import get_settings
 
         staged = get_settings().data_dir / "ingestion"
@@ -475,22 +555,27 @@ def reset(*, yes: bool = False) -> int:
             shutil.rmtree(safe, ignore_errors=True)
         else:
             print("Custom staging path was preserved; remove it manually if necessary.")
+
     print("PostgreSQL: stopped")
     print("Local database and indexed data: deleted")
     print("Preserved: original files, .env, model caches")
     print()
     print("Reset complete. Start again with: uv run rag start")
+
     return 0
 
 
 async def _run_worker() -> None:
     """Run the worker loop inside the supervisor's child process."""
+
     from app.worker import run_worker
 
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
+
     for selected_signal in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(selected_signal, stop_event.set)
+
     await run_worker(stop_event=stop_event)
 
 
@@ -503,7 +588,9 @@ def worker_child(token: str) -> int:
     Returns:
         Process exit code.
     """
+
     load_environment()
+
     try:
         import psycopg
 
@@ -513,14 +600,18 @@ def worker_child(token: str) -> int:
             get_settings().database_url, connect_timeout=5
         ) as connection:
             connection.execute("SELECT 1")
+
         ready = _state_dir() / "ready"
         ready.write_text(token, encoding="utf-8")
+
         try:
             asyncio.run(_run_worker())
         finally:
             if ready.exists() and ready.read_text(encoding="utf-8") == token:
                 ready.unlink(missing_ok=True)
+
         return 0
+
     except Exception:
         import logging
 
@@ -535,4 +626,5 @@ if __name__ == "__main__":
         and re.fullmatch(r"[0-9a-f]{32}", sys.argv[2])
     ):
         raise SystemExit(worker_child(sys.argv[2]))
+
     raise SystemExit("This module is managed through the rag CLI")
