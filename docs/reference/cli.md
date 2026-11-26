@@ -8,13 +8,7 @@ provider, and shared-input access appropriate to the operation.
 rag [--data-dir PATH] COMMAND
 ```
 
-`--data-dir` overrides the staging directory and must precede the subcommand.
-It must resolve to the worker's shared input path; it is not an original-file
-archive. Lifecycle commands (`start`, `status`, `stop`, `reset`) reject this
-option. For the locally managed worker, set `RAG_DATA_DIR` in `.env` before
-starting it, then use the same configuration for subsequent commands. Restart
-the worker after changing that setting.
-Run `rag --help` or `rag COMMAND --help` for installed argument help.
+`--data-dir` precedes the subcommand and must match the worker's staging path. Lifecycle commands reject it; instead set `RAG_DATA_DIR` in `.env` before starting, use consistent configuration, and restart the worker after changes. See `rag --help` or `rag COMMAND --help`.
 
 ## Local lifecycle
 
@@ -52,16 +46,10 @@ checkout can still use ordinary commands against a separately managed backend.
 | --- | --- | --- |
 | `rag add FILE` | Queue ingestion; wait by default | `--reindex`, `--no-wait`, `--extraction-method parser\|visual` |
 | `rag job JOB_ID` | Inspect one tenant-scoped ingestion job | UUID argument |
-| `rag search QUERY` | Print retrieved passages | `--limit N`, `--method METHOD`, `--window N`, `--assembly document\\|score` |
+| `rag search QUERY` | Print retrieved passages | `--limit N`, `--method METHOD`, `--window N`, `--assembly document\|score` |
 | `rag ask QUESTION` | Generate text and print recognized references | Same retrieval options as search |
 
-`METHOD` is `cosine`, `window`, `lexical`, or `hybrid`. Omitted retrieval options
-use [configuration defaults](configuration.md#retrieval). Limit must be positive;
-window must be nonnegative. Window limit counts seeds. `--assembly score`
-puts scored matches before their deduplicated neighbors in window mode, instead
-of the default merged document order; it does not alter the ranking or scores.
-See [search methods](../explanation/retrieval.md#search-methods).
-Quote multiword queries and paths containing spaces.
+`METHOD`: `cosine`, `window`, `lexical`, `hybrid`. Limit > 0; window ≥ 0. See [defaults](configuration.md#retrieval) and [search/assembly semantics](../explanation/retrieval.md#search-methods). Quote multiword queries and paths with spaces.
 
 ## Ingestion
 

@@ -1,14 +1,10 @@
 # Develop and test
 
-This project uses Python 3.14+, uv, FastAPI, PostgreSQL 17/pgvector, Alembic,
-and a separate ingestion worker. The **CLI calls feature functions directly**;
-it does not call HTTP endpoints. Start with the [quickstart](../tutorials/quickstart.md)
-before modifying internals.
+Complete the [quickstart](../tutorials/quickstart.md) before modifying internals.
 
 ## Choose your entry point
 
-This is the **single code ownership map**. Conceptual pages explain behavior;
-this table tells you where to make a change.
+Code ownership map:
 
 | Responsibility | Module(s) |
 | --- | --- |
@@ -61,21 +57,7 @@ functions directly. Domain modules do not depend on FastAPI or HTTP schemas.
 
 ## Local development workflow
 
-`uv run` prepares the project environment automatically. You may run
-`uv sync` explicitly if your editor needs the dependencies installed beforehand.
-
-```bash
-uv run rag start
-uv run rag add docs/assets/sample.md
-uv run rag search "support hours"
-uv run rag stop
-```
-
-The host CLI and worker share `.rag-data` by default. The local supervisor
-runs PostgreSQL in Docker; it does **not** start the API or demo. Changes to
-worker, chunking, extraction, or embedding implementation require restarting
-the worker (`rag stop` then `rag start`). They do not automatically reindex
-existing documents.
+Use the [quickstart](../tutorials/quickstart.md) for the local stack. Run `uv sync` if your editor needs dependencies in advance. Restart the worker (`rag stop` then `rag start`) after changes to worker, chunking, extraction or embeddings. Existing documents are not automatically reindexed.
 
 For direct Python feature calls, use the [Python reference](../reference/python.md).
 To connect another application over HTTP, use the [HTTP reference](../reference/http.md).
@@ -135,8 +117,6 @@ worker ownership fencing, atomic reindexing, explicit tenant scope, and
 conversation transaction boundaries. See
 [indexing internals](../explanation/indexing.md) and
 [retrieval internals](../explanation/retrieval.md) before changing those workflows.
-These guides describe **why** the boundaries matter; the table above shows
-**where** to make changes.
 
 ## Optional push checks
 
@@ -178,9 +158,7 @@ uv run --group docs mkdocs serve --dev-addr 127.0.0.1:8002
 uv run --group docs mkdocs build --strict
 ```
 
-The strict build checks navigation and links. Preview Mermaid diagrams in a
-browser: MkDocs does not execute Mermaid at build time. Keep synthetic samples
-and never commit provider keys or source documents with private content.
+Strict builds check navigation and links, not Mermaid execution; preview diagrams in a browser. Keep samples synthetic and private documents/credentials out of Git.
 
 ### Docstring conventions
 

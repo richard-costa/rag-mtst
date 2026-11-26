@@ -23,16 +23,7 @@ Build the **demo-free backend image** from the current multistage Dockerfile:
 docker build --target app -t rag-mtst:backend .
 ```
 
-The image alone does not run migrations, PostgreSQL, or the ingestion worker.
-The included `compose.yaml` is a reference/full-stack Compose setup, **not a
-hardened production deployment**. It currently publishes the API port on
-`8000:8000` and uses example database credentials. Do not expose it directly
-to untrusted networks. The local CLI manager selects just `db` from that
-Compose file and uses its own Compose project name.
-
-Within a container the API can listen on `0.0.0.0`; public access, reverse
-proxy, HTTPS, and firewall policy are independent deployment decisions. This
-repository does not prescribe them.
+The image alone does not run PostgreSQL, migrations or the worker. `compose.yaml` is a reference setup, not hardened: it publishes `8000:8000` with example database credentials. Do not expose directly to untrusted networks. Containers may listen on `0.0.0.0`; operators own ingress, HTTPS and firewall policy.
 
 ## Compose services
 
@@ -52,12 +43,7 @@ configuration and mount the `rag-data` volume at `/app/.rag-data` so both can
 access staged inputs at the same path. Database data is stored separately in
 `postgres-data`.
 
-This differs from `rag start`, which starts only the Compose `db` service and
-runs migrations and the worker on the host. See
-[component boundaries](../explanation/architecture.md#component-boundaries) for
-the worker's process and container boundaries, and
-[container addresses](../reference/configuration.md#container-addresses) for
-host versus Compose connection settings.
+`rag start` uses a dedicated Compose project for `db` and runs migrations/worker on the host. See [component boundaries](../explanation/architecture.md#component-boundaries) and [container addresses](../reference/configuration.md#container-addresses).
 
 ## Before exposing the API
 

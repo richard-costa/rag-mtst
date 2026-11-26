@@ -1,12 +1,6 @@
 # Ingest and manage sources
 
-Start with the [CLI quickstart](../tutorials/quickstart.md): `uv run rag start` brings up
-PostgreSQL and the background host worker. CLI, API, and worker must share the
-database, tenant, and staging directory. Keep originals: terminal staged inputs
-are removed after processing. The `rag` CLI loads `.env` automatically.
-For local embeddings use `uv run --extra local rag ...` consistently. HTTP
-curl examples require exported `RAG_API_KEY`; a private `.env` alone does not
-export variables for curl.
+Complete the [quickstart](../tutorials/quickstart.md). CLI, API and worker must share database, tenant and staging path. Keep originals; terminal inputs are removed. For local embeddings, use `uv run --extra local rag ...` consistently. Export `RAG_API_KEY` for curl; `.env` alone does not export shell variables.
 
 ## Submit through the CLI
 
@@ -82,20 +76,14 @@ curl --fail-with-body http://127.0.0.1:8000/sources/SOURCE_ID \
   -H "Authorization: Bearer $RAG_API_KEY"
 ```
 
-Sources are listed newest first with `title`, `reference`, and `chunk_count`.
-Page with `limit` (1 through 100) and `offset`. A source whose first indexing job
-is still pending reports zero chunks.
+Sources are listed newest first; see [fields and paging](../reference/http.md#source-management).
 
 ```bash
 curl --fail-with-body -X DELETE http://127.0.0.1:8000/sources/SOURCE_ID \
   -H "Authorization: Bearer $RAG_API_KEY"
 ```
 
-A 204 response means the source, its chunks, and its finished job history are
-gone; it no longer appears in search or answers. Deletion returns 409 while an
-ingestion job for the source is pending or running; wait for it to finish.
-Citations already saved in conversations are snapshots and remain unchanged.
-There is no undo: resubmit the original to index it again.
+204 means source, chunks and job history are deleted. For 409, wait for ingestion to finish. Saved citations remain unchanged. No undo: resubmit the original.
 
 ## Recover failed or interrupted jobs
 

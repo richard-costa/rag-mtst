@@ -1,22 +1,10 @@
 # Architecture and transactions
 
-This page documents the **implementation boundaries and consistency guarantees**
-behind the [conceptual overview](overview.md). For a directory-by-directory
-code map, use the [development guide](../how-to/develop.md#choose-your-entry-point).
-For exact database columns and constraints, the authoritative definition is
-`migrations/versions/0001_initial.py`.
+Implementation boundaries and consistency guarantees. See the [overview](overview.md), [code map](../how-to/develop.md#choose-your-entry-point) and authoritative schema in `migrations/versions/0001_initial.py`.
 
 ## Component boundaries
 
-The CLI calls application functions **directly**; HTTP clients use FastAPI.
-Both operate on the same feature modules and PostgreSQL database. A separate
-worker executes durable ingestion jobs. There is no external message broker,
-ORM layer, or separate service/repository framework.
-
-The HTTP adapter is a thin layer of feature routers over the same modules;
-retrieval, generation, ingestion, and storage remain independent of FastAPI.
-Its package layout is described in
-[HTTP package boundaries](../how-to/develop.md#http-package-boundaries).
+The CLI calls feature functions directly; FastAPI wraps the same functions. PostgreSQL provides storage and the durable queue; a separate worker executes jobs. No broker, ORM or service/repository framework. See [HTTP package boundaries](../how-to/develop.md#http-package-boundaries).
 
 ```mermaid
 ---
@@ -72,8 +60,7 @@ an asynchronous job. See [indexing details](indexing.md).
 
 ## Data and persistence
 
-The schema has six tables with four main relationships. The diagram shows keys
-and identifying columns only; the migration is the authoritative column list.
+The diagram shows keys and identifying columns only.
 
 ```mermaid
 ---
@@ -139,15 +126,7 @@ Important uniqueness constraints include `sources(tenant_id, content_hash)`,
 `messages(conversation_id, sequence)`. A partial unique index prevents more
 than one pending/running job for a source.
 
-Original file bytes are **not** archived in PostgreSQL. `sources.reference` is
-descriptive origin metadata, not a unique identifier or an instruction to fetch
-the original. File ingestion stores the filename. A future acquisition pipeline
-can supply a URL or external record identifier without adding a source-specific
-column; URL acquisition itself is not implemented. References are not necessarily
-accessible. File titles use the reference's basename; non-file titles preserve
-the full reference without filesystem parsing. Citation snapshots are JSONB
-rather than references to live chunk rows: reindexing does not rewrite
-previously recorded conversational evidence.
+Original bytes are not archived. `sources.reference` is descriptive metadata, not an identity or fetch instruction; see the [reference contract](../reference/http.md#search-and-answer-responses). URLs or external IDs can use this column without schema changes. Citation snapshots are JSONB, not live chunk references; reindexing does not change saved evidence.
 
 The vector column can hold different dimensions; provider/model tags separate
 embedding spaces. Model revisions or endpoint deployments are **not** tracked
@@ -215,10 +194,7 @@ sequenceDiagram
     end
 ```
 
-Both user and assistant messages, including citation snapshots, commit
-together. Failure/cancellation rolls back **both**. The generation history is
-bounded context, not citation evidence; retrieval still searches only the
-current question.
+Both messages and citation snapshots commit atomically; failure or cancellation rolls back both. See [history budget](retrieval.md#conversations-share-the-same-budget) for retrieval and generation semantics.
 
 **A client timeout is not proof of server cancellation.** A turn may have
 committed after the client disconnected. Read history before retrying; see

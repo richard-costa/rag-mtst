@@ -11,9 +11,7 @@ extraction profile: method, format, engine/version or decoding policy, and visua
 model/endpoint/settings where relevant. Missing, conflicting, or mixed profiles
 require explicit reindexing. The system does not silently reinterpret old content.
 
-Embedding/chunking changes also require deliberate reindexing; ordinary duplicate
-adds do not rebuild old vectors. Reindex keeps the source ID but replaces chunks
-and vectors, not a historical index version.
+Embedding/chunking changes also require reindexing, which retains the source ID and replaces chunks/vectors. No historical index versions.
 
 ## Extraction is an explicit choice
 
@@ -75,14 +73,9 @@ stateDiagram-v2
 	failed --> [*]
 ```
 
-These are job statuses. While `running`, progress stages are `extracting`,
-`chunking`, `embedding`, and `storing`. Explicit resubmission after failure
-creates a new job; a failed job never returns to `pending` automatically.
+Running stages: `extracting`, `chunking`, `embedding`, `storing`. Resubmission after failure creates a new job; no automatic replay.
 
-The worker atomically claims a pending job and executes it in a supervised child
-process. Heartbeats detect lost work; execution and shutdown have explicit
-[time limits](../reference/limits.md#worker-and-model-context). A stale job fails on
-a later poll, rather than automatically replaying potentially paid work.
+The worker claims pending jobs atomically and runs supervised child processes. Stale heartbeats fail on a later poll. See [execution/shutdown limits](../reference/limits.md#worker-and-model-context).
 
 The complete prepared replacement and job completion commit together. Revoked
 claims cannot commit, and failed reindexing preserves the old searchable chunks.
@@ -93,5 +86,4 @@ deletion. If a submission
 has an uncertain database outcome, it may leave an unreferenced file rather than
 risk deleting an accepted input. There is no general orphan-file sweep.
 
-Operators retry by fixing the cause and submitting the original again, not by
-assuming inputs were retained. See [ingestion and recovery](../how-to/ingest.md).
+See [recovery](../how-to/ingest.md#recover-failed-or-interrupted-jobs) for explicit resubmission.

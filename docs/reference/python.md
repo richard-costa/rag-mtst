@@ -37,7 +37,6 @@ from app.config import Settings
 from app.generation import answer
 from app.retrieval import search
 
-
 async def inspect_sources():
     settings = Settings.from_environment()
     matches = await search("support hours", method="lexical", limit=3, settings=settings)
@@ -45,10 +44,7 @@ async def inspect_sources():
     return matches, result
 ```
 
-`search(..., method="window", assembly="score")` and `answer(...,
-method="window", assembly="score")` prioritize scored seed passages followed
-by neighboring context; the default `assembly="document"` keeps merged windows
-in document order. Other retrieval methods ignore `assembly`.
+`search` and `answer` accept `assembly="score"` or `"document"` (default) in window mode; see [ordering semantics](../explanation/retrieval.md#search-methods).
 
 `SearchResult` contains `source_id`, `source_title`, `source_reference`,
 `chunk_index`, `content`, and nullable `score`, with the same meaning as the
@@ -59,9 +55,7 @@ in document order. Other retrieval methods ignore `assembly`.
 reference (`source_reference`), chunk index, and truncation flag. `EmbeddingError` and `GenerationError`
 report handled provider failures.
 
-`answer(..., history=messages)` accepts ordered messages with `role` and
-`content`, such as stored `Message` records, for bounded generation context.
-Retrieval still uses only the question. History does not supply citation evidence.
+`answer(..., history=messages)` accepts ordered `role`/`content` messages (e.g. stored `Message` records); see [history semantics](../explanation/retrieval.md#conversations-share-the-same-budget).
 
 ## Extraction and chunking
 

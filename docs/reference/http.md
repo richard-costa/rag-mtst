@@ -9,10 +9,7 @@ The running application serves exact schemas at `/openapi.json`, Swagger UI at
 at the proxy if necessary. See [running the API](../how-to/develop.md#run-the-api-alongside-the-local-manager) and
 [configuration](configuration.md) for prerequisites.
 
-Operations are grouped by feature and have concise summaries with Markdown
-descriptions of inputs, responses, and workflow guarantees. These descriptions
-come from endpoint docstrings; schema fields remain the source for exact types
-and validation constraints.
+OpenAPI schemas define exact types and validation constraints; endpoint docstrings supply descriptions.
 
 ## Endpoints
 
@@ -53,11 +50,7 @@ Supported extensions are `.txt`, `.md`, `.markdown`, `.pdf`, `.docx`, and `.pptx
 Visual extraction supports only PDF/DOCX/PPTX. The document must yield searchable
 text. There is no automatic visual fallback. See [formats and limits](limits.md).
 
-```bash
-curl --fail-with-body http://127.0.0.1:8000/sources/file \
-  -H "Authorization: Bearer $RAG_API_KEY" \
-  -F 'file=@docs/assets/sample.md'
-```
+See [HTTP upload example](../how-to/ingest.md#submit-through-http).
 
 `SourceResponse` fields:
 
@@ -113,9 +106,7 @@ other than creation may be null. Status is `pending`, `running`, `completed`, or
 `failed`. Errors are sanitized; paths, settings, contents, credentials, and claim
 tokens are not returned.
 
-Poll the supplied URL with the same bearer token. A separate worker executes
-jobs; polling does not execute them. Terminal input files are removed and failed
-jobs are not automatically retried. See [recovery](../how-to/ingest.md#recover-failed-or-interrupted-jobs).
+Poll with the same token; only the worker executes jobs. See [recovery](../how-to/ingest.md#recover-failed-or-interrupted-jobs) for terminal-input cleanup and failed jobs.
 
 ## Search and answer requests
 
@@ -144,16 +135,7 @@ with stored conversations, so older turns may be omitted. A lone question,
 wrong order, blank content, unknown roles, or extra fields return 422 before any
 provider call.
 
-```bash
-curl --fail-with-body http://127.0.0.1:8000/search \
-  -H "Authorization: Bearer $RAG_API_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"support hours","method":"lexical","limit":3}'
-```
-
-Use `/ask` with the same JSON shape to request a generated answer. Lexical search
-does not call embeddings; the other methods do. Answer generation needs valid
-provider/model configuration even when there are no matches.
+See [HTTP search/ask example](../how-to/search.md#over-http). Lexical search does not call embeddings; the other methods do. Generation configuration is required even without matches.
 
 ## Search and answer responses
 
@@ -211,12 +193,7 @@ turn is running.
 fields forbidden. The server owns turn history: clients cannot submit `history`,
 `role`, system messages, or assistant messages. The response is `AskResponse`.
 
-One turn runs per conversation; overlap returns 409 immediately, including across
-API processes. The successful user/assistant pair commits atomically. Handled
-failures and cancellation leave history unchanged. A successful no-sources
-response is saved. Other conversations can run independently. History is
-untrusted context, not source evidence, and retrieval uses only the current query;
-see [conversations share the same budget](../explanation/retrieval.md#conversations-share-the-same-budget).
+One turn per conversation; overlap returns 409 even across API processes. Success (including no-sources answers) commits both messages atomically; failure/cancellation leaves history unchanged. Other conversations are independent. See [history semantics](../explanation/retrieval.md#conversations-share-the-same-budget).
 
 `GET /conversations/{conversation_id}/messages` parameters:
 

@@ -1,11 +1,6 @@
 # How RAG-MTST works
 
-RAG means **retrieval-augmented generation**: instead of asking a model to answer
-from memory alone, the application finds relevant passages from indexed documents
-and supplies them as context for the answer.
-
-RAG-MTST is a reusable **backend**. Other applications can invoke its HTTP API
-or Python functions; the CLI is a convenient direct interface for local use.
+Retrieval-augmented generation (RAG) supplies relevant indexed passages to a model as answer context. RAG-MTST exposes the same backend through Python, HTTP and CLI.
 
 ## One system, two flows
 
@@ -25,31 +20,13 @@ flowchart TB
     G --> A[Answer + citation records]
 ```
 
-The API and CLI share feature modules. They do not implement separate search or
-answer engines. The ingestion worker is a **separate process** so work can continue
-after the client that submitted it exits.
+The API and CLI share feature modules. The separate worker continues ingestion after the submitter exits.
 
 ## Ingestion: from file to indexed passages
 
-1. A file is submitted by `rag add` or authenticated HTTP upload.
-2. Its bytes are copied to a **temporary staging directory**. The source is
-   identified by its content hash within the configured tenant.
-3. PostgreSQL records a durable job and its nonsecret indexing settings.
-4. A worker claims the job and extracts TXT/Markdown/PDF/DOCX/PPTX text.
-5. The extracted text is split into **structural Markdown chunks**, preserving
-   section headings and available provenance.
-6. Each chunk is embedded: converted into a vector representing its content.
-7. Chunks, metadata, vectors, and full-text search fields are stored in PostgreSQL.
-8. The completed/failed staged input is cleaned up. The original file must be
-   kept separately.
+Files are staged temporarily; tenant-scoped content hashes identify sources. The worker extracts text, creates structural Markdown chunks with provenance, embeds them and stores text/vectors in PostgreSQL. Keep originals separately.
 
-Default extraction is native parsing. **Visual extraction** is explicit, uses
-a configured vision model and page rendering, and may send page images to a
-provider. No automatic OCR fallback is performed.
-
-Indexing jobs are durable; worker failure does not silently re-run paid work.
-Reindexing is explicit and atomic. Identical bytes ordinarily reuse an already
-indexed source. See [extraction and indexing](indexing.md) for the guarantees.
+Native parsing is the default; visual extraction is explicit, with no automatic OCR fallback. See [extraction and indexing](indexing.md) for deduplication, atomic reindexing and job recovery.
 
 ## Retrieval: select evidence for a question
 
@@ -69,15 +46,7 @@ and language behavior are described in
 
 ## Generation: passages become an answer
 
-`rag ask` first retrieves passages, then fits selected passages into a bounded
-prompt with the user's question. A configured LLM generates structured output
-containing answer text and citation IDs.
-
-The system validates that returned citation IDs refer to passages actually
-supplied to the model. It does **not** independently verify the truth of the
-model's claims. With no matches, generation returns a fixed no-sources answer
-rather than inventing document evidence. See
-[what citations establish](retrieval.md#what-citations-establish).
+`rag ask` supplies retrieved passages and the question within a prompt budget. The model returns answer text and citation IDs; only IDs referring to supplied passages are accepted. With no matches, no generation call is made. See [citation semantics](retrieval.md#what-citations-establish).
 
 ## Conversations
 
@@ -91,9 +60,7 @@ for answers. See
 
 ## What persists?
 
-PostgreSQL stores source metadata, extracted chunks, embeddings, ingestion jobs,
-conversations, and citation snapshots. Uploaded bytes are only staged
-temporarily. See [security and data lifecycle](security.md#data-lifecycle).
+See [data lifecycle](security.md#data-lifecycle) for persisted records and temporary inputs.
 
 ## Next steps
 

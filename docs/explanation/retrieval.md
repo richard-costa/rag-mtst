@@ -62,18 +62,7 @@ flowchart TB
 	found -.->|All original matches retained| response
 ```
 
-Answers validate generation configuration, retrieve matches, and fit source
-passages into a bounded serialized prompt. The budget includes system text,
-question, labels, JSON escaping, history, response schema, and a formatting
-reserve, estimated locally rather than by the provider; the default and the
-estimation method are listed under
-[worker and model context](../reference/limits.md#worker-and-model-context).
-Passages retain retrieval/assembly order: `ask` supplies them to the LLM in
-the same order displayed by `search`, until the input budget is full. The
-default input budget is 8,000 locally estimated tokens, including instructions,
-question, history, source text, response schema, and a 64-token reserve; the
-output budget is a separate 4,000 tokens. Later passages may be shortened or
-excluded, but all retrieval matches remain in the response.
+After configuration validation and retrieval, `ask` packs passages in the same order shown by `search`. The default input budget is 8,000 locally estimated tokens; the separate output allowance is 4,000. See [worker and model context](../reference/limits.md#worker-and-model-context) for accounting and overhead. Later passages may be shortened or omitted; the response retains all retrieval matches.
 
 With no matches, the application returns a fixed English no-sources message
 without calling generation, after configuration validation. There is no excerpt

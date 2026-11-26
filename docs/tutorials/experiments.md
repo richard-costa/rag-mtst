@@ -1,11 +1,6 @@
 # Experiments: change one thing and observe it
 
-Start with the [quickstart](quickstart.md). These exercises use **real indexing
-and provider calls** and the same backend as the CLI and API; results may vary
-by model, embedding space, and configuration. Synthetic files are under
-`docs/assets/experiments/` so you don't have to upload private data.
-
-Keep original sample files. Reindexing and hosted embeddings can incur charges.
+Complete the [quickstart](quickstart.md). Use synthetic files in `docs/assets/experiments/`, keep originals, and expect real provider calls, possible charges and model-dependent results.
 
 ## Experiment 1: compare retrieval strategies
 
@@ -27,11 +22,7 @@ uv run rag search "refund eligibility" --method window --limit 3 --window 1
 uv run rag search "refund eligibility" --method hybrid --limit 3
 ```
 
-**Observe:** lexical search uses query words and can miss paraphrases. Cosine
-search embeds the query, so it may match related language without the same
-words. Window retrieval adds neighboring chunks from a matched source; their
-scores display as `context`. Hybrid combines lexical and vector candidate
-ranks. Exact ordering is not a test guarantee.
+**Observe:** compare keyword matches, paraphrases, window neighbors (`context`), and fused ranks. Exact order is not guaranteed.
 
 Try changing **one option at a time**, especially `--window 0` versus
 `--window 2`, and compare the printed titles, chunk indices, and passages.
@@ -95,14 +86,7 @@ is factually supported.
 
 ## Experiment 4: switch model providers
 
-Embeddings (used to index documents and search) and generation (used to write
-answers) are independent settings.
-
-The quickstart uses OpenAI for both. To try **local embeddings + Ollama answers**
-instead, first complete the
-[local embeddings and Ollama setup](../how-to/providers.md#use-local-embeddings-and-ollama-answers).
-Then use `uv run --extra local rag ...` for all CLI commands in this experiment
-so uv keeps the optional dependencies installed:
+Complete [local embeddings + Ollama setup](../how-to/providers.md#use-local-embeddings-and-ollama-answers), then use the `local` extra for all CLI commands:
 
 ```bash
 uv run rag stop

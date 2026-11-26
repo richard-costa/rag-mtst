@@ -1,13 +1,6 @@
 # Roadmap
 
-RAG-MTST is a **pre-release, trusted single-tenant RAG backend**. It already
-supports durable file ingestion, structured chunking, hosted/local embeddings,
-four retrieval strategies, source-linked generation, an HTTP API, a CLI, and
-bounded persisted conversations. These capabilities are described in the
-[README](README.md) and [documentation](docs/index.md), not repeated here.
-
-This roadmap tracks **future work and open questions** rather than historical
-completed-task checklists. No release dates are committed.
+Future work and open questions for the pre-release, trusted single-tenant backend. Current capabilities: [README](README.md) and [docs](docs/index.md). No committed release dates.
 
 ## Next priorities
 

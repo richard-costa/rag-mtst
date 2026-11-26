@@ -1,10 +1,6 @@
 # Choose model providers
 
-Embedding, answer generation, and visual extraction are independent choices.
-For the CLI, set provider values in private `.env` (loaded automatically)
-or export them before starting the worker. Other host processes require
-explicit environment loading. Exact defaults and endpoint precedence are in the
-[configuration reference](../reference/configuration.md).
+Choose embedding, generation and visual providers independently. Set private `.env` for the CLI or export before starting the worker; other host processes need explicit environment loading. See [configuration](../reference/configuration.md) for defaults and endpoint precedence.
 
 ## Use OpenAI
 
@@ -100,11 +96,7 @@ the default; there is no automatic OCR or provider fallback.
 
 ## Change embedding models safely
 
-After changing the embedding provider, model, or underlying embedding space,
-explicitly [reindex relevant sources](ingest.md#replace-an-existing-index).
-Vector search filters by provider/model tags, but tags do not identify endpoint
-deployment or model revision changes. Ordinary duplicate adds do not rebuild
-vectors. Reindex replaces previous vectors; it does not retain multiple versions.
+After changing embedding space (provider/model/deployment/revision), explicitly [reindex](ingest.md#replace-an-existing-index). Duplicate adds do not rebuild vectors; provider/model tags cannot identify revision or deployment changes.
 
 Hosted providers receive document text, queries, or page images; see
 [provider data flow](../explanation/security.md#provider-data-flow) before using

@@ -1,11 +1,6 @@
 # Optional visual demo
 
-The browser demo is a **learning aid**, not the recommended first-use path
-and not a production frontend. It uses the same real FastAPI upload, job,
-search, and answer endpoints as other clients. No mocks or second RAG pipeline.
-
-**Start with the [CLI quickstart](../docs/tutorials/quickstart.md).** Once the database
-and host worker are ready, you can use the demo to inspect them visually.
+Learning aid using the real FastAPI backend; no mock pipeline or production frontend. Complete the [CLI quickstart](../docs/tutorials/quickstart.md) first.
 
 ## Run
 
@@ -29,14 +24,12 @@ search, stateless question answering, and citation inspection. Expand
 or change the result limit and neighboring window size. Unset options use
 the backend defaults. Scores are method-specific, not probabilities.
 
-Hosted model operations are real and may incur charges. Visual extraction
-must be configured explicitly and can send page images to a provider.
+Hosted calls may incur charges; explicit visual extraction sends page images to the configured provider.
 
 It does not support conversation history, user accounts, document lifecycle
 management, or local service startup/shutdown.
 
-Ctrl+C stops **only the demo server**. To stop PostgreSQL and the host worker,
-run `uv run rag stop`. Indexed data persists until an explicit reset.
+Ctrl+C stops only the demo. `uv run rag stop` stops PostgreSQL and worker without deleting indexed data.
 
 ## Related documentation
 
