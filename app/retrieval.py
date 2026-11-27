@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Literal
 from uuid import UUID
 
+from app.collection import validate_collection_id
 from app.config import Settings, get_settings
 from app.embeddings import embed_texts
 from app.storage import documents
@@ -44,6 +45,7 @@ class SearchResult:
 async def search(
     query: str,
     *,
+    collection_id: str,
     limit: int | None = None,
     method: RetrievalMethod | None = None,
     window: int | None = None,
@@ -55,6 +57,7 @@ async def search(
 
     Args:
         query: Search query text.
+        collection_id: Collection whose sources may be retrieved; never widened.
         limit: Maximum number of matching passages.
         method: Optional retrieval method override.
         window: Number of neighboring chunks to include per seed match.
@@ -66,6 +69,7 @@ async def search(
         Passages ranked by the selected retrieval strategy.
     """
 
+    validate_collection_id(collection_id)
     if not query.strip():
         raise ValueError("The search query must not be empty")
 
@@ -89,12 +93,20 @@ async def search(
 
     if selected_method == "lexical":
         return await search_lexical(
-            query, limit=result_limit, settings=active_settings, storage=active_storage
+            query,
+            collection_id=collection_id,
+            limit=result_limit,
+            settings=active_settings,
+            storage=active_storage,
         )
 
     if selected_method == "hybrid":
         return await search_hybrid(
-            query, limit=result_limit, settings=active_settings, storage=active_storage
+            query,
+            collection_id=collection_id,
+            limit=result_limit,
+            settings=active_settings,
+            storage=active_storage,
         )
 
     vectors = await embed_texts([query], settings=active_settings)
@@ -102,6 +114,7 @@ async def search(
     if selected_method == "cosine":
         return await search_cosine(
             vectors[0],
+            collection_id=collection_id,
             limit=result_limit,
             settings=active_settings,
             storage=active_storage,
@@ -109,6 +122,7 @@ async def search(
 
     return await search_with_windows(
         vectors[0],
+        collection_id=collection_id,
         limit=result_limit,
         window=context_window,
         assembly=assembly,
@@ -120,16 +134,22 @@ async def search(
 # ---------------------------------------------------------------------------
 # Cosine search
 # ---------------------------------------------------------------------------
-# Postgres ranks only the current tenant's vectors from the configured embedding space.
+# Postgres ranks only the requested collection's vectors from the configured embedding space.
 
 
 async def search_cosine(
-    embedding: list[float], *, limit: int, settings: Settings, storage: Database
+    embedding: list[float],
+    *,
+    collection_id: str,
+    limit: int,
+    settings: Settings,
+    storage: Database,
 ) -> list[SearchResult]:
     """Find nearest indexed chunks for an embedding vector.
 
     Args:
         embedding: Query embedding vector.
+        collection_id: Collection whose sources may be retrieved.
         limit: Maximum number of matching passages.
         settings: Search or local runtime configuration.
         storage: Database handle used for retrieval.
@@ -140,7 +160,7 @@ async def search_cosine(
 
     chunks = await documents.vector_search(
         storage,
-        tenant_id=settings.tenant_id,
+        collection_id=collection_id,
         embedding=embedding,
         embedding_provider=settings.embedding_provider,
         embedding_model=settings.embedding_model_name,
@@ -159,6 +179,7 @@ async def search_cosine(
 async def search_with_windows(
     embedding: list[float],
     *,
+    collection_id: str,
     limit: int,
     window: int,
     settings: Settings,
@@ -169,6 +190,7 @@ async def search_with_windows(
 
     Args:
         embedding: Query embedding vector.
+        collection_id: Collection whose sources may be retrieved.
         limit: Maximum number of matching passages.
         window: Number of neighboring chunks to include per seed match.
         settings: Search or local runtime configuration.
@@ -180,7 +202,11 @@ async def search_with_windows(
     """
 
     seeds = await search_cosine(
-        embedding, limit=limit, settings=settings, storage=storage
+        embedding,
+        collection_id=collection_id,
+        limit=limit,
+        settings=settings,
+        storage=storage,
     )
 
     if window == 0:
@@ -196,7 +222,7 @@ async def search_with_windows(
 
         neighbors = await documents.get_chunk_window(
             storage,
-            tenant_id=settings.tenant_id,
+            collection_id=collection_id,
             source_id=UUID(seed.source_id),
             chunk_index=seed.chunk_index,
             window=window,
@@ -259,12 +285,18 @@ async def search_with_windows(
 
 
 async def search_lexical(
-    query: str, *, limit: int, settings: Settings, storage: Database
+    query: str,
+    *,
+    collection_id: str,
+    limit: int,
+    settings: Settings,
+    storage: Database,
 ) -> list[SearchResult]:
     """Search source text using lexical word matching.
 
     Args:
         query: Search query text.
+        collection_id: Collection whose sources may be retrieved.
         limit: Maximum number of matching passages.
         settings: Search or local runtime configuration.
         storage: Database handle used for retrieval.
@@ -278,7 +310,7 @@ async def search_lexical(
 
     chunks = await documents.full_text_search(
         storage,
-        tenant_id=settings.tenant_id,
+        collection_id=collection_id,
         query=query,
         limit=limit,
     )
@@ -293,12 +325,18 @@ async def search_lexical(
 
 
 async def search_hybrid(
-    query: str, *, limit: int, settings: Settings, storage: Database
+    query: str,
+    *,
+    collection_id: str,
+    limit: int,
+    settings: Settings,
+    storage: Database,
 ) -> list[SearchResult]:
     """Combine lexical and vector ranks using reciprocal rank fusion.
 
     Args:
         query: Search query text.
+        collection_id: Collection whose sources may be retrieved.
         limit: Maximum number of matching passages.
         settings: Search or local runtime configuration.
         storage: Database handle used for retrieval.
@@ -314,6 +352,7 @@ async def search_hybrid(
     vectors = await embed_texts([query], settings=settings)
     cosine = await search_cosine(
         vectors[0],
+        collection_id=collection_id,
         limit=candidate_limit,
         settings=settings,
         storage=storage,
@@ -321,6 +360,7 @@ async def search_hybrid(
 
     lexical = await search_lexical(
         query,
+        collection_id=collection_id,
         limit=candidate_limit,
         settings=settings,
         storage=storage,

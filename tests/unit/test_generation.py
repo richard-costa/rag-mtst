@@ -34,7 +34,9 @@ async def test_generation_routes_providers_and_preserves_citation_provenance(
         anthropic_api_key="anthropic-secret",
     )
 
-    result = await generation.answer("What should I do?", settings=settings)
+    result = await generation.answer(
+        "What should I do?", collection_id="c", settings=settings
+    )
 
     assert result.text == "Bring identification [1]. Call to book [2]."
     assert result.matches == passages
@@ -117,7 +119,9 @@ async def test_invalid_generation_is_not_returned_as_an_answer(
     completion(text, finish=finish)
 
     with pytest.raises(generation.GenerationError):
-        await generation.answer("Question", settings=generation_settings)
+        await generation.answer(
+            "Question", collection_id="c", settings=generation_settings
+        )
 
 
 @pytest.mark.parametrize(
@@ -146,7 +150,7 @@ async def test_unusable_openai_responses_are_rejected_without_fallback(
     )
 
     with pytest.raises(generation.GenerationError) as error:
-        await generation.answer("Question", settings=settings)
+        await generation.answer("Question", collection_id="c", settings=settings)
 
     assert "private provider detail" not in str(error.value)
     assert len(requests) == 1
@@ -178,7 +182,7 @@ async def test_openai_rejects_unusable_messages_even_with_parsed_output(
     with pytest.raises(
         generation.GenerationError, match="filtered or incomplete"
     ) as error:
-        await generation.answer("Question", settings=settings)
+        await generation.answer("Question", collection_id="c", settings=settings)
 
     assert "private provider detail" not in str(error.value)
     assert len(requests) == 1
@@ -197,7 +201,7 @@ async def test_openai_reads_typed_message_after_reasoning_output(
         generation_settings, generation_provider="openai", openai_api_key="key"
     )
 
-    result = await generation.answer("Question", settings=settings)
+    result = await generation.answer("Question", collection_id="c", settings=settings)
 
     assert result.text == "Supported [1]."
     assert [citation.id for citation in result.citations] == [1]
@@ -231,7 +235,7 @@ async def test_invalid_provider_records_are_sanitized_without_fallback(
     )
 
     with pytest.raises(generation.GenerationError) as error:
-        await generation.answer("Question", settings=settings)
+        await generation.answer("Question", collection_id="c", settings=settings)
 
     assert "private" not in str(error.value)
     assert len(requests) == 1
@@ -256,7 +260,7 @@ async def test_provider_failure_does_not_leak_details_or_fall_back(
     with pytest.raises(
         generation.GenerationError, match="generation API request failed"
     ) as caught:
-        await generation.answer("Question", settings=settings)
+        await generation.answer("Question", collection_id="c", settings=settings)
 
     assert "private provider detail" not in str(caught.value)
     assert len(requests) == 1
@@ -268,7 +272,9 @@ async def test_no_matches_does_not_call_generation(
     passages.clear()
     requests = completion()
 
-    result = await generation.answer("Question", settings=generation_settings)
+    result = await generation.answer(
+        "Question", collection_id="c", settings=generation_settings
+    )
 
     assert result.matches == result.citations == []
     assert "could not find" in result.text
@@ -285,7 +291,9 @@ async def test_malformed_completion_choices_are_provider_errors(
     completion(choices=choices)
 
     with pytest.raises(generation.GenerationError):
-        await generation.answer("Question", settings=generation_settings)
+        await generation.answer(
+            "Question", collection_id="c", settings=generation_settings
+        )
 
 
 @pytest.mark.parametrize(
@@ -313,7 +321,9 @@ async def test_generation_rejects_invalid_configuration_before_calling_providers
 
     with pytest.raises(ValueError, match=message):
         await generation.answer(
-            "Question", settings=replace(generation_settings, **changes)
+            "Question",
+            collection_id="c",
+            settings=replace(generation_settings, **changes),
         )
 
     assert requests == []
@@ -333,7 +343,7 @@ async def test_generation_endpoint_override_does_not_change_embedding_settings(
         openai_base_url="https://embeddings.example/v1",
     )
 
-    await generation.answer("Question", settings=settings)
+    await generation.answer("Question", collection_id="c", settings=settings)
 
     assert str(requests[0].url) == "https://generation.example/v1/responses"
     assert settings.openai_base_url == "https://embeddings.example/v1"

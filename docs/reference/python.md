@@ -20,6 +20,9 @@ from the environment. No HTTP credential is required for direct calls.
 
 ## Ingestion
 
+Ingestion, `search`, and `answer` require a keyword `collection_id`; there is no
+default and results never span collections.
+
 `enqueue_file(path, ...)` and `enqueue_bytes(content, source_name=..., ...)`
 accept settings, storage, `reindex`, and `extraction_method`. An
 `IngestionSubmission` contains `source` and nullable `job`: null means an
@@ -39,8 +42,12 @@ from app.retrieval import search
 
 async def inspect_sources():
     settings = Settings.from_environment()
-    matches = await search("support hours", method="lexical", limit=3, settings=settings)
-    result = await answer("When is the support desk open?", method="lexical", settings=settings)
+    matches = await search(
+        "support hours", collection_id="default", method="lexical", limit=3, settings=settings
+    )
+    result = await answer(
+        "When is the support desk open?", collection_id="default", method="lexical", settings=settings
+    )
     return matches, result
 ```
 
@@ -86,7 +93,7 @@ take the database handle as their first argument.
 
 Ordinary indexing, search, and generation should use feature functions rather
 than reimplement their SQL workflows. Every function below takes the database
-handle and tenant ID first:
+handle and collection ID first:
 
 | Function | Contract |
 | --- | --- |
@@ -104,7 +111,7 @@ handle and tenant ID first:
 Generate an answer, then set `turn.answer` and `turn.citations` (citation
 dictionaries). Normal exit commits both messages; exceptions/cancellation roll
 back. `ConversationBusy` reports overlapping turns; `ConversationNotFound` covers
-missing and other-tenant conversations. `delete_source` does not remove staged
+missing and other-collection conversations. `delete_source` does not remove staged
 files itself; call `app.ingestion.cleanup_ingestion_inputs` first, as the HTTP
 endpoint does.
 

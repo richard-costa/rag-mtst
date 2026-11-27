@@ -14,17 +14,18 @@ uv run rag ask "When is the support desk open?" --method lexical --limit 3
 uv run rag ask "When is the support desk open?" --method window --assembly score
 ```
 
-See [defaults](../reference/configuration.md#retrieval) and [search/assembly semantics](../explanation/retrieval.md#search-methods). Lexical search avoids embedding calls. `ask` requires a generation model even without matches; configure providers through the environment, not CLI flags.
+See [defaults](../reference/configuration.md#retrieval) and [search/assembly semantics](../explanation/retrieval.md#search-methods). Lexical search avoids embedding calls. `ask` requires a generation model even without matches; configure providers through the environment, not CLI flags. Add `--collection NAME` to search another collection (default `default`); retrieval never spans collections.
 
 ## Over HTTP
 
 ```bash
-curl --fail-with-body http://127.0.0.1:8000/search \
+curl --fail-with-body http://127.0.0.1:8000/collections/default/search \
   -H "Authorization: Bearer $RAG_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"query":"support hours","method":"lexical","limit":3}'
 ```
 
+Replace `default` with the URL-encoded collection ID to search another collection.
 Send the same JSON shape to `/ask` for a generated answer. `/ask` also accepts
 `generation_provider` and `generation_model` to
 [override the answer model for one request](providers.md#override-one-answer-request).

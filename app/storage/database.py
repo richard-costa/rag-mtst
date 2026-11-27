@@ -10,7 +10,7 @@ from psycopg.rows import dict_row
 
 
 class Database:
-    """Small wrapper providing tenant-safe asynchronous PostgreSQL connections."""
+    """Small wrapper providing transactional asynchronous PostgreSQL connections."""
 
     def __init__(self, database_url: str) -> None:
         """Store the PostgreSQL connection URL.

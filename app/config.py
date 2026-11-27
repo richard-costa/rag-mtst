@@ -31,7 +31,6 @@ class Settings:
 
     data_dir: Path = Path(".rag-data")
     database_url: str = "postgresql://rag:rag@127.0.0.1:5432/rag"
-    tenant_id: str = "default"
     chunk_size: int = 180
     retrieval_limit: int = 10
     office_host: str = "127.0.0.1"
@@ -97,7 +96,6 @@ class Settings:
                 os.getenv("RAG_DATA_DIR", str(defaults.data_dir))
             ).expanduser(),
             database_url=os.getenv("DATABASE_URL", defaults.database_url),
-            tenant_id=os.getenv("RAG_TENANT_ID", defaults.tenant_id),
             api_key=os.getenv("RAG_API_KEY"),
             office_host=os.getenv("RAG_OFFICE_HOST", defaults.office_host),
             office_port=_positive_integer("RAG_OFFICE_PORT", defaults.office_port),

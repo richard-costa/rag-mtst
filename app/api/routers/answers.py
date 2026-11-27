@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, HTTPException
 
-from app.api.dependencies import SettingsDependency, StorageDependency
+from app.api.dependencies import (
+    CollectionDependency,
+    SettingsDependency,
+    StorageDependency,
+)
 from app.api.schemas.answers import AskRequest, AskResponse
 from app.api.services import generate_answer
 from app.embeddings import EmbeddingError
@@ -13,9 +17,12 @@ router = APIRouter(tags=["answers"])
 
 @router.post("/ask", response_model=AskResponse, summary="Generate a cited answer")
 async def ask_source(
-    request: AskRequest, settings: SettingsDependency, storage: StorageDependency
+    request: AskRequest,
+    collection_id: CollectionDependency,
+    settings: SettingsDependency,
+    storage: StorageDependency,
 ) -> AskResponse:
-    """Generate a stateless answer grounded in indexed source passages.
+    """Generate a stateless answer grounded in the collection's source passages.
 
     ### Request body
     - `query`: Question to answer.
@@ -40,7 +47,11 @@ async def ask_source(
 
     try:
         return await generate_answer(
-            request, settings=settings, storage=storage, history=request.history
+            request,
+            collection_id=collection_id,
+            settings=settings,
+            storage=storage,
+            history=request.history,
         )
 
     except ValueError as error:

@@ -6,6 +6,7 @@ import pytest
 
 from app import ingestion
 from app.cli import main
+from app.collection import DEFAULT_COLLECTION
 from app.storage import documents
 
 pytestmark = pytest.mark.usefixtures("deterministic_embeddings", "cli_environment")
@@ -24,7 +25,7 @@ async def test_cli_submission_waiting_status_and_search(
 
     assert await asyncio.to_thread(main, ["job", job_id]) == 0
     assert "pending" in capsys.readouterr().out
-    assert await documents.list_chunks(storage, settings.tenant_id) == []
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == []
     assert await run_cli(["add", str(document)]) == 0
     assert "Added queued-cli.md" in capsys.readouterr().out
     assert await asyncio.to_thread(main, ["job", job_id]) == 0

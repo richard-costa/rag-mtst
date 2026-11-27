@@ -2,7 +2,7 @@
 
 ## Search methods
 
-All search is tenant-scoped. The default is `window`, with ten seeds and two
+All search is collection-scoped; it never spans collections. The default is `window`, with ten seeds and two
 neighbors on each side. Invalid options and provider errors fail explicitly;
 there is no silent lexical fallback when embeddings fail.
 
@@ -50,7 +50,7 @@ config:
 ---
 flowchart TB
 	question[Current question] --> config[Validate generation configuration]
-	config --> search[Tenant-scoped retrieval]
+	config --> search[Collection-scoped retrieval]
 	search --> found{Matches found?}
 	found -->|No| empty[Fixed no-sources answer; no generation call]
 	found -->|Yes| context[Fit source passages into the prompt budget]

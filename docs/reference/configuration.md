@@ -30,7 +30,6 @@ or model choices. Internal processing limits stay in code. See
 | Variable | Default | Contract |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://rag:rag@127.0.0.1:5432/rag` | Development credentials; PostgreSQL with pgvector |
-| `RAG_TENANT_ID` | `default` | Server-configured data scope, not caller identity |
 | `RAG_DATA_DIR` | `.rag-data` | Shared temporary inputs under `ingestion/`; same path for submitter and worker |
 | `RAG_API_KEY` | None | Required at HTTP startup; nonempty ASCII without whitespace |
 | `RAG_OFFICE_HOST` | `127.0.0.1` | Optional unoserver converter; not native parsing |
@@ -38,7 +37,7 @@ or model choices. Internal processing limits stay in code. See
 
 HTTP clients send `Authorization: Bearer <token>`. Swagger's **Authorize** accepts
 the token alone. CLI/Python calls do not require the HTTP credential. The key
-grants read/write access to the one configured tenant, with no per-user roles.
+grants read/write access to every collection, with no per-user roles.
 Rotate by replacing it, restarting the API, and updating all clients; there is no
 overlapping-key rotation. See [security](../explanation/security.md#trust-boundary).
 
@@ -122,7 +121,8 @@ explicit settings when needed.
 
 HTTP requests and CLI flags (`--method`, `--limit`, `--window`) can override them
 for one operation; see [search methods](../explanation/retrieval.md#search-methods)
-for their semantics. Tenant scope is never selected by an HTTP request.
+for their semantics. There is no collection setting; every operation names its
+collection (HTTP path, CLI `--collection`, Python `collection_id=`).
 
 ### Processing
 

@@ -22,7 +22,9 @@ The demo supports document upload, extraction mode selection, indexing status,
 search, stateless question answering, and citation inspection. Expand
 **Retrieval settings** to compare window, cosine, lexical, and hybrid search
 or change the result limit and neighboring window size. Unset options use
-the backend defaults. Scores are method-specific, not probabilities.
+the backend defaults. Scores are method-specific, not probabilities. The
+**Collection** field (default `default`) selects which collection uploads,
+searches, and answers use; it matches the CLI's `--collection`.
 
 Hosted calls may incur charges; explicit visual extraction sends page images to the configured provider.
 

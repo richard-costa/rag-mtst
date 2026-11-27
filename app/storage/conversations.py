@@ -13,19 +13,19 @@ from app.storage.records import Conversation, ConversationTurn, Message
 
 
 class ConversationNotFound(LookupError):
-    """The conversation does not exist in the requested tenant."""
+    """The conversation does not exist in the requested collection."""
 
 
 class ConversationBusy(RuntimeError):
     """Another turn is already using the conversation."""
 
 
-async def create_conversation(database: Database, tenant_id: str) -> Conversation:
-    """Insert a new tenant-scoped conversation.
+async def create_conversation(database: Database, collection_id: str) -> Conversation:
+    """Insert a new collection-scoped conversation.
 
     Args:
         database: PostgreSQL database handle.
-        tenant_id: Tenant identifier used to scope the operation.
+        collection_id: Collection identifier used to scope the operation.
 
     Returns:
         Newly created conversation record.
@@ -34,11 +34,11 @@ async def create_conversation(database: Database, tenant_id: str) -> Conversatio
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            INSERT INTO conversations (id, tenant_id)
+            INSERT INTO conversations (id, collection_id)
             VALUES (%s, %s)
             RETURNING *
             """,
-            (uuid4(), tenant_id),
+            (uuid4(), collection_id),
         )
 
         row = await cursor.fetchone()
@@ -49,13 +49,13 @@ async def create_conversation(database: Database, tenant_id: str) -> Conversatio
 
 
 async def list_conversations(
-    database: Database, tenant_id: str, *, limit: int = 50, offset: int = 0
+    database: Database, collection_id: str, *, limit: int = 50, offset: int = 0
 ) -> list[Conversation]:
-    """List a page of tenant conversations, most recently updated first.
+    """List a page of collection conversations, most recently updated first.
 
     Args:
         database: PostgreSQL database handle.
-        tenant_id: Tenant identifier used to scope the operation.
+        collection_id: Collection identifier used to scope the operation.
         limit: Maximum number of conversations to return.
         offset: Number of conversations to skip.
 
@@ -67,11 +67,11 @@ async def list_conversations(
         cursor = await connection.execute(
             """
             SELECT * FROM conversations
-            WHERE tenant_id = %s
+            WHERE collection_id = %s
             ORDER BY updated_at DESC, id
             LIMIT %s OFFSET %s
             """,
-            (tenant_id, limit, offset),
+            (collection_id, limit, offset),
         )
 
         rows = await cursor.fetchall()
@@ -80,13 +80,13 @@ async def list_conversations(
 
 
 async def get_conversation(
-    database: Database, tenant_id: str, conversation_id: UUID
+    database: Database, collection_id: str, conversation_id: UUID
 ) -> Conversation | None:
-    """Load a tenant conversation by UUID.
+    """Load a collection conversation by UUID.
 
     Args:
         database: PostgreSQL database handle.
-        tenant_id: Tenant identifier used to scope the operation.
+        collection_id: Collection identifier used to scope the operation.
         conversation_id: Identifier of the conversation.
 
     Returns:
@@ -95,8 +95,8 @@ async def get_conversation(
 
     async with database.connection() as connection:
         cursor = await connection.execute(
-            "SELECT * FROM conversations WHERE tenant_id = %s AND id = %s",
-            (tenant_id, conversation_id),
+            "SELECT * FROM conversations WHERE collection_id = %s AND id = %s",
+            (collection_id, conversation_id),
         )
 
         row = await cursor.fetchone()
@@ -105,17 +105,17 @@ async def get_conversation(
 
 
 async def delete_conversation(
-    database: Database, tenant_id: str, conversation_id: UUID
+    database: Database, collection_id: str, conversation_id: UUID
 ) -> None:
     """Delete a conversation and its messages unless a turn is active.
 
     Args:
         database: PostgreSQL database handle.
-        tenant_id: Tenant identifier used to scope the operation.
+        collection_id: Collection identifier used to scope the operation.
         conversation_id: Identifier of the conversation.
 
     Raises:
-        ConversationNotFound: The conversation is absent from the tenant.
+        ConversationNotFound: The conversation is absent from the collection.
         ConversationBusy: A turn currently holds the conversation lock.
     """
 
@@ -123,9 +123,9 @@ async def delete_conversation(
         try:
             cursor = await connection.execute(
                 "DELETE FROM conversations WHERE id = ("
-                "SELECT id FROM conversations WHERE tenant_id = %s AND id = %s "
+                "SELECT id FROM conversations WHERE collection_id = %s AND id = %s "
                 "FOR UPDATE NOWAIT) RETURNING id",
-                (tenant_id, conversation_id),
+                (collection_id, conversation_id),
             )
 
         except psycopg.errors.LockNotAvailable as error:
@@ -140,7 +140,7 @@ async def delete_conversation(
 @asynccontextmanager
 async def conversation_turn(
     database: Database,
-    tenant_id: str,
+    collection_id: str,
     conversation_id: UUID,
     question: str,
 ) -> AsyncGenerator[ConversationTurn]:
@@ -148,7 +148,7 @@ async def conversation_turn(
 
     Args:
         database: PostgreSQL database handle.
-        tenant_id: Tenant identifier used to scope the operation.
+        collection_id: Collection identifier used to scope the operation.
         conversation_id: Identifier of the conversation.
         question: Question to record before generating a response.
 
@@ -159,8 +159,8 @@ async def conversation_turn(
     async with database.connection() as connection:
         try:
             cursor = await connection.execute(
-                "SELECT id FROM conversations WHERE tenant_id = %s AND id = %s FOR UPDATE NOWAIT",
-                (tenant_id, conversation_id),
+                "SELECT id FROM conversations WHERE collection_id = %s AND id = %s FOR UPDATE NOWAIT",
+                (collection_id, conversation_id),
             )
 
         except psycopg.errors.LockNotAvailable as error:
@@ -207,7 +207,7 @@ async def conversation_turn(
 
 async def list_messages(
     database: Database,
-    tenant_id: str,
+    collection_id: str,
     conversation_id: UUID,
     *,
     limit: int = 50,
@@ -217,7 +217,7 @@ async def list_messages(
 
     Args:
         database: PostgreSQL database handle.
-        tenant_id: Tenant identifier used to scope the operation.
+        collection_id: Collection identifier used to scope the operation.
         conversation_id: Identifier of the conversation.
         limit: Maximum number of matching passages.
         before: Sequence number used as an exclusive pagination cursor.
@@ -231,8 +231,8 @@ async def list_messages(
 
     async with database.connection() as connection:
         cursor = await connection.execute(
-            "SELECT id FROM conversations WHERE tenant_id = %s AND id = %s",
-            (tenant_id, conversation_id),
+            "SELECT id FROM conversations WHERE collection_id = %s AND id = %s",
+            (collection_id, conversation_id),
         )
 
         if await cursor.fetchone() is None:

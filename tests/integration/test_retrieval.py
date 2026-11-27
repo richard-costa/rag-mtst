@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
 
 from app import retrieval
+from app.collection import DEFAULT_COLLECTION
 from app.retrieval import search
 from app.storage import documents
 from app.storage.records import ChunkInput
@@ -22,7 +21,7 @@ async def test_retrieval_preserves_non_file_references(settings, storage, method
 
     source = await documents.insert_source_with_chunks(
         storage,
-        tenant_id=settings.tenant_id,
+        collection_id=DEFAULT_COLLECTION,
         source_type="url",
         reference=reference,
         mime_type="text/plain",
@@ -34,7 +33,13 @@ async def test_retrieval_preserves_non_file_references(settings, storage, method
     )
 
     matches = await search(
-        "token", method=method, limit=1, window=1, settings=settings, storage=storage
+        "token",
+        method=method,
+        limit=1,
+        window=1,
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     assert len(matches) == (2 if method == "window" else 1)
@@ -61,11 +66,16 @@ async def test_cosine_uses_direction_not_vector_length_and_filters_models(
         ]
     )
 
-    await store_vectors([[1.0, 1.0, 0.0]], tenant_id="other-tenant")
+    await store_vectors([[1.0, 1.0, 0.0]], collection_id="other-collection")
     await store_vectors([[1.0, 1.0]], model="other-model")
 
     results = await search(
-        "token", method="cosine", limit=10, settings=settings, storage=storage
+        "token",
+        method="cosine",
+        limit=10,
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     assert [result.chunk_index for result in results] == [1, 0, 2]
@@ -88,7 +98,13 @@ async def test_default_windows_deduplicate_overlap_and_keep_seed_scores(
         ]
     )
 
-    results = await search("token", limit=2, settings=settings, storage=storage)
+    results = await search(
+        "token",
+        limit=2,
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
+    )
 
     assert [result.chunk_index for result in results] == [0, 1, 2, 3, 4, 5]
     assert len({(result.source_id, result.chunk_index) for result in results}) == 6
@@ -109,7 +125,13 @@ async def test_windows_stop_at_source_edges(
     source = await store_vectors(vectors)
     await store_vectors([[1.0, 0.0, 0.0]] * 5)
 
-    results = await search("token", limit=1, settings=settings, storage=storage)
+    results = await search(
+        "token",
+        limit=1,
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
+    )
 
     assert [result.chunk_index for result in results] == expected
     assert all(result.source_id == str(source.id) for result in results)
@@ -138,7 +160,11 @@ async def test_windows_prioritize_best_hit_and_merge_connected_context(
     source = await store_vectors(vectors)
 
     results = await search(
-        "token", limit=len(seed_indices), settings=settings, storage=storage
+        "token",
+        limit=len(seed_indices),
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     assert [result.chunk_index for result in results] == expected
@@ -154,7 +180,13 @@ async def test_windows_keep_identical_content_from_distinct_sources(
     first = await store_vectors([[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]])
     second = await store_vectors([[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]])
 
-    results = await search("token", limit=2, settings=settings, storage=storage)
+    results = await search(
+        "token",
+        limit=2,
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
+    )
 
     assert {(result.source_id, result.chunk_index) for result in results} == {
         (str(source.id), index) for source in [first, second] for index in [0, 1]
@@ -162,34 +194,44 @@ async def test_windows_keep_identical_content_from_distinct_sources(
     assert len(results) == 4
 
 
-async def test_zero_window_matches_cosine_and_empty_tenant_returns_nothing(
+async def test_zero_window_matches_cosine_and_empty_collection_returns_nothing(
     store_vectors, settings, storage
 ):
     await store_vectors([[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]])
 
     cosine = await search(
-        "token", method="cosine", limit=1, settings=settings, storage=storage
+        "token",
+        method="cosine",
+        limit=1,
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
     window = await search(
-        "token", window=0, limit=1, settings=settings, storage=storage
+        "token",
+        window=0,
+        limit=1,
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
     empty = await search(
-        "token", settings=replace(settings, tenant_id="empty"), storage=storage
+        "token", collection_id="empty", settings=settings, storage=storage
     )
 
     assert window == cosine
     assert empty == []
 
 
-async def test_window_query_cannot_read_another_tenants_source(
+async def test_window_query_cannot_read_another_collections_source(
     store_vectors, settings, storage
 ):
-    source = await store_vectors([[1.0, 1.0, 0.0]], tenant_id="other")
+    source = await store_vectors([[1.0, 1.0, 0.0]], collection_id="other")
 
     assert (
         await documents.get_chunk_window(
             storage,
-            tenant_id=settings.tenant_id,
+            collection_id=DEFAULT_COLLECTION,
             source_id=source.id,
             chunk_index=0,
             window=2,
@@ -198,7 +240,7 @@ async def test_window_query_cannot_read_another_tenants_source(
     )
 
 
-async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_crossing_tenants(
+async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_crossing_collections(
     settings, storage
 ):
     metadata = {
@@ -208,7 +250,7 @@ async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_cross
 
     source = await documents.insert_source_with_chunks(
         storage,
-        tenant_id=settings.tenant_id,
+        collection_id=DEFAULT_COLLECTION,
         source_type="file",
         reference="/tmp/hybrid.md",
         mime_type="text/markdown",
@@ -224,7 +266,7 @@ async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_cross
 
     await documents.insert_source_with_chunks(
         storage,
-        tenant_id="another-tenant",
+        collection_id="another-collection",
         source_type="file",
         reference="/tmp/private.md",
         mime_type="text/markdown",
@@ -233,7 +275,12 @@ async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_cross
     )
 
     results = await search(
-        "token", method="hybrid", limit=5, settings=settings, storage=storage
+        "token",
+        method="hybrid",
+        limit=5,
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     assert {match.chunk_index for match in results} == {0, 1, 2}
@@ -245,7 +292,8 @@ async def test_hybrid_combines_vector_only_and_lexical_only_chunks_without_cross
         await search(
             "token",
             method="hybrid",
-            settings=replace(settings, tenant_id="empty"),
+            collection_id="empty",
+            settings=settings,
             storage=storage,
         )
         == []
@@ -257,7 +305,7 @@ async def test_lexical_does_not_embed_or_scan_chunks_in_python(
 ):
     await documents.insert_source_with_chunks(
         storage,
-        tenant_id=settings.tenant_id,
+        collection_id=DEFAULT_COLLECTION,
         source_type="file",
         reference="/tmp/lexical.md",
         mime_type="text/markdown",
@@ -272,7 +320,11 @@ async def test_lexical_does_not_embed_or_scan_chunks_in_python(
     monkeypatch.setattr(documents, "list_chunks", unexpected_call)
 
     results = await search(
-        "moradia unknown", method="lexical", settings=settings, storage=storage
+        "moradia unknown",
+        method="lexical",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     assert [match.content for match in results] == ["Moradia and housing support"]

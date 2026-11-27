@@ -49,7 +49,6 @@ services:
     environment: &application-environment
       DATABASE_URL: postgresql://rag:rag@db:5432/rag
       RAG_DATA_DIR: /app/.rag-data
-      RAG_TENANT_ID: ${RAG_TENANT_ID:-default}
       RAG_API_KEY: ${RAG_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}

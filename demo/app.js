@@ -15,10 +15,16 @@ function status(id, message, error = false) {
   target.classList.toggle("error", error);
 }
 
+function collectionPath(path) {
+  const collection = element("collection").value;
+  if (!collection.trim()) throw new Error("Enter a collection.");
+  return `/collections/${encodeURIComponent(collection)}${path}`;
+}
+
 async function request(path, options = {}) {
   const token = element("token").value.trim();
   if (!/^[\x21-\x7e]+$/.test(token)) throw new Error("Enter an API token without spaces.");
-  const response = await fetch(path, {
+  const response = await fetch(collectionPath(path), {
     ...options,
     credentials: "omit",
     redirect: "error",

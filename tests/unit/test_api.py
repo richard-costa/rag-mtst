@@ -18,6 +18,7 @@ from app.storage.documents import SourceBusy, SourceNotFound
 from app.storage.records import SourceSummary
 
 _UUID = "00000000-0000-0000-0000-000000000001"
+_COLLECTION = "/collections/team-a"
 
 # API routes intentionally reachable without a token, as (method, path template).
 _PUBLIC_ROUTES: set[tuple[str, str]] = set()
@@ -80,28 +81,56 @@ def test_every_api_route_rejects_unauthenticated_requests(
     assert not settings.data_dir.exists()
 
 
-def test_api_accepts_valid_key_and_keeps_server_configured_tenant(monkeypatch) -> None:
+def test_api_scopes_requests_to_the_path_collection(monkeypatch) -> None:
     search = AsyncMock(return_value=[])
     monkeypatch.setattr("app.api.routers.search.search", search)
-    settings = Settings(api_key="test-key", tenant_id="server-tenant")
+    settings = Settings(api_key="test-key")
 
     with TestClient(create_app(settings)) as client:
         response = client.post(
+            "/collections/Team%20A%3A1/search",
+            json={"query": "question"},
+            headers={"Authorization": "Bearer test-key", "X-Collection": "other"},
+        )
+
+        unscoped = client.post(
             "/search",
             json={"query": "question"},
-            headers={"Authorization": "Bearer test-key", "X-Tenant-ID": "other-tenant"},
+            headers={"Authorization": "Bearer test-key"},
         )
 
     assert response.status_code == 200
     assert response.json() == []
-    assert search.call_args.kwargs["settings"].tenant_id == "server-tenant"
+    assert search.call_args.kwargs["collection_id"] == "Team A:1"
+    assert unscoped.status_code == 404
+    assert search.await_count == 1
+
+
+@pytest.mark.parametrize("collection", ["%20padded", "tab%09ed", "x" * 256])
+def test_api_rejects_unusable_collections_after_authentication(
+    monkeypatch, collection
+) -> None:
+    search = AsyncMock(side_effect=AssertionError("Search must not execute"))
+    monkeypatch.setattr("app.api.routers.search.search", search)
+
+    with TestClient(create_app(Settings(api_key="test-key"))) as client:
+        path = f"/collections/{collection}/search"
+        anonymous = client.post(path, json={"query": "question"})
+        response = client.post(
+            path,
+            json={"query": "question"},
+            headers={"Authorization": "Bearer test-key"},
+        )
+
+    assert anonymous.status_code == 401
+    assert response.status_code == 422
 
 
 def test_api_dependencies_remain_isolated_between_applications(monkeypatch) -> None:
     search = AsyncMock(return_value=[])
     monkeypatch.setattr("app.api.routers.search.search", search)
-    first_settings = Settings(api_key="first-key", tenant_id="first-tenant")
-    second_settings = Settings(api_key="second-key", tenant_id="second-tenant")
+    first_settings = Settings(api_key="first-key")
+    second_settings = Settings(api_key="second-key")
     first_app = create_app(first_settings)
     second_app = create_app(second_settings)
 
@@ -112,7 +141,7 @@ def test_api_dependencies_remain_isolated_between_applications(monkeypatch) -> N
             (first, first_settings, first_app),
         ):
             response = client.post(
-                "/search",
+                f"{_COLLECTION}/search",
                 json={"query": "question"},
                 headers={"Authorization": f"Bearer {settings.api_key}"},
             )
@@ -123,7 +152,7 @@ def test_api_dependencies_remain_isolated_between_applications(monkeypatch) -> N
 
         assert (
             first.post(
-                "/search",
+                f"{_COLLECTION}/search",
                 json={"query": "question"},
                 headers={"Authorization": "Bearer second-key"},
             ).status_code
@@ -138,14 +167,14 @@ def test_api_resource_dependencies_can_be_overridden(monkeypatch) -> None:
     search = AsyncMock(return_value=[])
     monkeypatch.setattr("app.api.routers.search.search", search)
     application = create_app(Settings(api_key="configured-key"))
-    settings = Settings(api_key="override-key", tenant_id="override-tenant")
+    settings = Settings(api_key="override-key")
     storage = Database(settings.database_url)
     application.dependency_overrides[get_api_settings] = lambda: settings
     application.dependency_overrides[get_storage] = lambda: storage
 
     with TestClient(application) as client:
         response = client.post(
-            "/search",
+            f"{_COLLECTION}/search",
             json={"query": "question"},
             headers={"Authorization": "Bearer override-key"},
         )
@@ -158,7 +187,7 @@ def test_api_resource_dependencies_can_be_overridden(monkeypatch) -> None:
 def test_api_rejects_non_ascii_credentials_without_server_error() -> None:
     with TestClient(create_app(Settings(api_key="test-key"))) as client:
         response = client.post(
-            "/search",
+            f"{_COLLECTION}/search",
             json={"query": "question"},
             headers={b"Authorization": "Bearer non-ascii-\u00e9".encode("utf-8")},
         )
@@ -251,17 +280,17 @@ def test_delete_endpoints_map_storage_outcomes(
             "app.api.routers.conversations.conversations.delete_conversation", delete
         )
 
-    settings = Settings(api_key="test-key", tenant_id="server-tenant")
+    settings = Settings(api_key="test-key")
     resource_id = "00000000-0000-0000-0000-000000000001"
 
     with TestClient(create_app(settings)) as client:
         response = client.delete(
-            f"/{target}/{resource_id}",
+            f"{_COLLECTION}/{target}/{resource_id}",
             headers={"Authorization": "Bearer test-key"},
         )
 
     assert response.status_code == status
-    assert delete.call_args.args[1:] == ("server-tenant", UUID(resource_id))
+    assert delete.call_args.args[1:] == ("team-a", UUID(resource_id))
 
 
 def test_source_details_expose_metadata_without_content_hash(
@@ -270,7 +299,7 @@ def test_source_details_expose_metadata_without_content_hash(
     now = datetime.now(UTC)
     source = SourceSummary(
         id=UUID("00000000-0000-0000-0000-000000000001"),
-        tenant_id="server-tenant",
+        collection_id="team-a",
         source_type="file",
         reference="folder/report.pdf",
         mime_type="application/pdf",
@@ -290,16 +319,16 @@ def test_source_details_expose_metadata_without_content_hash(
         AsyncMock(side_effect=[source, None]),
     )
 
-    listed = api_client.get("/sources?limit=10&offset=5")
-    found = api_client.get(f"/sources/{source.id}")
-    missing = api_client.get(f"/sources/{source.id}")
-    invalid = api_client.get("/sources?limit=0")
+    listed = api_client.get(f"{_COLLECTION}/sources?limit=10&offset=5")
+    found = api_client.get(f"{_COLLECTION}/sources/{source.id}")
+    missing = api_client.get(f"{_COLLECTION}/sources/{source.id}")
+    invalid = api_client.get(f"{_COLLECTION}/sources?limit=0")
 
     assert listed.status_code == 200
     [item] = listed.json()
     assert item["title"] == "report.pdf"
     assert item["chunk_count"] == 3
-    assert "content_hash" not in item and "tenant_id" not in item
+    assert "content_hash" not in item and "collection_id" not in item
     assert found.status_code == 200 and found.json() == item
     assert missing.status_code == 404
     assert invalid.status_code == 422
@@ -366,12 +395,11 @@ def test_answer_model_selection_is_request_scoped(
         api_key="test-key",
         generation_model="configured-model",
         generation_base_url="https://configured.example/v1",
-        tenant_id="server-tenant",
     )
 
     with TestClient(create_app(settings)) as client:
         response = client.post(
-            "/ask",
+            f"{_COLLECTION}/ask",
             json={"query": "question", **selection},
             headers={"Authorization": "Bearer test-key"},
         )
@@ -383,7 +411,7 @@ def test_answer_model_selection_is_request_scoped(
         selected.generation_model,
         selected.generation_base_url,
     ) == (provider, model, endpoint)
-    assert selected.tenant_id == "server-tenant"
+    assert generate.call_args.kwargs["collection_id"] == "team-a"
     assert settings.generation_model == "configured-model"
     assert settings.generation_provider == "openai"
     assert settings.generation_base_url == "https://configured.example/v1"
@@ -404,7 +432,9 @@ def test_invalid_answer_model_selection_does_not_call_provider(
     generate = AsyncMock(side_effect=AssertionError("Generation must not execute"))
     monkeypatch.setattr("app.api.services.answer", generate)
 
-    response = api_client.post("/ask", json={"query": "question", **selection})
+    response = api_client.post(
+        f"{_COLLECTION}/ask", json={"query": "question", **selection}
+    )
 
     assert response.status_code == 422
     generate.assert_not_called()
@@ -419,7 +449,7 @@ def test_ask_forwards_caller_history_to_generation(monkeypatch, api_client) -> N
     ]
 
     response = api_client.post(
-        "/ask", json={"query": "And on weekends?", "history": history}
+        f"{_COLLECTION}/ask", json={"query": "And on weekends?", "history": history}
     )
 
     assert response.status_code == 200
@@ -461,7 +491,9 @@ def test_invalid_ask_history_does_not_call_provider(
     generate = AsyncMock(side_effect=AssertionError("Generation must not execute"))
     monkeypatch.setattr("app.api.services.answer", generate)
 
-    response = api_client.post("/ask", json={"query": "question", "history": history})
+    response = api_client.post(
+        f"{_COLLECTION}/ask", json={"query": "question", "history": history}
+    )
 
     assert response.status_code == 422
     generate.assert_not_called()
@@ -472,7 +504,7 @@ def test_conversation_turn_rejects_caller_history(monkeypatch, api_client) -> No
     monkeypatch.setattr("app.api.services.answer", generate)
 
     response = api_client.post(
-        f"/conversations/{_UUID}/messages",
+        f"{_COLLECTION}/conversations/{_UUID}/messages",
         json={
             "query": "question",
             "history": [

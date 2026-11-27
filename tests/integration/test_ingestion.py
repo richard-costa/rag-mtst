@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app import ingestion
+from app.collection import DEFAULT_COLLECTION
 from app.ingestion import add_file
 from app.retrieval import search
 from app.storage import documents, jobs
@@ -37,14 +38,14 @@ async def test_enqueue_stages_shared_files_without_inference(
     document.write_bytes(b"# Queued\n\nOriginal document.")
 
     submitted = await ingestion.enqueue_file(
-        document, settings=settings, storage=storage
+        document, collection_id=DEFAULT_COLLECTION, settings=settings, storage=storage
     )
     document.unlink()
 
     assert submitted.job is not None and submitted.job.status == "pending"
     restarted_storage = Database(settings.database_url)
     queued_input = await jobs.get_ingestion_job_input(
-        restarted_storage, settings.tenant_id, submitted.job.id
+        restarted_storage, DEFAULT_COLLECTION, submitted.job.id
     )
 
     assert queued_input is not None
@@ -68,12 +69,13 @@ async def test_enqueue_stages_shared_files_without_inference(
     }
     assert "private-" not in json.dumps(queued_input.configuration)
     assert queued_input.reindex is False
-    assert await documents.list_chunks(restarted_storage, settings.tenant_id) == []
+    assert await documents.list_chunks(restarted_storage, DEFAULT_COLLECTION) == []
     assert not settings.source_dir.exists()
 
     duplicate = await ingestion.enqueue_bytes(
         staged.read_bytes(),
         source_name="renamed.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=replace(settings, openai_api_key="rotated"),
         storage=restarted_storage,
     )
@@ -84,6 +86,7 @@ async def test_enqueue_stages_shared_files_without_inference(
         await ingestion.enqueue_bytes(
             staged.read_bytes(),
             source_name="queued.md",
+            collection_id=DEFAULT_COLLECTION,
             settings=replace(settings, chunk_size=50),
             storage=storage,
         )
@@ -104,6 +107,7 @@ async def test_enqueue_failure_removes_its_staged_file(settings, storage, monkey
         await ingestion.enqueue_bytes(
             b"Temporary input",
             source_name="rejected.md",
+            collection_id=DEFAULT_COLLECTION,
             settings=settings,
             storage=storage,
         )
@@ -116,19 +120,27 @@ async def test_enqueue_existing_source_requires_explicit_profile_change_and_pres
 ):
     content = b"# Existing\n\nKeep the indexed content."
     indexed = await ingestion.add_bytes(
-        content, source_name="existing.md", settings=settings, storage=storage
+        content,
+        source_name="existing.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
-    original_chunks = await documents.list_chunks(storage, settings.tenant_id)
+    original_chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
     duplicate = await ingestion.enqueue_bytes(
-        content, source_name="existing.md", settings=settings, storage=storage
+        content,
+        source_name="existing.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     assert duplicate.source == indexed.source and duplicate.job is None
 
     await documents.replace_chunks(
         storage,
-        tenant_id=settings.tenant_id,
+        collection_id=DEFAULT_COLLECTION,
         source_id=indexed.source.id,
         chunks=[
             ChunkInput("Keep this old profile", {"extraction": {"method": "different"}})
@@ -137,13 +149,18 @@ async def test_enqueue_existing_source_requires_explicit_profile_change_and_pres
 
     with pytest.raises(ValueError, match="explicit reindexing"):
         await ingestion.enqueue_bytes(
-            content, source_name="existing.md", settings=settings, storage=storage
+            content,
+            source_name="existing.md",
+            collection_id=DEFAULT_COLLECTION,
+            settings=settings,
+            storage=storage,
         )
 
-    before_reindex = await documents.list_chunks(storage, settings.tenant_id)
+    before_reindex = await documents.list_chunks(storage, DEFAULT_COLLECTION)
     submitted = await ingestion.enqueue_bytes(
         content,
         source_name="existing.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
         reindex=True,
@@ -151,7 +168,7 @@ async def test_enqueue_existing_source_requires_explicit_profile_change_and_pres
 
     assert submitted.source == indexed.source
     assert submitted.job is not None and submitted.job.status == "pending"
-    assert await documents.list_chunks(storage, settings.tenant_id) == before_reindex
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == before_reindex
     assert indexed.source.reference == "existing.md"
     assert original_chunks[0].source_id == before_reindex[0].source_id
 
@@ -165,9 +182,18 @@ async def test_ingests_deduplicates_and_searches_a_markdown_file(
         encoding="utf-8",
     )
 
-    first = await add_file(document, settings=settings, storage=storage)
-    duplicate = await add_file(document, settings=settings, storage=storage)
-    results = await search("access token", settings=settings, storage=storage)
+    first = await add_file(
+        document, collection_id=DEFAULT_COLLECTION, settings=settings, storage=storage
+    )
+    duplicate = await add_file(
+        document, collection_id=DEFAULT_COLLECTION, settings=settings, storage=storage
+    )
+    results = await search(
+        "access token",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
+    )
 
     assert first.created is True
     assert first.chunk_count == 1
@@ -184,24 +210,50 @@ async def test_reindex_replaces_embeddings_and_preserves_source_identity(
 ):
     document = settings.data_dir.parent / "notes.md"
     document.write_text("Some text for embedding.", encoding="utf-8")
-    first = await add_file(document, settings=settings, storage=storage)
-    old_chunks = await documents.list_chunks(storage, settings.tenant_id)
+    first = await add_file(
+        document, collection_id=DEFAULT_COLLECTION, settings=settings, storage=storage
+    )
+    old_chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
     changed_settings = replace(settings, embedding_model="another-model")
 
-    unchanged = await add_file(document, settings=changed_settings, storage=storage)
+    unchanged = await add_file(
+        document,
+        collection_id=DEFAULT_COLLECTION,
+        settings=changed_settings,
+        storage=storage,
+    )
     assert unchanged.chunk_count == 0
 
     reindexed = await add_file(
-        document, reindex=True, settings=changed_settings, storage=storage
+        document,
+        reindex=True,
+        collection_id=DEFAULT_COLLECTION,
+        settings=changed_settings,
+        storage=storage,
     )
-    new_chunks = await documents.list_chunks(storage, settings.tenant_id)
+    new_chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
 
     assert reindexed.source.id == first.source.id == unchanged.source.id
     assert reindexed.created is False
     assert new_chunks[0].id != old_chunks[0].id
     assert new_chunks[0].metadata["embedding_model"] == "another-model"
-    assert await search("text", settings=settings, storage=storage) == []
-    assert len(await search("text", settings=changed_settings, storage=storage)) == 1
+    assert (
+        await search(
+            "text", collection_id=DEFAULT_COLLECTION, settings=settings, storage=storage
+        )
+        == []
+    )
+    assert (
+        len(
+            await search(
+                "text",
+                collection_id=DEFAULT_COLLECTION,
+                settings=changed_settings,
+                storage=storage,
+            )
+        )
+        == 1
+    )
 
 
 async def test_chunk_insert_failure_rolls_back_new_source_and_preserves_reindex(
@@ -209,8 +261,10 @@ async def test_chunk_insert_failure_rolls_back_new_source_and_preserves_reindex(
 ):
     document = settings.data_dir.parent / "notes.md"
     document.write_text("Original searchable text.", encoding="utf-8")
-    original = await add_file(document, settings=settings, storage=storage)
-    original_chunks = await documents.list_chunks(storage, settings.tenant_id)
+    original = await add_file(
+        document, collection_id=DEFAULT_COLLECTION, settings=settings, storage=storage
+    )
+    original_chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
     insert_chunks = documents._insert_chunks
 
     async def fail_insert_chunks(*args, **kwargs):
@@ -223,27 +277,35 @@ async def test_chunk_insert_failure_rolls_back_new_source_and_preserves_reindex(
         await ingestion.add_bytes(
             new_content,
             source_name="new.md",
+            collection_id=DEFAULT_COLLECTION,
             settings=settings,
             storage=storage,
         )
 
     with pytest.raises(RuntimeError, match="chunk insert failed"):
-        await add_file(document, reindex=True, settings=settings, storage=storage)
+        await add_file(
+            document,
+            reindex=True,
+            collection_id=DEFAULT_COLLECTION,
+            settings=settings,
+            storage=storage,
+        )
 
     assert (
         await documents.get_source_by_content_hash(
             storage,
-            settings.tenant_id,
+            DEFAULT_COLLECTION,
             ingestion.sha256(new_content).hexdigest(),
         )
         is None
     )
-    assert await documents.list_chunks(storage, settings.tenant_id) == original_chunks
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == original_chunks
 
     monkeypatch.setattr(documents, "_insert_chunks", insert_chunks)
     retried = await ingestion.add_bytes(
         new_content,
         source_name="new.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
     )
@@ -255,10 +317,14 @@ async def test_chunk_insert_failure_rolls_back_new_source_and_preserves_reindex(
 
 async def _claimed_job(settings, storage):
     await ingestion.enqueue_bytes(
-        b"Guarded input", source_name="guarded.md", settings=settings, storage=storage
+        b"Guarded input",
+        source_name="guarded.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
-    job = await jobs.claim_ingestion_job(storage, settings.tenant_id)
+    job = await jobs.claim_ingestion_job(storage)
     assert job is not None
 
     return job
@@ -304,7 +370,7 @@ async def test_claimed_job_rejects_altered_queue_records(
     with pytest.raises(ValueError, match=message):
         await ingestion.process_ingestion_job(job, settings=settings, storage=storage)
 
-    assert await documents.list_chunks(storage, settings.tenant_id) == []
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == []
     assert outside.exists()
 
 
@@ -320,7 +386,7 @@ async def test_processing_stops_when_job_ownership_is_lost(settings, storage):
     with pytest.raises(RuntimeError, match="ownership was lost"):
         await ingestion.process_ingestion_job(job, settings=settings, storage=storage)
 
-    assert await documents.list_chunks(storage, settings.tenant_id) == []
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == []
 
 
 async def test_cleanup_never_deletes_outside_the_staging_directory(
@@ -329,7 +395,7 @@ async def test_cleanup_never_deletes_outside_the_staging_directory(
     job = await _claimed_job(settings, storage)
     assert job.claim_token is not None
     assert await jobs.fail_ingestion_job(
-        storage, settings.tenant_id, job.id, job.claim_token, error="Failed."
+        storage, DEFAULT_COLLECTION, job.id, job.claim_token, error="Failed."
     )
 
     outside = settings.data_dir.parent / "keep" / str(job.id) / "guarded.md"
@@ -350,7 +416,7 @@ async def test_cleanup_never_deletes_outside_the_staging_directory(
     assert outside.exists()
     assert f"job_id={job.id}" in caplog.text and "unsafe_input_path" in caplog.text
     assert str(outside) not in caplog.text
-    queued = await jobs.get_ingestion_job_input(storage, settings.tenant_id, job.id)
+    queued = await jobs.get_ingestion_job_input(storage, DEFAULT_COLLECTION, job.id)
     assert queued is not None and queued.input_path is None
 
 
@@ -360,7 +426,7 @@ async def test_cleanup_keeps_the_reference_when_removal_fails(
     job = await _claimed_job(settings, storage)
     assert job.claim_token is not None
     assert await jobs.fail_ingestion_job(
-        storage, settings.tenant_id, job.id, job.claim_token, error="Failed."
+        storage, DEFAULT_COLLECTION, job.id, job.claim_token, error="Failed."
     )
 
     def denied(path):
@@ -373,6 +439,6 @@ async def test_cleanup_keeps_the_reference_when_removal_fails(
     await ingestion.cleanup_ingestion_inputs(settings=settings, storage=storage)
 
     assert "error_category=cleanup" in caplog.text
-    queued = await jobs.get_ingestion_job_input(storage, settings.tenant_id, job.id)
+    queued = await jobs.get_ingestion_job_input(storage, DEFAULT_COLLECTION, job.id)
     assert queued is not None and queued.input_path is not None
     assert Path(queued.input_path).exists()

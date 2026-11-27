@@ -26,13 +26,14 @@ from app.storage.database import Database
         ("text", {"limit": -1}, "limit must be greater"),
         ("text", {"window": -1}, "window must be zero"),
         ("text", {"method": "unknown"}, "method must be"),
+        ("text", {"collection_id": " "}, "collection identifier"),
     ],
 )
 async def test_search_rejects_invalid_inputs_before_embedding_or_sql(
     query, options, message
 ):
     with pytest.raises(ValueError, match=message):
-        await search(query, settings=Settings(), **options)
+        await search(query, settings=Settings(), **{"collection_id": "c", **options})
 
 
 @pytest.mark.parametrize("strategy", [search_mmr, search_multi_query])
@@ -99,7 +100,12 @@ async def test_hybrid_fuses_ranks_not_raw_scores(
     monkeypatch.setattr(retrieval, "search_lexical", lexical)
 
     results = await search(
-        "query", method="hybrid", limit=3, settings=settings, storage=storage
+        "query",
+        collection_id="c",
+        method="hybrid",
+        limit=3,
+        settings=settings,
+        storage=storage,
     )
 
     assert [(match.source_id, match.chunk_index) for match in results] == expected
@@ -144,7 +150,11 @@ async def test_hybrid_expands_candidate_budget_and_returns_only_requested_limit(
     settings = Settings()
 
     results = await search_hybrid(
-        "query", limit=6, settings=settings, storage=Database(settings.database_url)
+        "query",
+        collection_id="c",
+        limit=6,
+        settings=settings,
+        storage=Database(settings.database_url),
     )
 
     assert limits == [24, 24]
@@ -158,13 +168,13 @@ async def test_hybrid_does_not_silently_fall_back_after_provider_failure(monkeyp
     monkeypatch.setattr(retrieval, "embed_texts", fail)
 
     with pytest.raises(EmbeddingError, match="provider unavailable"):
-        await search("query", method="hybrid", settings=Settings())
+        await search("query", collection_id="c", method="hybrid", settings=Settings())
 
 
 @pytest.mark.parametrize("method", ["lexical", "hybrid"])
 async def test_keyword_methods_reject_punctuation_before_embedding_or_sql(method):
     with pytest.raises(ValueError, match="at least one word"):
-        await search("!!!", method=method, settings=Settings())
+        await search("!!!", collection_id="c", method=method, settings=Settings())
 
 
 async def test_window_score_assembly_prioritizes_seeds_and_deduplicates(monkeypatch):
@@ -193,7 +203,13 @@ async def test_window_score_assembly_prioritizes_seeds_and_deduplicates(monkeypa
     monkeypatch.setattr(retrieval.documents, "get_chunk_window", neighbors)
     settings = Settings()
     storage = Database(settings.database_url)
-    kwargs = {"limit": 2, "window": 2, "settings": settings, "storage": storage}
+    kwargs = {
+        "collection_id": "c",
+        "limit": 2,
+        "window": 2,
+        "settings": settings,
+        "storage": storage,
+    }
 
     default = await retrieval.search_with_windows([1.0], **kwargs)
     scored = await retrieval.search_with_windows([1.0], assembly="score", **kwargs)
@@ -205,4 +221,4 @@ async def test_window_score_assembly_prioritizes_seeds_and_deduplicates(monkeypa
 
 async def test_search_rejects_unknown_assembly():
     with pytest.raises(ValueError, match="assembly must be"):
-        await search("text", assembly="unknown", settings=Settings())
+        await search("text", collection_id="c", assembly="unknown", settings=Settings())

@@ -1,12 +1,17 @@
 """Source upload, listing, and deletion endpoints."""
 
 from typing import Annotated, Literal
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 
-from app.api.dependencies import SettingsDependency, StorageDependency
+from app.api.dependencies import (
+    CollectionDependency,
+    SettingsDependency,
+    StorageDependency,
+)
 from app.api.schemas.sources import SourceDetailsResponse, SourceResponse
 from app.ingestion import cleanup_ingestion_inputs, enqueue_bytes
 from app.storage import documents
@@ -42,12 +47,12 @@ def _source_details(source: SourceSummary) -> SourceDetailsResponse:
     "/sources", response_model=list[SourceDetailsResponse], summary="List sources"
 )
 async def list_sources(
-    settings: SettingsDependency,
+    collection_id: CollectionDependency,
     storage: StorageDependency,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[SourceDetailsResponse]:
-    """List a page of tenant sources, newest first.
+    """List a page of the collection's sources, newest first.
 
     ### Parameters
     - `limit`: Maximum sources, from 1 to 100; defaults to 50.
@@ -62,7 +67,7 @@ async def list_sources(
     """
 
     sources = await documents.list_sources(
-        storage, settings.tenant_id, limit=limit, offset=offset
+        storage, collection_id, limit=limit, offset=offset
     )
 
     return [_source_details(source) for source in sources]
@@ -74,9 +79,9 @@ async def list_sources(
     summary="Read a source",
 )
 async def get_source(
-    source_id: UUID, settings: SettingsDependency, storage: StorageDependency
+    source_id: UUID, collection_id: CollectionDependency, storage: StorageDependency
 ) -> SourceDetailsResponse:
-    """Read the metadata of a tenant-owned source.
+    """Read the metadata of a source in the collection.
 
     ### Parameter
     - `source_id`: Source UUID returned by source submission.
@@ -84,11 +89,11 @@ async def get_source(
     ### Responses
     - **200**: Source metadata with its current indexed chunk count.
     - **401**: Missing or invalid bearer token.
-    - **404**: Source is missing or belongs to another tenant.
+    - **404**: Source is missing or belongs to another collection.
     - **422**: Invalid source UUID.
     """
 
-    source = await documents.get_source(storage, settings.tenant_id, source_id)
+    source = await documents.get_source(storage, collection_id, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
 
@@ -97,7 +102,10 @@ async def get_source(
 
 @router.delete("/sources/{source_id}", status_code=204, summary="Delete a source")
 async def delete_source(
-    source_id: UUID, settings: SettingsDependency, storage: StorageDependency
+    source_id: UUID,
+    collection_id: CollectionDependency,
+    settings: SettingsDependency,
+    storage: StorageDependency,
 ) -> Response:
     """Delete a source, its indexed chunks, and its finished job history.
 
@@ -107,7 +115,7 @@ async def delete_source(
     ### Responses
     - **204**: Source deleted; it no longer appears in search or answers.
     - **401**: Missing or invalid bearer token.
-    - **404**: Source is missing or belongs to another tenant.
+    - **404**: Source is missing or belongs to another collection.
     - **409**: An ingestion job for the source is pending or running.
     - **422**: Invalid source UUID.
 
@@ -117,7 +125,7 @@ async def delete_source(
     await cleanup_ingestion_inputs(settings=settings, storage=storage)
 
     try:
-        await documents.delete_source(storage, settings.tenant_id, source_id)
+        await documents.delete_source(storage, collection_id, source_id)
     except SourceNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except SourceBusy as error:
@@ -134,6 +142,7 @@ async def delete_source(
 )
 async def add_source_file(
     file: Annotated[UploadFile, File(description="A supported document file")],
+    collection_id: CollectionDependency,
     settings: SettingsDependency,
     storage: StorageDependency,
     reindex: bool = False,
@@ -166,6 +175,7 @@ async def add_source_file(
         result = await enqueue_bytes(
             await file.read(),
             source_name=file.filename,
+            collection_id=collection_id,
             settings=settings,
             storage=storage,
             reindex=reindex,
@@ -180,7 +190,9 @@ async def add_source_file(
         id=str(result.source.id),
         status="unchanged" if job is None else job.status,
         job_id=str(job.id) if job is not None else None,
-        status_url=f"/jobs/{job.id}" if job is not None else None,
+        status_url=f"/collections/{quote(collection_id, safe='')}/jobs/{job.id}"
+        if job is not None
+        else None,
     )
 
     if job is not None:

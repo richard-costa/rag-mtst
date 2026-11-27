@@ -136,7 +136,7 @@ async def test_document_records_preserve_metadata(
 ) -> None:
     source = await documents.insert_source(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         source_type=source_type,
         reference=reference,
         mime_type="text/markdown",
@@ -145,7 +145,7 @@ async def test_document_records_preserve_metadata(
 
     await documents.replace_chunks(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         source_id=source.id,
         chunks=[
             ChunkInput(
@@ -159,7 +159,7 @@ async def test_document_records_preserve_metadata(
         ],
     )
 
-    chunks = await documents.list_chunks(storage, "test-tenant")
+    chunks = await documents.list_chunks(storage, "test-collection")
 
     assert source.reference == reference
     assert source.title == title
@@ -177,26 +177,28 @@ async def test_document_records_preserve_metadata(
     assert chunks[1].metadata == {"headings": ["Setup", "Authentication"]}
 
 
-async def test_conversation_turns_are_ordered_tenant_scoped_and_atomic(storage):
-    conversation = await conversations.create_conversation(storage, "test-tenant")
+async def test_conversation_turns_are_ordered_collection_scoped_and_atomic(storage):
+    conversation = await conversations.create_conversation(storage, "test-collection")
 
     with pytest.raises(ConversationNotFound):
-        await conversations.list_messages(storage, "other-tenant", conversation.id)
+        await conversations.list_messages(storage, "other-collection", conversation.id)
 
     with pytest.raises(ConversationNotFound):
         async with conversations.conversation_turn(
-            storage, "other-tenant", conversation.id, "private"
+            storage, "other-collection", conversation.id, "private"
         ):
-            pytest.fail("Another tenant must not enter the turn")
+            pytest.fail("Another collection must not enter the turn")
 
     async with conversations.conversation_turn(
-        storage, "test-tenant", conversation.id, "First question"
+        storage, "test-collection", conversation.id, "First question"
     ) as turn:
         assert turn.history == []
         turn.answer = "First answer [1]"
         turn.citations = [{"id": 1, "content": "An exact source snapshot"}]
 
-    first = await conversations.list_messages(storage, "test-tenant", conversation.id)
+    first = await conversations.list_messages(
+        storage, "test-collection", conversation.id
+    )
     assert [message.sequence for message in first] == [1, 2]
     assert [message.role for message in first] == ["user", "assistant"]
     assert first[0].citations == []
@@ -204,30 +206,30 @@ async def test_conversation_turns_are_ordered_tenant_scoped_and_atomic(storage):
 
     with pytest.raises(RuntimeError, match="generation failed"):
         async with conversations.conversation_turn(
-            storage, "test-tenant", conversation.id, "Failed question"
+            storage, "test-collection", conversation.id, "Failed question"
         ) as turn:
             assert turn.history == first
             turn.answer = "Must not be committed"
             raise RuntimeError("generation failed")
 
     assert (
-        await conversations.list_messages(storage, "test-tenant", conversation.id)
+        await conversations.list_messages(storage, "test-collection", conversation.id)
         == first
     )
 
     async with conversations.conversation_turn(
-        storage, "test-tenant", conversation.id, "Next question"
+        storage, "test-collection", conversation.id, "Next question"
     ) as turn:
         turn.answer = "Next answer"
 
     recent = await conversations.list_messages(
-        storage, "test-tenant", conversation.id, limit=2
+        storage, "test-collection", conversation.id, limit=2
     )
 
     assert [message.sequence for message in recent] == [3, 4]
     assert (
         await conversations.list_messages(
-            storage, "test-tenant", conversation.id, before=3
+            storage, "test-collection", conversation.id, before=3
         )
         == first
     )
@@ -236,27 +238,27 @@ async def test_conversation_turns_are_ordered_tenant_scoped_and_atomic(storage):
 async def test_conversation_lock_rejects_overlap_but_allows_other_conversations(
     storage,
 ):
-    conversation = await conversations.create_conversation(storage, "test-tenant")
-    other = await conversations.create_conversation(storage, "test-tenant")
+    conversation = await conversations.create_conversation(storage, "test-collection")
+    other = await conversations.create_conversation(storage, "test-collection")
 
     with pytest.raises(asyncio.CancelledError):
         async with conversations.conversation_turn(
-            storage, "test-tenant", conversation.id, "Cancelled question"
+            storage, "test-collection", conversation.id, "Cancelled question"
         ):
             with pytest.raises(ConversationBusy):
                 async with conversations.conversation_turn(
-                    storage, "test-tenant", conversation.id, "Overlapping question"
+                    storage, "test-collection", conversation.id, "Overlapping question"
                 ):
                     pytest.fail("Overlapping turns must not enter")
 
             async with conversations.conversation_turn(
-                storage, "test-tenant", other.id, "Independent question"
+                storage, "test-collection", other.id, "Independent question"
             ) as turn:
                 turn.answer = "Independent answer"
 
             assert (
                 await conversations.list_messages(
-                    storage, "test-tenant", conversation.id
+                    storage, "test-collection", conversation.id
                 )
                 == []
             )
@@ -264,7 +266,7 @@ async def test_conversation_lock_rejects_overlap_but_allows_other_conversations(
             raise asyncio.CancelledError
 
     async with conversations.conversation_turn(
-        storage, "test-tenant", conversation.id, "Retry"
+        storage, "test-collection", conversation.id, "Retry"
     ) as turn:
         assert turn.history == []
         turn.answer = "The lock was released"
@@ -273,11 +275,11 @@ async def test_conversation_lock_rejects_overlap_but_allows_other_conversations(
 async def test_conversation_turn_history_is_bounded_without_reusing_sequence_numbers(
     storage,
 ):
-    conversation = await conversations.create_conversation(storage, "test-tenant")
+    conversation = await conversations.create_conversation(storage, "test-collection")
 
     for index in range(12):
         async with conversations.conversation_turn(
-            storage, "test-tenant", conversation.id, f"Question {index}"
+            storage, "test-collection", conversation.id, f"Question {index}"
         ) as turn:
             assert len(turn.history) == min(index * 2, 20)
             if turn.history:
@@ -286,48 +288,52 @@ async def test_conversation_turn_history_is_bounded_without_reusing_sequence_num
             turn.answer = f"Answer {index}"
 
     messages = await conversations.list_messages(
-        storage, "test-tenant", conversation.id
+        storage, "test-collection", conversation.id
     )
 
     assert [message.sequence for message in messages] == list(range(1, 25))
 
 
-async def test_conversations_can_be_listed_read_and_deleted_per_tenant(storage):
-    first = await conversations.create_conversation(storage, "test-tenant")
-    second = await conversations.create_conversation(storage, "test-tenant")
-    await conversations.create_conversation(storage, "other-tenant")
+async def test_conversations_can_be_listed_read_and_deleted_per_collection(storage):
+    first = await conversations.create_conversation(storage, "test-collection")
+    second = await conversations.create_conversation(storage, "test-collection")
+    await conversations.create_conversation(storage, "other-collection")
 
     async with conversations.conversation_turn(
-        storage, "test-tenant", first.id, "Question"
+        storage, "test-collection", first.id, "Question"
     ) as turn:
         turn.answer = "Answer"
 
-    listed = await conversations.list_conversations(storage, "test-tenant")
+    listed = await conversations.list_conversations(storage, "test-collection")
     assert [conversation.id for conversation in listed] == [first.id, second.id]
     assert [
         conversation.id
         for conversation in await conversations.list_conversations(
-            storage, "test-tenant", limit=1, offset=1
+            storage, "test-collection", limit=1, offset=1
         )
     ] == [second.id]
     assert (
-        await conversations.get_conversation(storage, "other-tenant", first.id) is None
+        await conversations.get_conversation(storage, "other-collection", first.id)
+        is None
     )
 
     with pytest.raises(ConversationNotFound):
-        await conversations.delete_conversation(storage, "other-tenant", first.id)
+        await conversations.delete_conversation(storage, "other-collection", first.id)
 
     async with conversations.conversation_turn(
-        storage, "test-tenant", first.id, "Locked"
+        storage, "test-collection", first.id, "Locked"
     ) as turn:
         with pytest.raises(ConversationBusy):
-            await conversations.delete_conversation(storage, "test-tenant", first.id)
+            await conversations.delete_conversation(
+                storage, "test-collection", first.id
+            )
 
         turn.answer = "Still saved"
 
-    await conversations.delete_conversation(storage, "test-tenant", first.id)
+    await conversations.delete_conversation(storage, "test-collection", first.id)
     assert (
-        await conversations.get_conversation(storage, "test-tenant", first.id) is None
+        await conversations.get_conversation(storage, "test-collection", first.id)
+        is None
     )
 
     async with storage.connection() as connection:
@@ -342,7 +348,7 @@ async def test_conversations_can_be_listed_read_and_deleted_per_tenant(storage):
 async def test_sources_can_be_listed_read_and_deleted_when_idle(storage):
     indexed = await documents.insert_source_with_chunks(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         source_type="file",
         reference="folder/indexed.md",
         mime_type="text/markdown",
@@ -352,7 +358,7 @@ async def test_sources_can_be_listed_read_and_deleted_when_idle(storage):
 
     source, job = await jobs.create_ingestion_job(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         content_hash="queued",
         reference="queued.md",
         mime_type="text/markdown",
@@ -365,47 +371,45 @@ async def test_sources_can_be_listed_read_and_deleted_when_idle(storage):
 
     assert job is not None
 
-    listed = await documents.list_sources(storage, "test-tenant")
+    listed = await documents.list_sources(storage, "test-collection")
     assert [(item.id, item.chunk_count) for item in listed] == [
         (source.id, 0),
         (indexed.id, 1),
     ]
-    assert await documents.list_sources(storage, "other-tenant") == []
-    details = await documents.get_source(storage, "test-tenant", indexed.id)
+    assert await documents.list_sources(storage, "other-collection") == []
+    details = await documents.get_source(storage, "test-collection", indexed.id)
     assert details is not None and details.title == "indexed.md"
-    assert await documents.get_source(storage, "other-tenant", indexed.id) is None
+    assert await documents.get_source(storage, "other-collection", indexed.id) is None
 
     with pytest.raises(SourceNotFound):
-        await documents.delete_source(storage, "other-tenant", indexed.id)
+        await documents.delete_source(storage, "other-collection", indexed.id)
 
     with pytest.raises(SourceBusy):
-        await documents.delete_source(storage, "test-tenant", source.id)
+        await documents.delete_source(storage, "test-collection", source.id)
 
-    claimed = await jobs.claim_ingestion_job(storage, "test-tenant")
+    claimed = await jobs.claim_ingestion_job(storage)
     assert claimed is not None and claimed.claim_token is not None
     await jobs.fail_ingestion_job(
-        storage, "test-tenant", claimed.id, claimed.claim_token, error="failed"
+        storage, "test-collection", claimed.id, claimed.claim_token, error="failed"
     )
 
     with pytest.raises(SourceBusy):
-        await documents.delete_source(storage, "test-tenant", source.id)
+        await documents.delete_source(storage, "test-collection", source.id)
 
-    await jobs.clear_ingestion_input_path(
-        storage, "test-tenant", claimed.id, "/tmp/queued.md"
-    )
+    await jobs.clear_ingestion_input_path(storage, claimed.id, "/tmp/queued.md")
 
-    await documents.delete_source(storage, "test-tenant", source.id)
-    await documents.delete_source(storage, "test-tenant", indexed.id)
+    await documents.delete_source(storage, "test-collection", source.id)
+    await documents.delete_source(storage, "test-collection", indexed.id)
 
-    assert await documents.list_sources(storage, "test-tenant") == []
-    assert await documents.list_chunks(storage, "test-tenant") == []
-    assert await jobs.get_ingestion_job(storage, "test-tenant", job.id) is None
+    assert await documents.list_sources(storage, "test-collection") == []
+    assert await documents.list_chunks(storage, "test-collection") == []
+    assert await jobs.get_ingestion_job(storage, "test-collection", job.id) is None
 
 
-async def test_ingestion_job_inputs_are_atomic_durable_and_tenant_scoped(storage):
+async def test_ingestion_job_inputs_are_atomic_durable_and_collection_scoped(storage):
     source, job = await jobs.create_ingestion_job(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         content_hash="queued",
         reference="queued.md",
         mime_type="text/markdown",
@@ -417,20 +421,24 @@ async def test_ingestion_job_inputs_are_atomic_durable_and_tenant_scoped(storage
     )
 
     assert job is not None and job.status == "pending" and job.source_id == source.id
-    assert await documents.list_chunks(storage, "test-tenant") == []
-    assert await jobs.get_ingestion_job(storage, "test-tenant", job.id) == job
-    assert await jobs.get_ingestion_job(storage, "other-tenant", job.id) is None
-    queued_input = await jobs.get_ingestion_job_input(storage, "test-tenant", job.id)
+    assert await documents.list_chunks(storage, "test-collection") == []
+    assert await jobs.get_ingestion_job(storage, "test-collection", job.id) == job
+    assert await jobs.get_ingestion_job(storage, "other-collection", job.id) is None
+    queued_input = await jobs.get_ingestion_job_input(
+        storage, "test-collection", job.id
+    )
     assert queued_input is not None
     assert queued_input.input_path == "/tmp/queued.md"
     assert queued_input.configuration == {"chunk_size": 180}
     assert not hasattr(queued_input, "content")
-    assert await jobs.get_ingestion_job_input(storage, "other-tenant", job.id) is None
+    assert (
+        await jobs.get_ingestion_job_input(storage, "other-collection", job.id) is None
+    )
 
     with pytest.raises(psycopg.errors.CheckViolation):
         await jobs.create_ingestion_job(
             storage,
-            tenant_id="test-tenant",
+            collection_id="test-collection",
             content_hash="rollback",
             reference="bad.md",
             mime_type="text/markdown",
@@ -442,7 +450,9 @@ async def test_ingestion_job_inputs_are_atomic_durable_and_tenant_scoped(storage
         )
 
     assert (
-        await documents.get_source_by_content_hash(storage, "test-tenant", "rollback")
+        await documents.get_source_by_content_hash(
+            storage, "test-collection", "rollback"
+        )
         is None
     )
 
@@ -451,7 +461,7 @@ async def test_ingestion_job_submissions_serialize_duplicates_and_reject_conflic
     storage,
 ):
     arguments = {
-        "tenant_id": "test-tenant",
+        "collection_id": "test-collection",
         "content_hash": "concurrent",
         "reference": "queued.md",
         "mime_type": "text/markdown",
@@ -478,7 +488,7 @@ async def test_ingestion_job_submissions_serialize_duplicates_and_reject_conflic
             await jobs.create_ingestion_job(storage, **{**arguments, **changes})
 
     other_source, other_job = await jobs.create_ingestion_job(
-        storage, **{**arguments, "tenant_id": "other-tenant"}
+        storage, **{**arguments, "collection_id": "other-collection"}
     )
 
     assert other_source.id != results[0][0].id
@@ -489,7 +499,7 @@ async def test_ingestion_job_active_constraint_and_new_submission_after_failure(
     storage,
 ):
     arguments = {
-        "tenant_id": "test-tenant",
+        "collection_id": "test-collection",
         "content_hash": "retry",
         "reference": "queued.md",
         "mime_type": "text/markdown",
@@ -524,8 +534,10 @@ async def test_ingestion_job_active_constraint_and_new_submission_after_failure(
     assert next_source == source
     assert next_job is not None and next_job.id != job.id
 
-    first_input = await jobs.get_ingestion_job_input(storage, "test-tenant", job.id)
-    next_input = await jobs.get_ingestion_job_input(storage, "test-tenant", next_job.id)
+    first_input = await jobs.get_ingestion_job_input(storage, "test-collection", job.id)
+    next_input = await jobs.get_ingestion_job_input(
+        storage, "test-collection", next_job.id
+    )
     assert first_input is not None and first_input.configuration == {"chunk_size": 180}
     assert next_input is not None and next_input.configuration == {"chunk_size": 90}
 
@@ -533,7 +545,7 @@ async def test_ingestion_job_active_constraint_and_new_submission_after_failure(
 async def test_worker_claims_are_exclusive_and_stale_workers_cannot_commit(storage):
     source, submitted = await jobs.create_ingestion_job(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         content_hash="claim",
         reference="claim.md",
         mime_type="text/markdown",
@@ -545,40 +557,35 @@ async def test_worker_claims_are_exclusive_and_stale_workers_cannot_commit(stora
     )
 
     assert submitted is not None
-    assert await jobs.claim_ingestion_job(storage, "other-tenant") is None
 
     claims = await asyncio.gather(
-        *(jobs.claim_ingestion_job(storage, "test-tenant") for _ in range(4))
+        *(jobs.claim_ingestion_job(storage) for _ in range(4))
     )
 
     claimed = [job for job in claims if job is not None]
     assert len(claimed) == 1
     job = claimed[0]
     assert job.id == submitted.id and job.attempts == 1 and job.claim_token is not None
+    assert job.collection_id == "test-collection"
     assert not await jobs.heartbeat_ingestion_job(
-        storage, "other-tenant", job.id, job.claim_token
+        storage, "other-collection", job.id, job.claim_token
     )
     assert not await jobs.heartbeat_ingestion_job(
-        storage, "test-tenant", job.id, uuid4()
+        storage, "test-collection", job.id, uuid4()
     )
     assert await jobs.heartbeat_ingestion_job(
-        storage, "test-tenant", job.id, job.claim_token
+        storage, "test-collection", job.id, job.claim_token
     )
     assert await jobs.update_ingestion_job_progress(
         storage,
-        "test-tenant",
+        "test-collection",
         job.id,
         job.claim_token,
         stage="embedding",
         processed=0,
         total=2,
     )
-    assert (
-        await jobs.fail_interrupted_ingestion_jobs(
-            storage, "test-tenant", stale_seconds=60
-        )
-        == 0
-    )
+    assert await jobs.fail_interrupted_ingestion_jobs(storage, stale_seconds=60) == 0
 
     async with storage.connection() as connection:
         await connection.execute(
@@ -586,38 +593,27 @@ async def test_worker_claims_are_exclusive_and_stale_workers_cannot_commit(stora
             (job.id,),
         )
 
-    assert (
-        await jobs.fail_interrupted_ingestion_jobs(
-            storage, "other-tenant", stale_seconds=60
-        )
-        == 0
-    )
-    assert (
-        await jobs.fail_interrupted_ingestion_jobs(
-            storage, "test-tenant", stale_seconds=60
-        )
-        == 1
-    )
+    assert await jobs.fail_interrupted_ingestion_jobs(storage, stale_seconds=60) == 1
     assert not await jobs.complete_ingestion_job(
         storage,
-        "test-tenant",
+        "test-collection",
         job,
         reference="stale.md",
         chunks=[ChunkInput("stale content", {})],
     )
     assert not await jobs.fail_ingestion_job(
-        storage, "test-tenant", job.id, job.claim_token, error="late"
+        storage, "test-collection", job.id, job.claim_token, error="late"
     )
-    assert await documents.list_chunks(storage, "test-tenant") == []
+    assert await documents.list_chunks(storage, "test-collection") == []
 
-    failed = await jobs.get_ingestion_job(storage, "test-tenant", job.id)
+    failed = await jobs.get_ingestion_job(storage, "test-collection", job.id)
     assert (
         failed is not None and failed.status == "failed" and failed.claim_token is None
     )
     assert "resubmit explicitly" in (failed.error or "")
-    assert await jobs.claim_ingestion_job(storage, "test-tenant") is None
+    assert await jobs.claim_ingestion_job(storage) is None
     assert (
-        await documents.get_source_by_content_hash(storage, "test-tenant", "claim")
+        await documents.get_source_by_content_hash(storage, "test-collection", "claim")
         == source
     )
 
@@ -625,7 +621,7 @@ async def test_worker_claims_are_exclusive_and_stale_workers_cannot_commit(stora
 async def test_worker_completion_is_atomic_with_chunk_replacement(storage, monkeypatch):
     source, submitted = await jobs.create_ingestion_job(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         content_hash="completion",
         reference="old.md",
         mime_type="text/markdown",
@@ -638,13 +634,13 @@ async def test_worker_completion_is_atomic_with_chunk_replacement(storage, monke
 
     await documents.replace_chunks(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         source_id=source.id,
         chunks=[ChunkInput("old content", {})],
     )
 
-    old_chunks = await documents.list_chunks(storage, "test-tenant")
-    job = await jobs.claim_ingestion_job(storage, "test-tenant")
+    old_chunks = await documents.list_chunks(storage, "test-collection")
+    job = await jobs.claim_ingestion_job(storage)
     assert submitted is not None and job is not None
 
     async def failed_insert(*args, **kwargs):
@@ -655,24 +651,24 @@ async def test_worker_completion_is_atomic_with_chunk_replacement(storage, monke
         with pytest.raises(RuntimeError, match="synthetic storage failure"):
             await jobs.complete_ingestion_job(
                 storage,
-                "test-tenant",
+                "test-collection",
                 job,
                 reference="new.md",
                 chunks=[ChunkInput("new content", {})],
             )
 
-    assert await documents.list_chunks(storage, "test-tenant") == old_chunks
-    running = await jobs.get_ingestion_job(storage, "test-tenant", job.id)
+    assert await documents.list_chunks(storage, "test-collection") == old_chunks
+    running = await jobs.get_ingestion_job(storage, "test-collection", job.id)
     assert running is not None and running.status == "running"
     assert await jobs.complete_ingestion_job(
         storage,
-        "test-tenant",
+        "test-collection",
         job,
         reference="new.md",
         chunks=[ChunkInput("new content", {})],
     )
 
-    completed = await jobs.get_ingestion_job(storage, "test-tenant", job.id)
+    completed = await jobs.get_ingestion_job(storage, "test-collection", job.id)
     assert (
         completed is not None
         and completed.status == "completed"
@@ -680,18 +676,19 @@ async def test_worker_completion_is_atomic_with_chunk_replacement(storage, monke
     )
     assert completed.processed == completed.total == 1
     assert [
-        chunk.content for chunk in await documents.list_chunks(storage, "test-tenant")
+        chunk.content
+        for chunk in await documents.list_chunks(storage, "test-collection")
     ] == ["new content"]
     assert not await jobs.complete_ingestion_job(
-        storage, "test-tenant", job, reference="late.md", chunks=[]
+        storage, "test-collection", job, reference="late.md", chunks=[]
     )
 
 
-async def test_source_extraction_profile_is_consistent_and_tenant_scoped(storage):
+async def test_source_extraction_profile_is_consistent_and_collection_scoped(storage):
     profile = {"method": "parser", "engine": "utf-8"}
     source = await documents.insert_source_with_chunks(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         source_type="file",
         reference="profile.md",
         mime_type="text/markdown",
@@ -703,34 +700,40 @@ async def test_source_extraction_profile_is_consistent_and_tenant_scoped(storage
     )
 
     assert (
-        await documents.get_source_extraction_profile(storage, "test-tenant", source.id)
+        await documents.get_source_extraction_profile(
+            storage, "test-collection", source.id
+        )
         == profile
     )
     assert (
         await documents.get_source_extraction_profile(
-            storage, "another-tenant", source.id
+            storage, "another-collection", source.id
         )
         is None
     )
 
     await documents.replace_chunks(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         source_id=source.id,
         chunks=[ChunkInput("first", {"extraction": profile}), ChunkInput("second", {})],
     )
 
     assert (
-        await documents.get_source_extraction_profile(storage, "test-tenant", source.id)
+        await documents.get_source_extraction_profile(
+            storage, "test-collection", source.id
+        )
         is None
     )
 
     await documents.replace_chunks(
-        storage, tenant_id="test-tenant", source_id=source.id, chunks=[]
+        storage, collection_id="test-collection", source_id=source.id, chunks=[]
     )
 
     assert (
-        await documents.get_source_extraction_profile(storage, "test-tenant", source.id)
+        await documents.get_source_extraction_profile(
+            storage, "test-collection", source.id
+        )
         is None
     )
 
@@ -756,7 +759,7 @@ async def test_full_text_search_matches_without_language_detection(
 ):
     source = await documents.insert_source_with_chunks(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         source_type="file",
         reference="/tmp/multilingual.md",
         mime_type="text/markdown",
@@ -765,7 +768,7 @@ async def test_full_text_search_matches_without_language_detection(
     )
 
     results = await documents.full_text_search(
-        storage, tenant_id="test-tenant", query=query, limit=5
+        storage, collection_id="test-collection", query=query, limit=5
     )
 
     assert len(results) == int(matches)
@@ -777,12 +780,12 @@ async def test_full_text_search_matches_without_language_detection(
         assert results[0].score > 0
 
 
-async def test_full_text_search_ranks_limits_filters_tenants_and_updates_generated_text(
+async def test_full_text_search_ranks_limits_filters_collections_and_updates_generated_text(
     storage,
 ):
     source = await documents.insert_source_with_chunks(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         source_type="file",
         reference="/tmp/ranking.md",
         mime_type="text/markdown",
@@ -796,7 +799,7 @@ async def test_full_text_search_ranks_limits_filters_tenants_and_updates_generat
 
     await documents.insert_source_with_chunks(
         storage,
-        tenant_id="another-tenant",
+        collection_id="another-collection",
         source_type="file",
         reference="/tmp/private.md",
         mime_type="text/markdown",
@@ -805,7 +808,7 @@ async def test_full_text_search_ranks_limits_filters_tenants_and_updates_generat
     )
 
     results = await documents.full_text_search(
-        storage, tenant_id="test-tenant", query="housing", limit=2
+        storage, collection_id="test-collection", query="housing", limit=2
     )
 
     assert [chunk.chunk_index for chunk in results] == [1, 2]
@@ -813,27 +816,27 @@ async def test_full_text_search_ranks_limits_filters_tenants_and_updates_generat
     assert results[0].score == results[1].score
     assert (
         await documents.full_text_search(
-            storage, tenant_id="empty", query="housing", limit=5
+            storage, collection_id="empty", query="housing", limit=5
         )
         == []
     )
 
     await documents.replace_chunks(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         source_id=source.id,
         chunks=[ChunkInput("newterm", {})],
     )
 
     assert (
         await documents.full_text_search(
-            storage, tenant_id="test-tenant", query="housing", limit=5
+            storage, collection_id="test-collection", query="housing", limit=5
         )
         == []
     )
 
     updated = await documents.full_text_search(
-        storage, tenant_id="test-tenant", query="newterm", limit=5
+        storage, collection_id="test-collection", query="newterm", limit=5
     )
 
     assert [chunk.chunk_index for chunk in updated] == [0]
@@ -869,7 +872,7 @@ async def test_initial_migration_can_be_reversed_and_recreated(
 
     source = await documents.insert_source_with_chunks(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         source_type="file",
         reference="/tmp/recreated.md",
         mime_type="text/markdown",
@@ -878,14 +881,14 @@ async def test_initial_migration_can_be_reversed_and_recreated(
     )
 
     results = await documents.full_text_search(
-        storage, tenant_id="test-tenant", query="housing", limit=5
+        storage, collection_id="test-collection", query="housing", limit=5
     )
 
     assert [chunk.source_id for chunk in results] == [source.id]
 
     queued_source, job = await jobs.create_ingestion_job(
         storage,
-        tenant_id="test-tenant",
+        collection_id="test-collection",
         content_hash="recreated",
         reference=source.reference,
         mime_type="text/markdown",
@@ -897,5 +900,7 @@ async def test_initial_migration_can_be_reversed_and_recreated(
     )
 
     assert queued_source == source and job is not None
-    queued_input = await jobs.get_ingestion_job_input(storage, "test-tenant", job.id)
+    queued_input = await jobs.get_ingestion_job_input(
+        storage, "test-collection", job.id
+    )
     assert queued_input is not None and queued_input.input_path == "/tmp/recreated.md"

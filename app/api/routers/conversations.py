@@ -6,7 +6,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from app.api.dependencies import SettingsDependency, StorageDependency
+from app.api.dependencies import (
+    CollectionDependency,
+    SettingsDependency,
+    StorageDependency,
+)
 from app.api.schemas.answers import AskResponse
 from app.api.schemas.conversations import (
     ConversationResponse,
@@ -46,12 +50,12 @@ def _conversation_response(conversation: Conversation) -> ConversationResponse:
     summary="List conversations",
 )
 async def list_conversations(
-    settings: SettingsDependency,
+    collection_id: CollectionDependency,
     storage: StorageDependency,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[ConversationResponse]:
-    """List a page of tenant conversations, most recently updated first.
+    """List a page of the collection's conversations, most recently updated first.
 
     ### Parameters
     - `limit`: Maximum conversations, from 1 to 100; defaults to 50.
@@ -64,7 +68,7 @@ async def list_conversations(
     """
 
     items = await conversations.list_conversations(
-        storage, settings.tenant_id, limit=limit, offset=offset
+        storage, collection_id, limit=limit, offset=offset
     )
 
     return [_conversation_response(conversation) for conversation in items]
@@ -76,9 +80,11 @@ async def list_conversations(
     summary="Read a conversation",
 )
 async def get_conversation(
-    conversation_id: UUID, settings: SettingsDependency, storage: StorageDependency
+    conversation_id: UUID,
+    collection_id: CollectionDependency,
+    storage: StorageDependency,
 ) -> ConversationResponse:
-    """Read the identifiers and timestamps of a tenant-owned conversation.
+    """Read the identifiers and timestamps of a conversation in the collection.
 
     ### Parameter
     - `conversation_id`: Conversation UUID.
@@ -86,12 +92,12 @@ async def get_conversation(
     ### Responses
     - **200**: Conversation ID and creation/update timestamps.
     - **401**: Missing or invalid bearer token.
-    - **404**: Conversation is missing or belongs to another tenant.
+    - **404**: Conversation is missing or belongs to another collection.
     - **422**: Invalid conversation UUID.
     """
 
     conversation = await conversations.get_conversation(
-        storage, settings.tenant_id, conversation_id
+        storage, collection_id, conversation_id
     )
 
     if conversation is None:
@@ -106,7 +112,9 @@ async def get_conversation(
     summary="Delete a conversation",
 )
 async def delete_conversation(
-    conversation_id: UUID, settings: SettingsDependency, storage: StorageDependency
+    conversation_id: UUID,
+    collection_id: CollectionDependency,
+    storage: StorageDependency,
 ) -> Response:
     """Delete a conversation and all of its messages.
 
@@ -116,15 +124,13 @@ async def delete_conversation(
     ### Responses
     - **204**: Conversation and messages deleted.
     - **401**: Missing or invalid bearer token.
-    - **404**: Conversation is missing or belongs to another tenant.
+    - **404**: Conversation is missing or belongs to another collection.
     - **409**: A turn currently holds the conversation lock.
     - **422**: Invalid conversation UUID.
     """
 
     try:
-        await conversations.delete_conversation(
-            storage, settings.tenant_id, conversation_id
-        )
+        await conversations.delete_conversation(storage, collection_id, conversation_id)
 
     except ConversationNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
@@ -142,18 +148,18 @@ async def delete_conversation(
     summary="Create a conversation",
 )
 async def create_conversation(
-    settings: SettingsDependency, storage: StorageDependency
+    collection_id: CollectionDependency, storage: StorageDependency
 ) -> ConversationResponse:
-    """Create an empty conversation for the server-configured tenant.
+    """Create an empty conversation bound to the collection.
 
-    No request body is required.
+    No request body is required. Every turn retrieves only from this collection.
 
     ### Responses
     - **201**: Conversation ID and creation/update timestamps.
     - **401**: Missing or invalid bearer token.
     """
 
-    conversation = await conversations.create_conversation(storage, settings.tenant_id)
+    conversation = await conversations.create_conversation(storage, collection_id)
     return _conversation_response(conversation)
 
 
@@ -164,7 +170,7 @@ async def create_conversation(
 )
 async def conversation_messages(
     conversation_id: UUID,
-    settings: SettingsDependency,
+    collection_id: CollectionDependency,
     storage: StorageDependency,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     before: Annotated[int | None, Query(ge=1)] = None,
@@ -180,14 +186,14 @@ async def conversation_messages(
     ### Responses
     - **200**: Stored user/assistant messages with saved citation snapshots.
     - **401**: Missing or invalid bearer token.
-    - **404**: Conversation is missing or belongs to another tenant.
+    - **404**: Conversation is missing or belongs to another collection.
     - **422**: Invalid UUID or pagination parameters.
     """
 
     try:
         messages = await conversations.list_messages(
             storage,
-            settings.tenant_id,
+            collection_id,
             conversation_id,
             limit=limit,
             before=before,
@@ -207,6 +213,7 @@ async def conversation_messages(
 async def conversation_answer(
     conversation_id: UUID,
     request: ConversationTurnRequest,
+    collection_id: CollectionDependency,
     settings: SettingsDependency,
     storage: StorageDependency,
 ) -> AskResponse:
@@ -224,7 +231,7 @@ async def conversation_answer(
     ### Responses
     - **200**: Answer, retrieved matches, and current-source citations.
     - **401**: Missing or invalid bearer token.
-    - **404**: Conversation is missing or belongs to another tenant.
+    - **404**: Conversation is missing or belongs to another collection.
     - **409**: Another turn already holds the conversation lock.
     - **422**: Invalid request, generation settings, or input budget.
     - **502**: Embedding or generation provider failure.
@@ -234,10 +241,14 @@ async def conversation_answer(
 
     try:
         async with conversations.conversation_turn(
-            storage, settings.tenant_id, conversation_id, request.query
+            storage, collection_id, conversation_id, request.query
         ) as turn:
             response = await generate_answer(
-                request, settings=settings, storage=storage, history=turn.history
+                request,
+                collection_id=collection_id,
+                settings=settings,
+                storage=storage,
+                history=turn.history,
             )
 
             turn.answer = response.answer

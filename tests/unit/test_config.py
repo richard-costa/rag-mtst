@@ -22,7 +22,6 @@ def test_connection_settings_from_environment(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("RAG_DATA_DIR", "~/sources")
     monkeypatch.setenv("DATABASE_URL", "postgresql://example/rag")
-    monkeypatch.setenv("RAG_TENANT_ID", "tenant-a")
     monkeypatch.setenv("RAG_OFFICE_HOST", "office")
     monkeypatch.setenv("RAG_OFFICE_PORT", "2004")
 
@@ -31,7 +30,6 @@ def test_connection_settings_from_environment(monkeypatch, tmp_path) -> None:
     assert settings.data_dir == tmp_path / "sources"
     assert settings.source_dir == tmp_path / "sources" / "sources"
     assert settings.database_url == "postgresql://example/rag"
-    assert settings.tenant_id == "tenant-a"
     assert settings.office_host == "office"
     assert settings.office_port == 2004
 

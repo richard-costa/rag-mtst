@@ -39,6 +39,7 @@ async def test_add_preserves_explicit_staging_override(monkeypatch, tmp_path):
 
     assert await cli._run(["--data-dir", str(tmp_path), "add", "sample.md"]) == 0
     assert submit.call_args.kwargs["settings"].data_dir == tmp_path
+    assert submit.call_args.kwargs["collection_id"] == "default"
 
 
 @pytest.mark.parametrize(
@@ -155,8 +156,18 @@ async def test_cli_forwards_window_assembly(monkeypatch, command):
 
     assert (
         await cli._run(
-            [command, "question", "--method", "window", "--assembly", "score"]
+            [
+                command,
+                "question",
+                "--method",
+                "window",
+                "--assembly",
+                "score",
+                "--collection",
+                "team-a",
+            ]
         )
         == 0
     )
     assert backend.call_args.kwargs["assembly"] == "score"
+    assert backend.call_args.kwargs["collection_id"] == "team-a"

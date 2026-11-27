@@ -47,4 +47,4 @@ Use the actual Compose project name for independent deployments. Add `--reindex`
 
 ## Project status
 
-Pre-release, trusted single-tenant backend. The HTTP API has one shared bearer token, not per-user authorization. Do not expose directly to untrusted users. Operators own networking, TLS, storage and access controls. Citations identify supplied passages, not correctness; representative extraction and answer quality remain unestablished. See [security and data lifecycle](docs/explanation/security.md).
+Pre-release, trusted backend with collection-scoped data. Each operation names an opaque collection (the CLI uses `--collection`, default `default`); collections partition data but are not an access-control boundary. The HTTP API has one shared bearer token for all collections, not per-user authorization. Do not expose directly to untrusted users; use an authenticating gateway to authorize collection access. Operators own networking, TLS, storage and access controls. Citations identify supplied passages, not correctness; representative extraction and answer quality remain unestablished. See [security and data lifecycle](docs/explanation/security.md).

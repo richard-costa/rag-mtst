@@ -1,6 +1,6 @@
 # Security and data lifecycle
 
-RAG-MTST is a **pre-release, trusted single-tenant backend**. An infrastructure
+RAG-MTST is a **pre-release, trusted backend with collection-scoped data**. An infrastructure
 team should determine hosting, network ingress, TLS, secret management,
 monitoring, backups, and retention. See [deploy](../how-to/deploy.md) for the
 components a deployment needs.
@@ -8,8 +8,12 @@ components a deployment needs.
 ## Trust boundary
 
 The HTTP API accepts a **single shared bearer token** with read/write access to
-one configured tenant. There are no per-user roles, revocation, caller-chosen
-tenants, rate limits, or PostgreSQL row-level security. CLI/Python callers rely
+every collection. A collection, named in each request path, partitions data but
+is **not an access-control boundary**: a caller with the token can use any
+collection. Deployments needing per-user or per-team access must put an
+authenticating gateway in front that authorizes which collection paths each
+caller may use; never expose the API directly to untrusted users. There are no
+per-user roles, revocation, rate limits, or PostgreSQL row-level security. CLI/Python callers rely
 on host/database access rather than the HTTP token. Token format and rotation are
 described in [configuration](../reference/configuration.md#core-settings).
 

@@ -51,6 +51,7 @@ async def test_enqueue_rejects_invalid_input_before_persistence(
         await ingestion.enqueue_bytes(
             content,
             source_name=source_name,
+            collection_id="c",
             settings=settings,
             extraction_method=method,
         )
@@ -74,6 +75,8 @@ async def test_enqueue_removes_partial_input_when_staging_fails(tmp_path, monkey
     settings = Settings(data_dir=tmp_path / "data")
 
     with pytest.raises(OSError, match="disk full"):
-        await ingestion.enqueue_bytes(b"text", source_name="a.md", settings=settings)
+        await ingestion.enqueue_bytes(
+            b"text", source_name="a.md", collection_id="c", settings=settings
+        )
 
     assert list((settings.data_dir / "ingestion").iterdir()) == []

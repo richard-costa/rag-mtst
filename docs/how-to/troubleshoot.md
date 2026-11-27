@@ -1,7 +1,7 @@
 # Troubleshoot
 
 Start with `uv run rag status` for the local stack, and `uv run rag job JOB_ID`
-or `GET /jobs/{job_id}` for ingestion. When reporting an issue, follow the
+or `GET /collections/{collection_id}/jobs/{job_id}` for ingestion. When reporting an issue, follow the
 [safe reporting guidance](../explanation/security.md#reporting-issues).
 
 ## Setup and local services
@@ -24,7 +24,8 @@ diagnostic step. `rag reset` is for intentionally disposable data; see
 
 | Symptom | What to do |
 | --- | --- |
-| Job stays pending | Confirm the worker is running and ready, with the same tenant, database, and staging directory as the submitter |
+| Job stays pending | Confirm the worker is running and ready, with the same database and staging directory as the submitter |
+| Job, source, or conversation returns 404 | Use the same collection that created it (CLI `--collection`, HTTP path); IDs from another collection are not found |
 | Job failed | Read the job error, fix the cause, and [resubmit the original](ingest.md#recover-failed-or-interrupted-jobs) |
 | Native PDF scan yields no text | Configure [visual extraction](providers.md#enable-visual-extraction) explicitly; there is no OCR fallback |
 | Office visual conversion fails | Check the optional converter; native parsing does not require it |

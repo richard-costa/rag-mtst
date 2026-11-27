@@ -106,7 +106,7 @@ async def _log_outcome(
 
     try:
         async with asyncio.timeout(DATABASE_TIMEOUT_SECONDS):
-            current = await jobs.get_ingestion_job(storage, settings.tenant_id, job.id)
+            current = await jobs.get_ingestion_job(storage, job.collection_id, job.id)
     except psycopg.Error, TimeoutError:
         pass
 
@@ -144,6 +144,7 @@ async def _execute_job(
         json.dumps(
             {
                 "settings": configuration,
+                "collection_id": job.collection_id,
                 "job_id": str(job.id),
                 "claim_token": str(job.claim_token),
             }
@@ -219,7 +220,7 @@ async def _execute_child() -> int:
         settings = Settings(**configuration)
         storage = Database(settings.database_url)
         job = await jobs.get_ingestion_job(
-            storage, settings.tenant_id, UUID(payload["job_id"])
+            storage, payload["collection_id"], UUID(payload["job_id"])
         )
 
         if (
@@ -261,7 +262,7 @@ async def _execute_child() -> int:
 
 
 async def run_once(*, settings: Settings, storage: Database) -> bool:
-    """Claim and execute one pending ingestion job, if any.
+    """Claim and execute one pending ingestion job from any collection, if any.
 
     Args:
         settings: Worker or application runtime settings.
@@ -272,12 +273,10 @@ async def run_once(*, settings: Settings, storage: Database) -> bool:
     """
 
     async with asyncio.timeout(DATABASE_TIMEOUT_SECONDS):
-        await jobs.fail_interrupted_ingestion_jobs(
-            storage, settings.tenant_id, stale_seconds=STALE_SECONDS
-        )
+        await jobs.fail_interrupted_ingestion_jobs(storage, stale_seconds=STALE_SECONDS)
 
         await cleanup_ingestion_inputs(settings=settings, storage=storage)
-        job = await jobs.claim_ingestion_job(storage, settings.tenant_id)
+        job = await jobs.claim_ingestion_job(storage)
 
     if job is None:
         return False
@@ -293,7 +292,7 @@ async def run_once(*, settings: Settings, storage: Database) -> bool:
             assert job.claim_token is not None
             async with asyncio.timeout(DATABASE_TIMEOUT_SECONDS):
                 if not await jobs.heartbeat_ingestion_job(
-                    storage, settings.tenant_id, job.id, job.claim_token
+                    storage, job.collection_id, job.id, job.claim_token
                 ):
                     raise RuntimeError("Ingestion job ownership was lost")
 
@@ -324,7 +323,7 @@ async def run_once(*, settings: Settings, storage: Database) -> bool:
             async with asyncio.timeout(DATABASE_TIMEOUT_SECONDS):
                 await jobs.fail_ingestion_job(
                     storage,
-                    settings.tenant_id,
+                    job.collection_id,
                     job.id,
                     job.claim_token,
                     error="Worker interrupted; resubmit explicitly."

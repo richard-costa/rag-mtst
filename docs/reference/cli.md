@@ -45,9 +45,16 @@ checkout can still use ordinary commands against a separately managed backend.
 | Command | Purpose | Options |
 | --- | --- | --- |
 | `rag add FILE` | Queue ingestion; wait by default | `--reindex`, `--no-wait`, `--extraction-method parser\|visual` |
-| `rag job JOB_ID` | Inspect one tenant-scoped ingestion job | UUID argument |
+| `rag job JOB_ID` | Inspect one collection-scoped ingestion job | UUID argument |
 | `rag search QUERY` | Print retrieved passages | `--limit N`, `--method METHOD`, `--window N`, `--assembly document\|score` |
 | `rag ask QUESTION` | Generate text and print recognized references | Same retrieval options as search |
+
+All four commands accept `--collection NAME` (default `default`) to choose the
+collection they read or write. It is a local convenience; it does not restrict
+the API or worker. A job, source, or index in another collection is not found.
+Collection IDs are opaque, case-sensitive, nonempty, at most 255 characters,
+printable, without `/` or leading/trailing whitespace; an invalid ID exits with
+code `1`.
 
 `METHOD`: `cosine`, `window`, `lexical`, `hybrid`. Limit > 0; window ≥ 0. See [defaults](configuration.md#retrieval) and [search/assembly semantics](../explanation/retrieval.md#search-methods). Quote multiword queries and paths with spaces.
 

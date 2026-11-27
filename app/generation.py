@@ -95,6 +95,7 @@ no supplied passage supports the answer. Never use unknown source IDs.
 async def answer(
     question: str,
     *,
+    collection_id: str,
     limit: int | None = None,
     method: RetrievalMethod | None = None,
     window: int | None = None,
@@ -107,6 +108,7 @@ async def answer(
 
     Args:
         question: Question to be answered from indexed sources.
+        collection_id: Collection whose sources may be retrieved; never widened.
         limit: Maximum number of passages to retrieve.
         method: Optional retrieval algorithm override.
         window: Number of adjacent chunks to include around each match.
@@ -123,6 +125,7 @@ async def answer(
     api_key, base_url = generation_endpoint(active_settings)
     matches = await search(
         question,
+        collection_id=collection_id,
         limit=limit,
         method=method,
         window=window,

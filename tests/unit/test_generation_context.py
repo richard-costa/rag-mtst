@@ -54,7 +54,7 @@ async def test_context_budget_counts_tokens_and_keeps_exact_truncated_passage(
         anthropic_api_key="key",
     )
 
-    result = await generation.answer("Explain", settings=settings)
+    result = await generation.answer("Explain", collection_id="c", settings=settings)
 
     payload = json.loads(requests[0].content)
 
@@ -111,7 +111,9 @@ async def test_default_token_budget_keeps_evidence_beyond_old_character_limit(
     )
 
     result = await generation.answer(
-        "What does the final passage say?", settings=generation_settings
+        "What does the final passage say?",
+        collection_id="c",
+        settings=generation_settings,
     )
 
     payload = json.loads(requests[0].content)
@@ -134,7 +136,10 @@ async def test_history_keeps_recent_complete_turns_as_untrusted_context(
     requests = completion()
 
     result = await generation.answer(
-        "What about booking?", settings=generation_settings, history=history
+        "What about booking?",
+        collection_id="c",
+        settings=generation_settings,
+        history=history,
     )
 
     payload = json.loads(requests[0].content)
@@ -166,7 +171,9 @@ async def test_history_budget_drops_whole_older_turns_and_preserves_source_space
     requests = completion("Use the current source [1].")
     settings = replace(generation_settings, generation_input_tokens=800)
 
-    result = await generation.answer("Follow up", settings=settings, history=history)
+    result = await generation.answer(
+        "Follow up", collection_id="c", settings=settings, history=history
+    )
 
     payload = json.loads(requests[0].content)
     system, user = [message["content"] for message in payload["messages"]]
@@ -200,7 +207,10 @@ async def test_history_citations_do_not_authorize_previous_source_ids(
 
     with pytest.raises(generation.GenerationError, match="invalid citations"):
         await generation.answer(
-            "Follow up", settings=generation_settings, history=history
+            "Follow up",
+            collection_id="c",
+            settings=generation_settings,
+            history=history,
         )
 
 
@@ -216,6 +226,7 @@ async def test_unusable_prompt_budget_never_calls_provider(
     with pytest.raises(ValueError, match="prompt budget"):
         await generation.answer(
             "Question" * 100,
+            collection_id="c",
             settings=replace(generation_settings, generation_input_tokens=budget),
         )
 

@@ -5,6 +5,7 @@ import json
 import os
 from collections.abc import Generator
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 from uuid import uuid4
 
 import psycopg
@@ -18,6 +19,7 @@ from testcontainers.community.postgres import PostgresContainer
 from app import ingestion, llm, retrieval, worker
 from app.api.main import create_app
 from app.cli import main
+from app.collection import DEFAULT_COLLECTION
 from app.config import Settings, get_settings
 from app.storage import documents
 from app.storage.database import Database
@@ -57,7 +59,6 @@ def settings(database_url: str, tmp_path) -> Settings:
         data_dir=tmp_path / "data",
         database_url=database_url,
         api_key="integration-test-key",
-        tenant_id="test-tenant",
         chunk_size=10,
         retrieval_limit=5,
         generation_provider="ollama",
@@ -72,15 +73,19 @@ def storage(settings: Settings) -> Database:
 
 @pytest.fixture
 def api_client(settings: Settings):
-    """Open an authenticated in-process HTTP client, by default for `settings`."""
+    """Open an authenticated in-process HTTP client scoped to one collection."""
 
     @asynccontextmanager
-    async def open_client(client_settings: Settings | None = None):
+    async def open_client(
+        client_settings: Settings | None = None,
+        *,
+        collection: str = DEFAULT_COLLECTION,
+    ):
         active = client_settings or settings
 
         async with AsyncClient(
             transport=ASGITransport(app=create_app(active)),
-            base_url="http://test",
+            base_url=f"http://test/collections/{quote(collection, safe='')}",
             headers={"Authorization": f"Bearer {active.api_key}"},
         ) as client:
             yield client
@@ -178,7 +183,6 @@ def deterministic_generation(monkeypatch):
 def cli_environment(settings, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", settings.database_url)
     monkeypatch.setenv("RAG_DATA_DIR", str(settings.data_dir))
-    monkeypatch.setenv("RAG_TENANT_ID", settings.tenant_id)
 
 
 @pytest.fixture
@@ -200,11 +204,10 @@ def run_cli(inline_worker):
 
 @pytest.fixture
 def store_vectors(storage, settings):
-    async def store(vectors, *, tenant_id=None, model=None):
-        tenant_id = tenant_id or settings.tenant_id
+    async def store(vectors, *, collection_id=DEFAULT_COLLECTION, model=None):
         source = await documents.insert_source(
             storage,
-            tenant_id=tenant_id,
+            collection_id=collection_id,
             source_type="file",
             reference="/tmp/vectors.md",
             mime_type="text/markdown",
@@ -213,7 +216,7 @@ def store_vectors(storage, settings):
 
         await documents.replace_chunks(
             storage,
-            tenant_id=tenant_id,
+            collection_id=collection_id,
             source_id=source.id,
             chunks=[
                 ChunkInput(

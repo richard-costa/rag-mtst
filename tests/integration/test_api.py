@@ -8,6 +8,7 @@ import pytest
 
 from app import generation, ingestion, llm, retrieval, worker
 from app.cli import main
+from app.collection import DEFAULT_COLLECTION
 from app.embeddings import EmbeddingError
 from app.storage import documents
 
@@ -17,7 +18,7 @@ pytestmark = pytest.mark.usefixtures(
 
 
 @pytest.mark.usefixtures("inline_worker")
-async def test_api_upload_status_search_and_ask_are_tenant_scoped(
+async def test_api_upload_status_search_and_ask_are_collection_scoped(
     settings, storage, api_client
 ):
     async with api_client() as client:
@@ -27,22 +28,27 @@ async def test_api_upload_status_search_and_ask_are_tenant_scoped(
         assert uploaded.status_code == 202
         submission = uploaded.json()
         assert submission["status"] == "pending" and submission["job_id"]
-        assert await documents.list_chunks(storage, settings.tenant_id) == []
+        assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == []
 
         repeated = await client.post("/sources/file", files=files)
         assert repeated.status_code == 202 and repeated.json() == submission
 
-        pending = await client.get(submission["status_url"])
+        pending = await client.get("http://test" + submission["status_url"])
         assert pending.status_code == 200 and pending.json()["status"] == "pending"
         assert "claim_token" not in pending.json() and "content" not in pending.json()
 
         assert (await client.get(f"/jobs/{uuid4()}")).status_code == 404
 
-        async with api_client(replace(settings, tenant_id="other-tenant")) as other:
-            assert (await other.get(submission["status_url"])).status_code == 404
+        assert submission["status_url"] == (
+            f"/collections/{DEFAULT_COLLECTION}/jobs/{submission['job_id']}"
+        )
+
+        async with api_client(collection="other-collection") as other:
+            job_path = f"/jobs/{submission['job_id']}"
+            assert (await other.get(job_path)).status_code == 404
 
         assert await worker.run_once(settings=settings, storage=storage)
-        completed = await client.get(submission["status_url"])
+        completed = await client.get("http://test" + submission["status_url"])
         assert (
             completed.json()["status"] == "completed"
             and completed.json()["progress"] == 100
@@ -52,7 +58,7 @@ async def test_api_upload_status_search_and_ask_are_tenant_scoped(
         assert matches.status_code == 200
         assert (
             len(matches.json())
-            == len(await documents.list_chunks(storage, settings.tenant_id))
+            == len(await documents.list_chunks(storage, DEFAULT_COLLECTION))
             > 0
         )
         assert all(match["source_id"] == submission["id"] for match in matches.json())
@@ -160,15 +166,17 @@ async def test_api_reindex_status_and_embedding_failure(
             "/ask", json={"query": "document", "method": "hybrid"}
         )
 
-        before_failure = await documents.list_chunks(storage, settings.tenant_id)
+        before_failure = await documents.list_chunks(storage, DEFAULT_COLLECTION)
         monkeypatch.setattr(ingestion, "embed_texts", fail)
         failed_reindex = await client.post("/sources/file?reindex=true", files=files)
 
         assert failed_reindex.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
-        failed_job = await client.get(failed_reindex.json()["status_url"])
+        failed_job = await client.get(
+            "http://test" + failed_reindex.json()["status_url"]
+        )
         assert (
-            await documents.list_chunks(storage, settings.tenant_id) == before_failure
+            await documents.list_chunks(storage, DEFAULT_COLLECTION) == before_failure
         )
 
         lexical = await client.post(
@@ -223,7 +231,6 @@ async def test_generation_empty_sources_configuration_and_provider_errors(
         assert "RAG_GENERATION_MODEL" in invalid.json()["detail"]
 
     monkeypatch.setenv("DATABASE_URL", settings.database_url)
-    monkeypatch.setenv("RAG_TENANT_ID", settings.tenant_id)
 
     assert await asyncio.to_thread(main, ["ask", "token"]) == 1
     output = capsys.readouterr()

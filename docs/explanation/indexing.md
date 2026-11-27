@@ -2,8 +2,8 @@
 
 ## Identity is content, not filename
 
-Source identity is `(tenant_id, SHA-256(file_bytes))`. Identical bytes in another
-tenant are independent; another filename in the same tenant does not create a new
+Source identity is `(collection_id, SHA-256(file_bytes))`. Identical bytes in another
+collection are independent; another filename in the same collection does not create a new
 source. Different bytes create a new source rather than a version of the old one.
 
 Byte identity alone is insufficient for reuse. Each chunk also stores an

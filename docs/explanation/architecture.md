@@ -77,13 +77,14 @@ erDiagram
 
     sources {
         uuid id PK
-        text tenant_id
+        text collection_id
         text content_hash
         text reference
     }
     chunks {
         uuid id PK
         uuid source_id FK
+        text collection_id FK
         integer chunk_index
         vector embedding
         tsvector search_vector "generated"
@@ -100,7 +101,7 @@ erDiagram
     }
     conversations {
         uuid id PK
-        text tenant_id
+        text collection_id
     }
     messages {
         uuid id PK
@@ -112,16 +113,20 @@ erDiagram
 
 | Table | Purpose |
 | --- | --- |
-| `sources` | Tenant-scoped source identity and descriptive origin reference |
+| `sources` | Collection-scoped source identity and descriptive origin reference |
 | `chunks` | Extracted text, metadata, embeddings, and indexed search text |
 | `ingestion_jobs` | Durable status, progress, ownership, and heartbeats |
 | `ingestion_job_inputs` | Temporary file path and nonsecret queued configuration |
-| `conversations` | Tenant-owned conversation records |
+| `conversations` | Collection-owned conversation records |
 | `messages` | Ordered turns and saved citation snapshots |
 
 These relationships are backed by foreign keys with `ON DELETE CASCADE`.
 A job has at most one staged-input record, cleared after terminal input cleanup.
-Important uniqueness constraints include `sources(tenant_id, content_hash)`,
+A chunk references its source through the composite key
+`(source_id, collection_id) -> sources(id, collection_id)`, so it cannot belong
+to a different collection than its source. Collection IDs are nonempty text;
+there is no collection table, and jobs inherit their source's collection.
+Important uniqueness constraints include `sources(collection_id, content_hash)`,
 `chunks(source_id, chunk_index)`, and
 `messages(conversation_id, sequence)`. A partial unique index prevents more
 than one pending/running job for a source.
@@ -139,7 +144,8 @@ without an approximate-nearest-neighbor index.
 Submission stages the complete file before committing the source and its
 durable job. A worker claims that job with an ownership token and uses
 heartbeats to detect lost execution. Stale workers cannot commit another
-worker's claimed job.
+worker's claimed job. One worker claims jobs from all collections; each job
+carries its source's collection through processing and cleanup.
 
 The worker prepares the **entire replacement index** before a transaction
 inserts the replacement chunks and marks the owned job completed. A failed
@@ -161,8 +167,8 @@ chunk provenance, cleanup, and failure recovery in more detail.
 
 ## Conversation transactions
 
-Each conversation turn acquires a tenant-scoped row lock with `NOWAIT`.
-A missing or other-tenant conversation returns **404**; one already processing
+Each conversation turn acquires a collection-scoped row lock with `NOWAIT`.
+A missing or other-collection conversation returns **404**; one already processing
 a turn returns **409**. Deletion takes the same lock, so it also returns 409
 rather than removing a conversation mid-turn. The lock remains held through
 retrieval and model generation, so long provider calls also occupy a database

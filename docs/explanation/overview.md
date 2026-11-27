@@ -24,13 +24,13 @@ The API and CLI share feature modules. The separate worker continues ingestion a
 
 ## Ingestion: from file to indexed passages
 
-Files are staged temporarily; tenant-scoped content hashes identify sources. The worker extracts text, creates structural Markdown chunks with provenance, embeds them and stores text/vectors in PostgreSQL. Keep originals separately.
+Files are staged temporarily; collection-scoped content hashes identify sources. The worker extracts text, creates structural Markdown chunks with provenance, embeds them and stores text/vectors in PostgreSQL. Keep originals separately.
 
 Native parsing is the default; visual extraction is explicit, with no automatic OCR fallback. See [extraction and indexing](indexing.md) for deduplication, atomic reindexing and job recovery.
 
 ## Retrieval: select evidence for a question
 
-All strategies are tenant-scoped.
+All strategies are collection-scoped.
 
 | Method | What it does | Useful for |
 | --- | --- | --- |

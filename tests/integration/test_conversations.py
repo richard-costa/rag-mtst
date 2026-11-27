@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import replace
 from uuid import uuid4
 
 import pytest
 
 from app import generation
+from app.collection import DEFAULT_COLLECTION
 from app.storage import conversations
 
 pytestmark = pytest.mark.usefixtures(
@@ -64,9 +64,7 @@ async def test_conversation_api_persists_ordered_history_and_current_citations(
             await client.get(f"/conversations/{uuid4()}/messages")
         ).status_code == 404
 
-        other_settings = replace(settings, tenant_id="other-tenant")
-
-        async with api_client(other_settings) as other:
+        async with api_client(collection="other-collection") as other:
             assert (await other.get(history_url)).status_code == 404
             assert (
                 await other.post(history_url, json={"query": "token"})
@@ -103,7 +101,7 @@ async def test_ask_uses_caller_history_without_storing_it(
         assert (await client.get("/conversations")).json() == []
 
 
-async def test_conversations_are_listed_and_read_within_the_tenant(
+async def test_conversations_are_listed_and_read_within_the_collection(
     settings, api_client
 ):
     async with api_client() as client:
@@ -131,7 +129,7 @@ async def test_conversations_are_listed_and_read_within_the_tenant(
 
         assert invalid_search.status_code == 422
 
-    async with api_client(replace(settings, tenant_id="other-tenant")) as other:
+    async with api_client(collection="other-collection") as other:
         assert (await other.get("/conversations")).json() == []
         assert (await other.get(f"/conversations/{created['id']}")).status_code == 404
 
@@ -140,7 +138,7 @@ async def test_conversation_api_rejects_overlap_and_failed_turns_leave_no_histor
     store_vectors, settings, storage, monkeypatch, api_client
 ):
     await store_vectors([[1.0, 1.0, 0.0]])
-    conversation = await conversations.create_conversation(storage, settings.tenant_id)
+    conversation = await conversations.create_conversation(storage, DEFAULT_COLLECTION)
     history_url = f"/conversations/{conversation.id}/messages"
     entered = asyncio.Event()
     release = asyncio.Event()

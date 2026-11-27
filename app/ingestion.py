@@ -14,6 +14,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from app.chunking import chunk_markdown
+from app.collection import validate_collection_id
 from app.config import Settings, get_settings
 from app.embeddings import embed_texts, embedding_endpoint, prepare_chunks_for_embedding
 from app.extraction import (
@@ -53,6 +54,7 @@ class IngestionSubmission:
 async def enqueue_file(
     path: str | Path,
     *,
+    collection_id: str,
     settings: Settings | None = None,
     storage: Database | None = None,
     reindex: bool = False,
@@ -62,6 +64,7 @@ async def enqueue_file(
 
     Args:
         path: Input file path or staged input path.
+        collection_id: Collection that owns the source.
         settings: Runtime settings for extraction, storage, or models.
         storage: Database handle; uses configured storage when omitted.
         reindex: Whether to replace content already indexed.
@@ -71,6 +74,7 @@ async def enqueue_file(
         Submitted source and optional queued job.
     """
 
+    validate_collection_id(collection_id)
     validate_extraction_method(extraction_method)
     source_path = Path(path)
     content = await asyncio.to_thread(source_path.read_bytes)
@@ -78,6 +82,7 @@ async def enqueue_file(
     return await enqueue_bytes(
         content,
         source_name=source_path.name,
+        collection_id=collection_id,
         settings=settings,
         storage=storage,
         reindex=reindex,
@@ -89,6 +94,7 @@ async def enqueue_bytes(
     content: bytes,
     *,
     source_name: str,
+    collection_id: str,
     settings: Settings | None = None,
     storage: Database | None = None,
     reindex: bool = False,
@@ -99,6 +105,7 @@ async def enqueue_bytes(
     Args:
         content: Original document bytes to extract or index.
         source_name: Original filename used to infer source type and title.
+        collection_id: Collection that owns the source.
         settings: Runtime settings for extraction, storage, or models.
         storage: Database handle; uses configured storage when omitted.
         reindex: Whether to replace content already indexed.
@@ -108,6 +115,7 @@ async def enqueue_bytes(
         Submitted source and optional queued job.
     """
 
+    validate_collection_id(collection_id)
     validate_extraction_method(extraction_method)
     safe_name = Path(source_name).name
     if not safe_name.strip() or safe_name in {".", ".."}:
@@ -150,7 +158,7 @@ async def enqueue_bytes(
     try:
         source, job = await jobs.create_ingestion_job(
             active_storage,
-            tenant_id=active_settings.tenant_id,
+            collection_id=collection_id,
             content_hash=content_hash,
             reference=safe_name,
             mime_type=mimetypes.guess_type(safe_name)[0],
@@ -166,7 +174,7 @@ async def enqueue_bytes(
         try:
             async with asyncio.timeout(5):
                 accepted = await jobs.get_ingestion_job_input(
-                    active_storage, active_settings.tenant_id, job_id
+                    active_storage, collection_id, job_id
                 )
 
         # Preserve staged input when database acceptance cannot be determined.
@@ -193,6 +201,7 @@ async def enqueue_bytes(
 async def add_file(
     path: str | Path,
     *,
+    collection_id: str,
     settings: Settings | None = None,
     storage: Database | None = None,
     reindex: bool = False,
@@ -202,6 +211,7 @@ async def add_file(
 
     Args:
         path: Input file path or staged input path.
+        collection_id: Collection that owns the source.
         settings: Runtime settings for extraction, storage, or models.
         storage: Database handle; uses configured storage when omitted.
         reindex: Whether to replace content already indexed.
@@ -211,6 +221,7 @@ async def add_file(
         Persisted source and indexed-chunk count.
     """
 
+    validate_collection_id(collection_id)
     validate_extraction_method(extraction_method)
     source_path = Path(path)
     content = await asyncio.to_thread(source_path.read_bytes)
@@ -218,6 +229,7 @@ async def add_file(
     return await add_bytes(
         content,
         source_name=source_path.name,
+        collection_id=collection_id,
         settings=settings,
         storage=storage,
         reindex=reindex,
@@ -229,6 +241,7 @@ async def add_bytes(
     content: bytes,
     *,
     source_name: str,
+    collection_id: str,
     settings: Settings | None = None,
     storage: Database | None = None,
     reindex: bool = False,
@@ -239,6 +252,7 @@ async def add_bytes(
     Args:
         content: Original document bytes to extract or index.
         source_name: Original filename used to infer source type and title.
+        collection_id: Collection that owns the source.
         settings: Runtime settings for extraction, storage, or models.
         storage: Database handle; uses configured storage when omitted.
         reindex: Whether to replace content already indexed.
@@ -248,6 +262,7 @@ async def add_bytes(
         Persisted source and indexed-chunk count.
     """
 
+    validate_collection_id(collection_id)
     validate_extraction_method(extraction_method)
     if not source_name:
         raise ValueError("A source name is required")
@@ -264,14 +279,14 @@ async def add_bytes(
     content_hash = sha256(content).hexdigest()
     existing = await documents.get_source_by_content_hash(
         active_storage,
-        active_settings.tenant_id,
+        collection_id,
         content_hash,
     )
 
     if existing is not None and not reindex:
         indexed_profile = await documents.get_source_extraction_profile(
             active_storage,
-            active_settings.tenant_id,
+            collection_id,
             existing.id,
         )
 
@@ -294,7 +309,7 @@ async def add_bytes(
     if source is None:
         source = await documents.insert_source_with_chunks(
             active_storage,
-            tenant_id=active_settings.tenant_id,
+            collection_id=collection_id,
             source_type="file",
             reference=Path(source_name).name,
             mime_type=mimetypes.guess_type(source_name)[0],
@@ -305,7 +320,7 @@ async def add_bytes(
     else:
         await documents.replace_chunks(
             active_storage,
-            tenant_id=active_settings.tenant_id,
+            collection_id=collection_id,
             source_id=source.id,
             chunks=embedded_chunks,
         )
@@ -415,7 +430,7 @@ async def process_ingestion_job(
     if job.claim_token is None:
         raise ValueError("The ingestion job has not been claimed")
 
-    queued = await jobs.get_ingestion_job_input(storage, settings.tenant_id, job.id)
+    queued = await jobs.get_ingestion_job_input(storage, job.collection_id, job.id)
     if queued is None:
         raise ValueError("The ingestion input is missing")
 
@@ -459,7 +474,7 @@ async def process_ingestion_job(
 
     content_hash = sha256(content).hexdigest()
     source = await documents.get_source_by_content_hash(
-        storage, settings.tenant_id, content_hash
+        storage, job.collection_id, content_hash
     )
 
     if source is None or source.id != job.source_id:
@@ -477,7 +492,7 @@ async def process_ingestion_job(
         assert job.claim_token is not None
         if not await jobs.update_ingestion_job_progress(
             storage,
-            settings.tenant_id,
+            job.collection_id,
             job.id,
             job.claim_token,
             stage=stage,
@@ -495,7 +510,7 @@ async def process_ingestion_job(
     )
 
     if not await jobs.complete_ingestion_job(
-        storage, settings.tenant_id, job, reference=queued.source_name, chunks=chunks
+        storage, job.collection_id, job, reference=queued.source_name, chunks=chunks
     ):
         raise RuntimeError("Ingestion job ownership was lost")
 
@@ -542,7 +557,7 @@ def _remove_input(path: Path, settings: Settings) -> None:
 
 
 async def cleanup_ingestion_inputs(*, settings: Settings, storage: Database) -> None:
-    """Remove staged files for jobs already finished.
+    """Remove staged files for finished jobs in every collection.
 
     A recorded path outside the staging directory is never deleted; its
     reference is cleared so it stops blocking source deletion. Filesystem
@@ -553,9 +568,7 @@ async def cleanup_ingestion_inputs(*, settings: Settings, storage: Database) -> 
         storage: Database handle; uses configured storage when omitted.
     """
 
-    for queued in await jobs.list_finished_ingestion_inputs(
-        storage, settings.tenant_id
-    ):
+    for queued in await jobs.list_finished_ingestion_inputs(storage):
         assert queued.input_path is not None
         try:
             await asyncio.to_thread(_remove_input, Path(queued.input_path), settings)
@@ -571,6 +584,4 @@ async def cleanup_ingestion_inputs(*, settings: Settings, storage: Database) -> 
             )
             continue
 
-        await jobs.clear_ingestion_input_path(
-            storage, settings.tenant_id, queued.job_id, queued.input_path
-        )
+        await jobs.clear_ingestion_input_path(storage, queued.job_id, queued.input_path)

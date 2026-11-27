@@ -18,7 +18,7 @@ from app.storage.records import (
 
 
 class SourceNotFound(LookupError):
-    """The source does not exist in the requested tenant."""
+    """The source does not exist in the requested collection."""
 
 
 class SourceBusy(RuntimeError):
@@ -26,20 +26,20 @@ class SourceBusy(RuntimeError):
 
 
 _SOURCE_SUMMARY_COLUMNS = """
-    id, tenant_id, type AS source_type, reference, mime_type,
+    id, collection_id, type AS source_type, reference, mime_type,
     content_hash, created_at, updated_at,
     (SELECT count(*) FROM chunks WHERE chunks.source_id = sources.id) AS chunk_count
 """
 
 
 async def list_sources(
-    database: Database, tenant_id: str, *, limit: int = 50, offset: int = 0
+    database: Database, collection_id: str, *, limit: int = 50, offset: int = 0
 ) -> list[SourceSummary]:
-    """List a page of tenant sources, newest first.
+    """List a page of collection sources, newest first.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         limit: Maximum number of sources to return.
         offset: Number of sources to skip.
 
@@ -52,11 +52,11 @@ async def list_sources(
             f"""
             SELECT {_SOURCE_SUMMARY_COLUMNS}
             FROM sources
-            WHERE tenant_id = %s
+            WHERE collection_id = %s
             ORDER BY created_at DESC, id
             LIMIT %s OFFSET %s
             """,
-            (tenant_id, limit, offset),
+            (collection_id, limit, offset),
         )
 
         rows = await cursor.fetchall()
@@ -65,13 +65,13 @@ async def list_sources(
 
 
 async def get_source(
-    database: Database, tenant_id: str, source_id: UUID
+    database: Database, collection_id: str, source_id: UUID
 ) -> SourceSummary | None:
-    """Load a tenant source by UUID.
+    """Load a collection source by UUID.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         source_id: UUID identifying the source.
 
     Returns:
@@ -83,9 +83,9 @@ async def get_source(
             f"""
             SELECT {_SOURCE_SUMMARY_COLUMNS}
             FROM sources
-            WHERE tenant_id = %s AND id = %s
+            WHERE collection_id = %s AND id = %s
             """,
-            (tenant_id, source_id),
+            (collection_id, source_id),
         )
 
         row = await cursor.fetchone()
@@ -93,23 +93,25 @@ async def get_source(
     return SourceSummary(**row) if row is not None else None
 
 
-async def delete_source(database: Database, tenant_id: str, source_id: UUID) -> None:
+async def delete_source(
+    database: Database, collection_id: str, source_id: UUID
+) -> None:
     """Delete a source with its chunks and finished ingestion jobs.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         source_id: UUID identifying the source.
 
     Raises:
-        SourceNotFound: The source is absent from the tenant.
+        SourceNotFound: The source is absent from the collection.
         SourceBusy: A job is active or a staged input awaits cleanup.
     """
 
     async with database.connection() as connection:
         cursor = await connection.execute(
-            "SELECT id FROM sources WHERE tenant_id = %s AND id = %s FOR UPDATE",
-            (tenant_id, source_id),
+            "SELECT id FROM sources WHERE collection_id = %s AND id = %s FOR UPDATE",
+            (collection_id, source_id),
         )
 
         if await cursor.fetchone() is None:
@@ -134,14 +136,14 @@ async def delete_source(database: Database, tenant_id: str, source_id: UUID) -> 
 
 async def get_source_by_content_hash(
     database: Database,
-    tenant_id: str,
+    collection_id: str,
     content_hash: str,
 ) -> Source | None:
-    """Find a tenant's source by its original content hash.
+    """Find a collection's source by its original content hash.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         content_hash: Digest used to detect identical source content.
 
     Returns:
@@ -151,12 +153,12 @@ async def get_source_by_content_hash(
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            SELECT id, tenant_id, type AS source_type, reference, mime_type,
+            SELECT id, collection_id, type AS source_type, reference, mime_type,
                    content_hash, created_at, updated_at
             FROM sources
-            WHERE tenant_id = %s AND content_hash = %s
+            WHERE collection_id = %s AND content_hash = %s
             """,
-            (tenant_id, content_hash),
+            (collection_id, content_hash),
         )
 
         row = await cursor.fetchone()
@@ -166,14 +168,14 @@ async def get_source_by_content_hash(
 
 async def get_source_extraction_profile(
     database: Database,
-    tenant_id: str,
+    collection_id: str,
     source_id: UUID,
 ) -> dict[str, Any] | None:
     """Read the stored extraction profile for a source.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         source_id: UUID identifying the source.
 
     Returns:
@@ -185,11 +187,11 @@ async def get_source_extraction_profile(
             """
             SELECT metadata->'extraction' AS profile
             FROM chunks
-            WHERE tenant_id = %s AND source_id = %s
+            WHERE collection_id = %s AND source_id = %s
             GROUP BY metadata->'extraction'
             LIMIT 2
             """,
-            (tenant_id, source_id),
+            (collection_id, source_id),
         )
 
         rows = await cursor.fetchall()
@@ -203,7 +205,7 @@ async def get_source_extraction_profile(
 async def insert_source(
     database: Database,
     *,
-    tenant_id: str,
+    collection_id: str,
     source_type: Literal["file", "url"],
     reference: str,
     mime_type: str | None,
@@ -213,7 +215,7 @@ async def insert_source(
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         source_type: Whether the source is a file or URL.
         reference: Descriptive source origin; not necessarily unique or accessible.
         mime_type: Optional detected media type.
@@ -226,12 +228,12 @@ async def insert_source(
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            INSERT INTO sources (id, tenant_id, type, reference, mime_type, content_hash)
+            INSERT INTO sources (id, collection_id, type, reference, mime_type, content_hash)
             VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, tenant_id, type AS source_type, reference, mime_type,
+            RETURNING id, collection_id, type AS source_type, reference, mime_type,
                       content_hash, created_at, updated_at
             """,
-            (uuid4(), tenant_id, source_type, reference, mime_type, content_hash),
+            (uuid4(), collection_id, source_type, reference, mime_type, content_hash),
         )
 
         row = await cursor.fetchone()
@@ -244,7 +246,7 @@ async def insert_source(
 async def insert_source_with_chunks(
     database: Database,
     *,
-    tenant_id: str,
+    collection_id: str,
     source_type: Literal["file", "url"],
     reference: str,
     mime_type: str | None,
@@ -255,7 +257,7 @@ async def insert_source_with_chunks(
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         source_type: Whether the source is a file or URL.
         reference: Descriptive source origin; not necessarily unique or accessible.
         mime_type: Optional detected media type.
@@ -269,19 +271,19 @@ async def insert_source_with_chunks(
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            INSERT INTO sources (id, tenant_id, type, reference, mime_type, content_hash)
+            INSERT INTO sources (id, collection_id, type, reference, mime_type, content_hash)
             VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, tenant_id, type AS source_type, reference, mime_type,
+            RETURNING id, collection_id, type AS source_type, reference, mime_type,
                       content_hash, created_at, updated_at
             """,
-            (uuid4(), tenant_id, source_type, reference, mime_type, content_hash),
+            (uuid4(), collection_id, source_type, reference, mime_type, content_hash),
         )
 
         row = await cursor.fetchone()
         assert row is not None
         source = Source(**row)
 
-        await _insert_chunks(connection, tenant_id, source.id, chunks)
+        await _insert_chunks(connection, collection_id, source.id, chunks)
 
     return source
 
@@ -289,7 +291,7 @@ async def insert_source_with_chunks(
 async def replace_chunks(
     database: Database,
     *,
-    tenant_id: str,
+    collection_id: str,
     source_id: UUID,
     chunks: list[ChunkInput],
 ) -> None:
@@ -297,7 +299,7 @@ async def replace_chunks(
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         source_id: UUID identifying the source.
         chunks: Prepared chunks and vectors to persist.
     """
@@ -308,12 +310,12 @@ async def replace_chunks(
             (source_id,),
         )
 
-        await _insert_chunks(connection, tenant_id, source_id, chunks)
+        await _insert_chunks(connection, collection_id, source_id, chunks)
 
 
 async def _insert_chunks(
     connection: psycopg.AsyncConnection[dict[str, Any]],
-    tenant_id: str,
+    collection_id: str,
     source_id: UUID,
     chunks: list[ChunkInput],
 ) -> None:
@@ -321,7 +323,7 @@ async def _insert_chunks(
 
     Args:
         connection: Database connection or transaction supplied by the caller.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         source_id: UUID identifying the source.
         chunks: Prepared chunks and vectors to persist.
     """
@@ -330,14 +332,14 @@ async def _insert_chunks(
         await connection.execute(
             """
             INSERT INTO chunks (
-                id, tenant_id, source_id, chunk_index, page_number,
+                id, collection_id, source_id, chunk_index, page_number,
                 content, embedding, metadata
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 uuid4(),
-                tenant_id,
+                collection_id,
                 source_id,
                 index,
                 chunk.page_number,
@@ -348,15 +350,15 @@ async def _insert_chunks(
         )
 
 
-async def list_chunks(database: Database, tenant_id: str) -> list[StoredChunk]:
-    """List all chunks indexed for a tenant.
+async def list_chunks(database: Database, collection_id: str) -> list[StoredChunk]:
+    """List all chunks indexed for a collection.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
 
     Returns:
-        Indexed chunks for the tenant.
+        Indexed chunks for the collection.
     """
 
     async with database.connection() as connection:
@@ -367,10 +369,10 @@ async def list_chunks(database: Database, tenant_id: str) -> list[StoredChunk]:
                   chunks.chunk_index, chunks.content, chunks.metadata
             FROM chunks
             JOIN sources ON sources.id = chunks.source_id
-            WHERE chunks.tenant_id = %s
+            WHERE chunks.collection_id = %s
             ORDER BY sources.created_at, chunks.chunk_index
             """,
-            (tenant_id,),
+            (collection_id,),
         )
 
         rows = await cursor.fetchall()
@@ -392,15 +394,15 @@ async def list_chunks(database: Database, tenant_id: str) -> list[StoredChunk]:
 async def full_text_search(
     database: Database,
     *,
-    tenant_id: str,
+    collection_id: str,
     query: str,
     limit: int,
 ) -> list[ScoredChunk]:
-    """Rank tenant chunks with PostgreSQL full-text search.
+    """Rank collection chunks with PostgreSQL full-text search.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         query: Lexical search query.
         limit: Maximum number of matching chunks.
 
@@ -426,14 +428,14 @@ async def full_text_search(
                    ts_rank_cd(chunks.search_vector, search_query.terms, 2) AS score
             FROM chunks
             JOIN sources ON sources.id = chunks.source_id
-                        AND sources.tenant_id = chunks.tenant_id
+                        AND sources.collection_id = chunks.collection_id
             CROSS JOIN search_query
-            WHERE chunks.tenant_id = %s
+            WHERE chunks.collection_id = %s
               AND chunks.search_vector @@ search_query.terms
             ORDER BY score DESC, chunks.source_id, chunks.chunk_index
             LIMIT %s
             """,
-            (query, tenant_id, limit),
+            (query, collection_id, limit),
         )
 
         rows = await cursor.fetchall()
@@ -444,17 +446,17 @@ async def full_text_search(
 async def vector_search(
     database: Database,
     *,
-    tenant_id: str,
+    collection_id: str,
     embedding: list[float],
     embedding_provider: str,
     embedding_model: str,
     limit: int,
 ) -> list[ScoredChunk]:
-    """Rank compatible tenant chunks by cosine distance to a query embedding.
+    """Rank compatible collection chunks by cosine distance to a query embedding.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         embedding: Query vector used for cosine search.
         embedding_provider: Provider associated with the indexed vectors.
         embedding_model: Model associated with the indexed vectors.
@@ -474,8 +476,8 @@ async def vector_search(
                    1 - (chunks.embedding <=> %s::vector) AS score
             FROM chunks
             JOIN sources ON sources.id = chunks.source_id
-                        AND sources.tenant_id = chunks.tenant_id
-            WHERE chunks.tenant_id = %s
+                        AND sources.collection_id = chunks.collection_id
+            WHERE chunks.collection_id = %s
               AND chunks.embedding IS NOT NULL
               AND vector_norm(chunks.embedding) > 0
               AND chunks.metadata->>'embedding_provider' = %s
@@ -484,7 +486,7 @@ async def vector_search(
                      chunks.source_id, chunks.chunk_index
             LIMIT %s
             """,
-            (vector, tenant_id, embedding_provider, embedding_model, vector, limit),
+            (vector, collection_id, embedding_provider, embedding_model, vector, limit),
         )
 
         rows = await cursor.fetchall()
@@ -495,7 +497,7 @@ async def vector_search(
 async def get_chunk_window(
     database: Database,
     *,
-    tenant_id: str,
+    collection_id: str,
     source_id: UUID,
     chunk_index: int,
     window: int,
@@ -504,7 +506,7 @@ async def get_chunk_window(
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         source_id: UUID identifying the source.
         chunk_index: Index of the seed chunk in its source.
         window: Number of adjacent chunks to include on each side.
@@ -521,12 +523,12 @@ async def get_chunk_window(
                    chunks.chunk_index, chunks.content, chunks.metadata
             FROM chunks
             JOIN sources ON sources.id = chunks.source_id
-                        AND sources.tenant_id = chunks.tenant_id
-            WHERE chunks.tenant_id = %s AND chunks.source_id = %s
+                        AND sources.collection_id = chunks.collection_id
+            WHERE chunks.collection_id = %s AND chunks.source_id = %s
               AND chunks.chunk_index BETWEEN %s AND %s
             ORDER BY chunks.chunk_index
             """,
-            (tenant_id, source_id, chunk_index - window, chunk_index + window),
+            (collection_id, source_id, chunk_index - window, chunk_index + window),
         )
 
         rows = await cursor.fetchall()

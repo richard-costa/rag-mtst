@@ -13,6 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from app import embeddings, ingestion, retrieval, worker
 from app.api.main import create_app
 from app.cli import main
+from app.collection import DEFAULT_COLLECTION
 from app.retrieval import search
 from app.storage import documents
 from app.storage.records import ChunkInput
@@ -55,7 +56,7 @@ async def test_hosted_generation_workflow(
 
     source = await documents.insert_source_with_chunks(
         storage,
-        tenant_id=settings.tenant_id,
+        collection_id=DEFAULT_COLLECTION,
         source_type="file",
         reference="/synthetic/hosted-smoke.md",
         mime_type="text/markdown",
@@ -73,7 +74,7 @@ async def test_hosted_generation_workflow(
 
     async with AsyncClient(
         transport=ASGITransport(app=create_app(settings)),
-        base_url="http://test",
+        base_url=f"http://test/collections/{DEFAULT_COLLECTION}",
         headers={"Authorization": f"Bearer {settings.api_key}"},
     ) as client:
         for question in [
@@ -157,7 +158,7 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
 
     async with AsyncClient(
         transport=ASGITransport(app=create_app(settings)),
-        base_url="http://test",
+        base_url=f"http://test/collections/{DEFAULT_COLLECTION}",
         headers={"Authorization": f"Bearer {settings.api_key}"},
     ) as client:
         files = {"file": ("ollama-smoke.md", document.encode("utf-8"), "text/markdown")}
@@ -174,14 +175,14 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
         assert reindexed.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
         assert reindexed.json()["id"] == source_id
-        assert (await client.get(reindexed.json()["status_url"])).json()[
-            "status"
-        ] == "completed"
+        assert (
+            await client.get("http://test" + reindexed.json()["status_url"])
+        ).json()["status"] == "completed"
 
         async with storage.connection() as connection:
             cursor = await connection.execute(
-                "SELECT vector_dims(embedding) AS dimensions FROM chunks WHERE tenant_id = %s",
-                (settings.tenant_id,),
+                "SELECT vector_dims(embedding) AS dimensions FROM chunks WHERE collection_id = %s",
+                (DEFAULT_COLLECTION,),
             )
 
             dimensions = await cursor.fetchall()
@@ -232,11 +233,11 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
                 }
             )
 
-    empty_app = create_app(replace(settings, tenant_id="empty-ollama-smoke"))
+    empty_app = create_app(settings)
 
     async with AsyncClient(
         transport=ASGITransport(app=empty_app),
-        base_url="http://test",
+        base_url="http://test/collections/empty-ollama-smoke",
         headers={"Authorization": f"Bearer {settings.api_key}"},
     ) as client:
         empty = await client.post("/ask", json={"query": "Any sources?"})
@@ -249,7 +250,7 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
 
     async with AsyncClient(
         transport=ASGITransport(app=missing_app),
-        base_url="http://test",
+        base_url=f"http://test/collections/{DEFAULT_COLLECTION}",
         headers={"Authorization": f"Bearer {settings.api_key}"},
     ) as client:
         missing = await client.post(
@@ -261,7 +262,6 @@ async def test_ollama_local_workflow(settings, storage, monkeypatch, capsys):
     for name, value in {
         "DATABASE_URL": settings.database_url,
         "RAG_DATA_DIR": str(settings.data_dir),
-        "RAG_TENANT_ID": settings.tenant_id,
         "RAG_EMBEDDING_PROVIDER": "local",
         "RAG_GENERATION_PROVIDER": "ollama",
         "RAG_GENERATION_MODEL": settings.generation_model,
@@ -390,11 +390,12 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
     result = await ingestion.add_bytes(
         document.encode("utf-8"),
         source_name="atendimento-baseline.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
     )
 
-    chunks = await documents.list_chunks(storage, settings.tenant_id)
+    chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
     headings = {chunk.chunk_index: chunk.metadata["heading"] for chunk in chunks}
     report = {
         "model": settings.embedding_model_name,
@@ -412,17 +413,43 @@ async def test_portuguese_local_retrieval_baseline(settings, storage, monkeypatc
 
     for case_id, query, expected in cases:
         cosine = await search(
-            query, method="cosine", limit=1, settings=settings, storage=storage
+            query,
+            method="cosine",
+            limit=1,
+            collection_id=DEFAULT_COLLECTION,
+            settings=settings,
+            storage=storage,
         )
-        windows = await search(query, limit=1, settings=settings, storage=storage)
+        windows = await search(
+            query,
+            limit=1,
+            collection_id=DEFAULT_COLLECTION,
+            settings=settings,
+            storage=storage,
+        )
         zero_window = await search(
-            query, window=0, limit=1, settings=settings, storage=storage
+            query,
+            window=0,
+            limit=1,
+            collection_id=DEFAULT_COLLECTION,
+            settings=settings,
+            storage=storage,
         )
         lexical = await search(
-            query, method="lexical", limit=1, settings=settings, storage=storage
+            query,
+            method="lexical",
+            limit=1,
+            collection_id=DEFAULT_COLLECTION,
+            settings=settings,
+            storage=storage,
         )
         hybrid = await search(
-            query, method="hybrid", limit=1, settings=settings, storage=storage
+            query,
+            method="hybrid",
+            limit=1,
+            collection_id=DEFAULT_COLLECTION,
+            settings=settings,
+            storage=storage,
         )
 
         assert zero_window == cosine

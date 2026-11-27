@@ -24,7 +24,12 @@ def test_local_demo_serves_only_public_assets(asset, content_type) -> None:
         for private_asset in ("server.py", "README.md", ".env"):
             assert client.get(f"/demo/{private_asset}").status_code == 404
 
-        assert client.post("/ask", json={"query": "question"}).status_code == 401
+        assert (
+            client.post(
+                "/collections/default/ask", json={"query": "question"}
+            ).status_code
+            == 401
+        )
 
 
 def test_demo_exposes_retrieval_comparison_controls() -> None:

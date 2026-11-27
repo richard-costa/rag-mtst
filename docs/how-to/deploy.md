@@ -13,7 +13,7 @@ and data responsibilities are in
 | Ingestion worker | A separate long-running `python -m app.worker` process |
 | PostgreSQL | PostgreSQL 17 with pgvector and schema migrations |
 | Staged input directory | Shared and accessible at the **same path** by API and worker |
-| Configuration | Same database/tenant/staging settings for API and worker; provider credentials where needed |
+| Configuration | Same database/staging settings for API and worker; provider credentials where needed. There is no collection setting: one worker processes jobs from all collections |
 | Optional converter | unoserver/LibreOffice for explicit visual DOCX/PPTX extraction |
 | Optional frontend | The browser demo is development-only and not part of the backend artifact |
 
@@ -48,6 +48,7 @@ access staged inputs at the same path. Database data is stored separately in
 ## Before exposing the API
 
 Review the [trust boundary](../explanation/security.md#trust-boundary): one shared
-bearer token, public schema routes, and no rate limits. Put TLS, network access
-control, and cost/abuse limits in front of the service. When something fails,
+bearer token for all collections, public schema routes, and no rate limits. A
+gateway must authorize which collection paths each caller may use. Put TLS,
+network access control, and cost/abuse limits in front of the service. When something fails,
 use [troubleshooting](troubleshoot.md).

@@ -13,11 +13,11 @@ depends_on = None
 # ---------------------------------------------------------------------------
 # Initial schema creation
 # ---------------------------------------------------------------------------
-# The first migration creates the shared tenant-scoped RAG tables and indexes.
+# The first migration creates the shared collection-scoped RAG tables and indexes.
 
 
 def upgrade() -> None:
-    """Create the tenant-scoped source, chunk, job, and conversation schema."""
+    """Create the collection-scoped source, chunk, job, and conversation schema."""
 
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
@@ -25,25 +25,26 @@ def upgrade() -> None:
         """
         CREATE TABLE sources (
             id uuid PRIMARY KEY,
-            tenant_id text NOT NULL,
+            collection_id text NOT NULL CHECK (collection_id <> ''),
             type text NOT NULL CHECK (type IN ('file', 'url')),
             reference text NOT NULL,
             mime_type text,
             content_hash text NOT NULL,
             created_at timestamptz NOT NULL DEFAULT now(),
             updated_at timestamptz NOT NULL DEFAULT now(),
-            UNIQUE (tenant_id, content_hash)
+            UNIQUE (collection_id, content_hash),
+            UNIQUE (id, collection_id)
         )
         """
     )
-    op.execute("CREATE INDEX sources_tenant_id_idx ON sources (tenant_id)")
+    op.execute("CREATE INDEX sources_collection_id_idx ON sources (collection_id)")
 
     op.execute(
         """
         CREATE TABLE chunks (
             id uuid PRIMARY KEY,
-            tenant_id text NOT NULL,
-            source_id uuid NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            collection_id text NOT NULL CHECK (collection_id <> ''),
+            source_id uuid NOT NULL,
             chunk_index integer NOT NULL,
             page_number integer,
             content text NOT NULL,
@@ -53,11 +54,13 @@ def upgrade() -> None:
             embedding vector,
             metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
             created_at timestamptz NOT NULL DEFAULT now(),
-            UNIQUE (source_id, chunk_index)
+            UNIQUE (source_id, chunk_index),
+            FOREIGN KEY (source_id, collection_id)
+                REFERENCES sources (id, collection_id) ON DELETE CASCADE
         )
         """
     )
-    op.execute("CREATE INDEX chunks_tenant_id_idx ON chunks (tenant_id)")
+    op.execute("CREATE INDEX chunks_collection_id_idx ON chunks (collection_id)")
     op.execute("CREATE INDEX chunks_source_id_idx ON chunks (source_id)")
     op.execute(
         "CREATE INDEX chunks_search_vector_idx ON chunks USING gin (search_vector)"
@@ -116,13 +119,15 @@ def upgrade() -> None:
         """
         CREATE TABLE conversations (
             id uuid PRIMARY KEY,
-            tenant_id text NOT NULL,
+            collection_id text NOT NULL CHECK (collection_id <> ''),
             created_at timestamptz NOT NULL DEFAULT now(),
             updated_at timestamptz NOT NULL DEFAULT now()
         )
         """
     )
-    op.execute("CREATE INDEX conversations_tenant_id_idx ON conversations (tenant_id)")
+    op.execute(
+        "CREATE INDEX conversations_collection_id_idx ON conversations (collection_id)"
+    )
 
     op.execute(
         """

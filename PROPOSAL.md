@@ -1,6 +1,6 @@
 # Proposal: Collections instead of tenants
 
-**Status:** Proposed; not implemented.
+**Status:** Implemented.
 
 ## Goal
 

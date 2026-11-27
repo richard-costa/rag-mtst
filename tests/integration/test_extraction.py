@@ -10,6 +10,7 @@ import pytest
 from app import embeddings, ingestion, retrieval, worker
 from app.chunking import chunk_markdown
 from app.cli import main
+from app.collection import DEFAULT_COLLECTION
 from app.embeddings import EmbeddingError
 from app.ingestion import add_file
 from app.retrieval import search
@@ -70,10 +71,11 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
     result = await ingestion.add_bytes(
         text.encode("utf-8"),
         source_name="overflow.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
     )
-    chunks = await documents.list_chunks(storage, settings.tenant_id)
+    chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
 
     assert result.chunk_count == len(chunks) == len(encoded) > 1
     assert "".join(chunk.content for chunk in chunks) == original_chunks[0].content
@@ -110,7 +112,12 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
         )
 
     matches = await search(
-        "TAILMARKER", method="cosine", limit=1, settings=settings, storage=storage
+        "TAILMARKER",
+        method="cosine",
+        limit=1,
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     assert len(matches) == 1
@@ -121,6 +128,7 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
     duplicate = await ingestion.add_bytes(
         text.encode("utf-8"),
         source_name="overflow.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
     )
@@ -128,7 +136,7 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
     assert duplicate.created is False
     assert duplicate.source.id == result.source.id
     assert duplicate.chunk_count == 0
-    assert await documents.list_chunks(storage, settings.tenant_id) == chunks
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == chunks
 
     def fail_encode(*args, **kwargs):
         raise RuntimeError("inference failed")
@@ -140,11 +148,12 @@ async def test_local_overflow_persists_every_piece_and_retrieves_the_tail(
             text.encode("utf-8"),
             source_name="overflow.md",
             reindex=True,
+            collection_id=DEFAULT_COLLECTION,
             settings=settings,
             storage=storage,
         )
 
-    assert await documents.list_chunks(storage, settings.tenant_id) == chunks
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == chunks
 
 
 @pytest.mark.usefixtures("inline_worker")
@@ -168,7 +177,7 @@ async def test_native_office_upload_persists_searchable_chunks(
         assert uploaded.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
         source_id = uploaded.json()["id"]
-        chunks = await documents.list_chunks(storage, settings.tenant_id)
+        chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
         assert any("| Bricks | 42 |" in chunk.content for chunk in chunks)
         assert any(chunk.metadata["headings"] == ["Native heading"] for chunk in chunks)
         assert chunks[0].source_reference == source_name
@@ -192,17 +201,21 @@ async def test_extraction_profile_conflict_requires_explicit_reindex(
 
     content = b"Previously indexed searchable text."
     original = await ingestion.add_bytes(
-        content, source_name="profile.md", settings=settings, storage=storage
+        content,
+        source_name="profile.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     await documents.replace_chunks(
         storage,
-        tenant_id=settings.tenant_id,
+        collection_id=DEFAULT_COLLECTION,
         source_id=original.source.id,
         chunks=[ChunkInput("Old searchable text", {"extraction": stored_profile})],
     )
 
-    old_chunks = await documents.list_chunks(storage, settings.tenant_id)
+    old_chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
 
     def reject_extraction(*args, **kwargs):
         pytest.fail("Profile conflicts must fail before parsing or inference")
@@ -211,15 +224,20 @@ async def test_extraction_profile_conflict_requires_explicit_reindex(
         blocked.setattr(ingestion, "extract_source", reject_extraction)
         with pytest.raises(ValueError, match="explicit reindexing is required"):
             await ingestion.add_bytes(
-                content, source_name="profile.md", settings=settings, storage=storage
+                content,
+                source_name="profile.md",
+                collection_id=DEFAULT_COLLECTION,
+                settings=settings,
+                storage=storage,
             )
 
-    assert await documents.list_chunks(storage, settings.tenant_id) == old_chunks
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == old_chunks
     assert original.source.reference == "profile.md"
 
     reindexed = await ingestion.add_bytes(
         content,
         source_name="profile.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
         reindex=True,
@@ -228,12 +246,16 @@ async def test_extraction_profile_conflict_requires_explicit_reindex(
     assert reindexed.source.id == original.source.id
     assert await documents.get_source_extraction_profile(
         storage,
-        settings.tenant_id,
+        DEFAULT_COLLECTION,
         original.source.id,
     ) == get_extraction_profile(".md")
 
     duplicate = await ingestion.add_bytes(
-        content, source_name="profile.md", settings=settings, storage=storage
+        content,
+        source_name="profile.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     assert duplicate.created is False and duplicate.chunk_count == 0
@@ -254,7 +276,7 @@ async def test_explicit_extraction_selection_and_profile_conflicts_through_http_
         assert first.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
         source = await documents.get_source_by_content_hash(
-            storage, settings.tenant_id, ingestion.sha256(content).hexdigest()
+            storage, DEFAULT_COLLECTION, ingestion.sha256(content).hexdigest()
         )
 
         assert source is not None
@@ -270,6 +292,7 @@ async def test_explicit_extraction_selection_and_profile_conflicts_through_http_
                 await ingestion.add_bytes(
                     content,
                     source_name="profile.md",
+                    collection_id=DEFAULT_COLLECTION,
                     settings=settings,
                     storage=storage,
                     extraction_method=method,
@@ -277,12 +300,15 @@ async def test_explicit_extraction_selection_and_profile_conflicts_through_http_
 
         with pytest.raises(ValueError, match="Unsupported extraction method"):
             await add_file(
-                "missing-file.md", settings=settings, extraction_method="unknown"
+                "missing-file.md",
+                collection_id=DEFAULT_COLLECTION,
+                settings=settings,
+                extraction_method="unknown",
             )
 
         await documents.replace_chunks(
             storage,
-            tenant_id=settings.tenant_id,
+            collection_id=DEFAULT_COLLECTION,
             source_id=source.id,
             chunks=[ChunkInput("Searchable text without an extraction profile", {})],
         )
@@ -298,7 +324,6 @@ async def test_explicit_extraction_selection_and_profile_conflicts_through_http_
         document.write_bytes(content)
         monkeypatch.setenv("DATABASE_URL", settings.database_url)
         monkeypatch.setenv("RAG_DATA_DIR", str(settings.data_dir))
-        monkeypatch.setenv("RAG_TENANT_ID", settings.tenant_id)
 
         assert (
             await asyncio.to_thread(
@@ -313,7 +338,7 @@ async def test_explicit_extraction_selection_and_profile_conflicts_through_http_
             == 0
         )
         assert await documents.get_source_extraction_profile(
-            storage, settings.tenant_id, source.id
+            storage, DEFAULT_COLLECTION, source.id
         ) == get_extraction_profile(".md")
 
         reused = await client.post(
@@ -362,7 +387,7 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
 
         assert uploaded.status_code == 202, uploaded.text
         assert await worker.run_once(settings=settings, storage=storage)
-        chunks = await documents.list_chunks(storage, settings.tenant_id)
+        chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
         assert chunks and all(
             chunk.metadata["extraction"]["method"] == "visual" for chunk in chunks
         )
@@ -388,7 +413,6 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
         for name, value in {
             "DATABASE_URL": settings.database_url,
             "RAG_DATA_DIR": str(settings.data_dir),
-            "RAG_TENANT_ID": settings.tenant_id,
             "RAG_VISUAL_MODEL": "vision-model",
         }.items():
             monkeypatch.setenv(name, value)
@@ -417,10 +441,10 @@ async def test_visual_http_cli_deduplication_and_failed_reindex_preserve_data(
 
         assert failed.status_code == 202
         assert await worker.run_once(settings=settings, storage=storage)
-        assert (await client.get(failed.json()["status_url"])).json()[
+        assert (await client.get("http://test" + failed.json()["status_url"])).json()[
             "status"
         ] == "failed"
-        assert await documents.list_chunks(storage, settings.tenant_id) == chunks
+        assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == chunks
         assert not list((settings.data_dir / "ingestion").iterdir())
 
 
@@ -451,10 +475,11 @@ async def test_paged_extraction_preserves_body_ranges_and_profiles_in_storage(
     result = await ingestion.add_bytes(
         b"synthetic page source",
         source_name="pages.pdf",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
     )
-    chunks = await documents.list_chunks(storage, settings.tenant_id)
+    chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
 
     assert result.chunk_count == len(chunks) == (1 if group_adjacent else 2)
 
@@ -468,7 +493,7 @@ async def test_paged_extraction_preserves_body_ranges_and_profiles_in_storage(
     assert chunks[-1].metadata["source_pages"]["end"] == 3
     assert (
         await documents.get_source_extraction_profile(
-            storage, settings.tenant_id, result.source.id
+            storage, DEFAULT_COLLECTION, result.source.id
         )
         == profile
     )

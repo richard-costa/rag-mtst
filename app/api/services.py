@@ -14,6 +14,7 @@ from app.storage.database import Database
 async def generate_answer(
     request: GenerationRequest,
     *,
+    collection_id: str,
     settings: Settings,
     storage: Database,
     history: Sequence[ConversationMessage] = (),
@@ -22,7 +23,8 @@ async def generate_answer(
 
     Args:
         request: Validated question, retrieval controls, and model overrides.
-        settings: Server defaults and fixed tenant scope; never mutated.
+        collection_id: Collection whose sources may be retrieved.
+        settings: Server defaults; never mutated.
         storage: Database handle for retrieving source passages.
         history: Ordered prior messages for generation context, empty by default.
 
@@ -53,6 +55,7 @@ async def generate_answer(
 
     result = await answer(
         request.query,
+        collection_id=collection_id,
         limit=request.limit,
         method=request.method,
         window=request.window,

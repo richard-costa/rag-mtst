@@ -1,6 +1,6 @@
 # RAG-MTST documentation
 
-Start with the [quickstart](tutorials/quickstart.md). RAG-MTST is a Python RAG backend; the CLI needs only PostgreSQL and the ingestion worker, not an HTTP server. See [security and data lifecycle](explanation/security.md) before deploying this pre-release, trusted single-tenant software.
+Start with the [quickstart](tutorials/quickstart.md). RAG-MTST is a Python RAG backend; the CLI needs only PostgreSQL and the ingestion worker, not an HTTP server. See [security and data lifecycle](explanation/security.md) before deploying this pre-release, trusted software. Data is partitioned into caller-named collections, but one shared API key accesses all of them.
 
 ## Tutorials: learn by doing
 

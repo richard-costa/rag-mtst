@@ -16,6 +16,7 @@ from uuid import uuid4
 import pytest
 
 from app import ingestion, worker
+from app.collection import DEFAULT_COLLECTION
 from app.retrieval import search
 from app.storage import documents, jobs
 
@@ -26,7 +27,11 @@ pytestmark = pytest.mark.usefixtures("deterministic_embeddings")
 async def test_worker_indexes_durable_input_using_saved_settings(settings, storage):
     content = b"# Worker\n\nUse an access token for authentication."
     submitted = await ingestion.enqueue_bytes(
-        content, source_name="worker.md", settings=settings, storage=storage
+        content,
+        source_name="worker.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     assert submitted.job is not None
@@ -36,7 +41,7 @@ async def test_worker_indexes_durable_input_using_saved_settings(settings, stora
     )
 
     completed = await jobs.get_ingestion_job(
-        storage, settings.tenant_id, submitted.job.id
+        storage, DEFAULT_COLLECTION, submitted.job.id
     )
 
     assert (
@@ -45,7 +50,7 @@ async def test_worker_indexes_durable_input_using_saved_settings(settings, stora
         and completed.attempts == 1
     )
 
-    chunks = await documents.list_chunks(storage, settings.tenant_id)
+    chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
     assert chunks and all(
         chunk.metadata["embedding_model"] == settings.embedding_model_name
         for chunk in chunks
@@ -53,7 +58,7 @@ async def test_worker_indexes_durable_input_using_saved_settings(settings, stora
     assert chunks[0].source_reference == "worker.md"
 
     queued_input = await jobs.get_ingestion_job_input(
-        storage, settings.tenant_id, submitted.job.id
+        storage, DEFAULT_COLLECTION, submitted.job.id
     )
 
     assert queued_input is not None and queued_input.input_path is None
@@ -66,18 +71,19 @@ async def test_worker_recovery_cleans_abandoned_input_files(settings, storage):
     submitted = await ingestion.enqueue_bytes(
         b"Interrupted input",
         source_name="interrupted.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
     )
 
     assert submitted.job is not None
     queued = await jobs.get_ingestion_job_input(
-        storage, settings.tenant_id, submitted.job.id
+        storage, DEFAULT_COLLECTION, submitted.job.id
     )
 
     assert queued is not None and queued.input_path is not None
     staged = Path(queued.input_path)
-    claimed = await jobs.claim_ingestion_job(storage, settings.tenant_id)
+    claimed = await jobs.claim_ingestion_job(storage)
     assert claimed is not None
 
     async with storage.connection() as connection:
@@ -90,11 +96,11 @@ async def test_worker_recovery_cleans_abandoned_input_files(settings, storage):
     assert not staged.exists() and not staged.parent.exists()
 
     cleaned = await jobs.get_ingestion_job_input(
-        storage, settings.tenant_id, claimed.id
+        storage, DEFAULT_COLLECTION, claimed.id
     )
 
     assert cleaned is not None and cleaned.input_path is None
-    assert await documents.list_chunks(storage, settings.tenant_id) == []
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == []
 
 
 @pytest.mark.usefixtures("inline_worker")
@@ -104,13 +110,18 @@ async def test_worker_rejects_unavailable_or_changed_input_without_replacing_chu
 ):
     content = b"Keep the existing indexed content."
     await ingestion.add_bytes(
-        content, source_name="original.md", settings=settings, storage=storage
+        content,
+        source_name="original.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
-    before = await documents.list_chunks(storage, settings.tenant_id)
+    before = await documents.list_chunks(storage, DEFAULT_COLLECTION)
     submitted = await ingestion.enqueue_bytes(
         content,
         source_name="original.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
         reindex=True,
@@ -118,7 +129,7 @@ async def test_worker_rejects_unavailable_or_changed_input_without_replacing_chu
 
     assert submitted.job is not None
     queued = await jobs.get_ingestion_job_input(
-        storage, settings.tenant_id, submitted.job.id
+        storage, DEFAULT_COLLECTION, submitted.job.id
     )
 
     assert queued is not None and queued.input_path is not None
@@ -130,9 +141,9 @@ async def test_worker_rejects_unavailable_or_changed_input_without_replacing_chu
         staged.write_bytes(b"Different bytes")
 
     assert await worker.run_once(settings=settings, storage=storage)
-    failed = await jobs.get_ingestion_job(storage, settings.tenant_id, submitted.job.id)
+    failed = await jobs.get_ingestion_job(storage, DEFAULT_COLLECTION, submitted.job.id)
     assert failed is not None and failed.status == "failed"
-    assert await documents.list_chunks(storage, settings.tenant_id) == before
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == before
     assert not staged.parent.exists()
 
 
@@ -142,13 +153,18 @@ async def test_worker_failure_preserves_index_and_does_not_replay(
 ):
     content = b"# Keep\n\nPreviously indexed content."
     await ingestion.add_bytes(
-        content, source_name="keep.md", settings=settings, storage=storage
+        content,
+        source_name="keep.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
-    before = await documents.list_chunks(storage, settings.tenant_id)
+    before = await documents.list_chunks(storage, DEFAULT_COLLECTION)
     submitted = await ingestion.enqueue_bytes(
         content,
         source_name="keep.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
         reindex=True,
@@ -163,7 +179,7 @@ async def test_worker_failure_preserves_index_and_does_not_replay(
 
     assert await worker.run_once(settings=settings, storage=storage)
     assert submitted.job is not None
-    failed = await jobs.get_ingestion_job(storage, settings.tenant_id, submitted.job.id)
+    failed = await jobs.get_ingestion_job(storage, DEFAULT_COLLECTION, submitted.job.id)
     assert failed is not None and failed.status == "failed"
     assert "private-secret" not in (failed.error or "")
     assert "private-secret" not in caplog.text
@@ -173,15 +189,19 @@ async def test_worker_failure_preserves_index_and_does_not_replay(
     )
 
     queued_input = await jobs.get_ingestion_job_input(
-        storage, settings.tenant_id, submitted.job.id
+        storage, DEFAULT_COLLECTION, submitted.job.id
     )
 
     assert queued_input is not None and queued_input.input_path is None
     assert not list((settings.data_dir / "ingestion").iterdir())
-    assert await documents.list_chunks(storage, settings.tenant_id) == before
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == before
 
     matches = await search(
-        "Previously", method="lexical", settings=settings, storage=storage
+        "Previously",
+        method="lexical",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     assert matches and matches[0].source_id == str(submitted.source.id)
@@ -194,7 +214,11 @@ async def test_worker_heartbeats_during_inference_and_shutdown_fails_without_rep
     settings, storage, monkeypatch
 ):
     submitted = await ingestion.enqueue_bytes(
-        b"Long running input", source_name="long.md", settings=settings, storage=storage
+        b"Long running input",
+        source_name="long.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
     heartbeats = asyncio.Event()
@@ -227,7 +251,7 @@ async def test_worker_heartbeats_during_inference_and_shutdown_fails_without_rep
         await asyncio.gather(running, return_exceptions=True)
 
     assert submitted.job is not None
-    failed = await jobs.get_ingestion_job(storage, settings.tenant_id, submitted.job.id)
+    failed = await jobs.get_ingestion_job(storage, DEFAULT_COLLECTION, submitted.job.id)
     assert failed is not None and failed.status == "failed"
     assert not await worker.run_once(settings=settings, storage=storage)
 
@@ -239,6 +263,7 @@ async def test_worker_stops_processing_when_another_owner_takes_the_job(
     submitted = await ingestion.enqueue_bytes(
         b"Contested input",
         source_name="contested.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
     )
@@ -283,7 +308,7 @@ async def test_worker_stops_processing_when_another_owner_takes_the_job(
 
     assert cancelled
     current = await jobs.get_ingestion_job(
-        storage, settings.tenant_id, submitted.job.id
+        storage, DEFAULT_COLLECTION, submitted.job.id
     )
 
     assert current is not None
@@ -307,6 +332,7 @@ async def test_child_failure_reports_its_category_without_details(
     submitted = await ingestion.enqueue_bytes(
         b"Unreachable provider",
         source_name="provider.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
     )
@@ -319,7 +345,7 @@ async def test_child_failure_reports_its_category_without_details(
     async with asyncio.timeout(30):
         assert await worker.run_once(settings=settings, storage=storage)
 
-    failed = await jobs.get_ingestion_job(storage, settings.tenant_id, submitted.job.id)
+    failed = await jobs.get_ingestion_job(storage, DEFAULT_COLLECTION, submitted.job.id)
     assert failed is not None and failed.status == "failed"
     assert "error_category=provider" in caplog.text
     assert str(closed_port) not in (failed.error or "") + caplog.text
@@ -327,10 +353,14 @@ async def test_child_failure_reports_its_category_without_details(
 
 async def test_child_refuses_a_job_claimed_by_another_owner(settings, storage):
     submitted = await ingestion.enqueue_bytes(
-        b"Fenced input", source_name="fenced.md", settings=settings, storage=storage
+        b"Fenced input",
+        source_name="fenced.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
-    claimed = await jobs.claim_ingestion_job(storage, settings.tenant_id)
+    claimed = await jobs.claim_ingestion_job(storage)
     assert submitted.job is not None and claimed is not None
 
     configuration = asdict(settings)
@@ -354,9 +384,9 @@ async def test_child_refuses_a_job_claimed_by_another_owner(settings, storage):
         await process.communicate(json.dumps(payload).encode() + b"\n")
 
     assert process.returncode == worker.ERROR_EXIT_CODES["unexpected"]
-    current = await jobs.get_ingestion_job(storage, settings.tenant_id, claimed.id)
+    current = await jobs.get_ingestion_job(storage, DEFAULT_COLLECTION, claimed.id)
     assert current == claimed
-    assert await documents.list_chunks(storage, settings.tenant_id) == []
+    assert await documents.list_chunks(storage, DEFAULT_COLLECTION) == []
 
 
 @pytest.mark.parametrize("shutdown", [False, True])
@@ -365,13 +395,18 @@ async def test_worker_force_stops_an_unresponsive_child(
 ):
     content = b"Previously indexed original bytes."
     await ingestion.add_bytes(
-        content, source_name="bounded.md", settings=settings, storage=storage
+        content,
+        source_name="bounded.md",
+        collection_id=DEFAULT_COLLECTION,
+        settings=settings,
+        storage=storage,
     )
 
-    previous_chunks = await documents.list_chunks(storage, settings.tenant_id)
+    previous_chunks = await documents.list_chunks(storage, DEFAULT_COLLECTION)
     submitted = await ingestion.enqueue_bytes(
         content,
         source_name="bounded.md",
+        collection_id=DEFAULT_COLLECTION,
         settings=settings,
         storage=storage,
         reindex=True,
@@ -422,7 +457,7 @@ async def test_worker_force_stops_an_unresponsive_child(
 
         assert submitted.job is not None
         failed = await jobs.get_ingestion_job(
-            storage, settings.tenant_id, submitted.job.id
+            storage, DEFAULT_COLLECTION, submitted.job.id
         )
 
         assert failed is not None and failed.status == "failed"
@@ -432,7 +467,7 @@ async def test_worker_force_stops_an_unresponsive_child(
             else "error_category=timeout" in caplog.text
         )
         assert (
-            await documents.list_chunks(storage, settings.tenant_id) == previous_chunks
+            await documents.list_chunks(storage, DEFAULT_COLLECTION) == previous_chunks
         )
         assert not await worker.run_once(settings=settings, storage=storage)
 
@@ -500,7 +535,6 @@ async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_re
     environment = {
         **os.environ,
         "DATABASE_URL": settings.database_url,
-        "RAG_TENANT_ID": settings.tenant_id,
         "RAG_DATA_DIR": str(settings.data_dir),
         "OPENAI_API_KEY": "synthetic-worker-key",
         "OPENAI_BASE_URL": endpoint,
@@ -512,6 +546,7 @@ async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_re
         first = await ingestion.enqueue_bytes(
             b"Interrupted ingestion",
             source_name="interrupted.md",
+            collection_id=DEFAULT_COLLECTION,
             settings=settings,
             storage=storage,
         )
@@ -564,6 +599,7 @@ async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_re
         second = await ingestion.enqueue_bytes(
             b"A separate pending job",
             source_name="pending.md",
+            collection_id=DEFAULT_COLLECTION,
             settings=settings,
             storage=storage,
         )
@@ -583,7 +619,7 @@ async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_re
         async with asyncio.timeout(15):
             while True:
                 completed = await jobs.get_ingestion_job(
-                    storage, settings.tenant_id, second.job.id
+                    storage, DEFAULT_COLLECTION, second.job.id
                 )
 
                 if completed is not None and completed.status in {
@@ -595,7 +631,7 @@ async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_re
 
                 await asyncio.sleep(0.05)
 
-        failed = await jobs.get_ingestion_job(storage, settings.tenant_id, first.job.id)
+        failed = await jobs.get_ingestion_job(storage, DEFAULT_COLLECTION, first.job.id)
         assert failed is not None and failed.status == "failed" and failed.attempts == 1
         assert len(requests) == 2
         assert (
@@ -607,7 +643,7 @@ async def test_restarted_worker_fails_interrupted_work_without_replaying_paid_re
         )
         assert all(
             chunk.source_id == second.source.id
-            for chunk in await documents.list_chunks(storage, settings.tenant_id)
+            for chunk in await documents.list_chunks(storage, DEFAULT_COLLECTION)
         )
 
     finally:

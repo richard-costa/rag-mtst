@@ -14,7 +14,7 @@ class Source:
     """Persisted source identity, origin, and extraction metadata."""
 
     id: UUID
-    tenant_id: str
+    collection_id: str
     source_type: str
     reference: str
     mime_type: str | None
@@ -47,7 +47,7 @@ class Chunk:
     """Persisted source chunk with embedding and metadata."""
 
     id: UUID
-    tenant_id: str
+    collection_id: str
     source_id: UUID
     chunk_index: int
     page_number: int | None
@@ -118,6 +118,7 @@ class IngestionJob:
     started_at: datetime | None
     heartbeat_at: datetime | None
     finished_at: datetime | None
+    collection_id: str
     claim_token: UUID | None = field(default=None, repr=False)
 
 
@@ -138,7 +139,7 @@ class Conversation:
     """Persisted conversation identifier and timestamps."""
 
     id: UUID
-    tenant_id: str
+    collection_id: str
     created_at: datetime
     updated_at: datetime
 

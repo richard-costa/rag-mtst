@@ -13,7 +13,7 @@ from app.storage.records import ChunkInput, IngestionJob, IngestionJobInput, Sou
 async def create_ingestion_job(
     database: Database,
     *,
-    tenant_id: str,
+    collection_id: str,
     content_hash: str,
     reference: str,
     mime_type: str | None,
@@ -28,7 +28,7 @@ async def create_ingestion_job(
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         content_hash: Digest used to detect identical source content.
         reference: Descriptive source origin; not necessarily unique or accessible.
         mime_type: Optional detected media type.
@@ -46,22 +46,22 @@ async def create_ingestion_job(
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            INSERT INTO sources (id, tenant_id, type, reference, mime_type, content_hash)
+            INSERT INTO sources (id, collection_id, type, reference, mime_type, content_hash)
             VALUES (%s, %s, 'file', %s, %s, %s)
-            ON CONFLICT (tenant_id, content_hash) DO NOTHING
+            ON CONFLICT (collection_id, content_hash) DO NOTHING
             """,
-            (uuid4(), tenant_id, reference, mime_type, content_hash),
+            (uuid4(), collection_id, reference, mime_type, content_hash),
         )
 
         cursor = await connection.execute(
             """
-            SELECT id, tenant_id, type AS source_type, reference, mime_type,
+            SELECT id, collection_id, type AS source_type, reference, mime_type,
                    content_hash, created_at, updated_at
             FROM sources
-            WHERE tenant_id = %s AND content_hash = %s
+            WHERE collection_id = %s AND content_hash = %s
             FOR UPDATE
             """,
-            (tenant_id, content_hash),
+            (collection_id, content_hash),
         )
 
         source_row = await cursor.fetchone()
@@ -94,13 +94,13 @@ async def create_ingestion_job(
                     "The source already has an active ingestion job with different settings"
                 )
 
-            return source, IngestionJob(**active_job)
+            return source, IngestionJob(**active_job, collection_id=collection_id)
 
         cursor = await connection.execute(
             "SELECT metadata->'extraction' AS profile FROM chunks "
-            "WHERE source_id = %s AND tenant_id = %s "
+            "WHERE source_id = %s AND collection_id = %s "
             "GROUP BY metadata->'extraction'",
-            (source.id, tenant_id),
+            (source.id, collection_id),
         )
 
         profiles = await cursor.fetchall()
@@ -138,17 +138,17 @@ async def create_ingestion_job(
 
     assert row is not None
 
-    return source, IngestionJob(**row)
+    return source, IngestionJob(**row, collection_id=collection_id)
 
 
 async def get_ingestion_job(
-    database: Database, tenant_id: str, job_id: UUID
+    database: Database, collection_id: str, job_id: UUID
 ) -> IngestionJob | None:
-    """Load a tenant-scoped ingestion job by UUID.
+    """Load a collection-scoped ingestion job by UUID.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         job_id: UUID identifying the job; generated when omitted.
 
     Returns:
@@ -158,11 +158,11 @@ async def get_ingestion_job(
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
-            SELECT ingestion_jobs.* FROM ingestion_jobs
+            SELECT ingestion_jobs.*, sources.collection_id FROM ingestion_jobs
             JOIN sources ON sources.id = ingestion_jobs.source_id
-            WHERE ingestion_jobs.id = %s AND sources.tenant_id = %s
+            WHERE ingestion_jobs.id = %s AND sources.collection_id = %s
             """,
-            (job_id, tenant_id),
+            (job_id, collection_id),
         )
 
         row = await cursor.fetchone()
@@ -171,13 +171,13 @@ async def get_ingestion_job(
 
 
 async def get_ingestion_job_input(
-    database: Database, tenant_id: str, job_id: UUID
+    database: Database, collection_id: str, job_id: UUID
 ) -> IngestionJobInput | None:
     """Read the staged input metadata of an ingestion job.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         job_id: UUID identifying the job; generated when omitted.
 
     Returns:
@@ -190,9 +190,9 @@ async def get_ingestion_job_input(
             SELECT ingestion_job_inputs.* FROM ingestion_job_inputs
             JOIN ingestion_jobs ON ingestion_jobs.id = ingestion_job_inputs.job_id
             JOIN sources ON sources.id = ingestion_jobs.source_id
-            WHERE ingestion_jobs.id = %s AND sources.tenant_id = %s
+            WHERE ingestion_jobs.id = %s AND sources.collection_id = %s
             """,
-            (job_id, tenant_id),
+            (job_id, collection_id),
         )
 
         row = await cursor.fetchone()
@@ -200,26 +200,24 @@ async def get_ingestion_job_input(
     return IngestionJobInput(**row) if row is not None else None
 
 
-async def claim_ingestion_job(
-    database: Database, tenant_id: str
-) -> IngestionJob | None:
-    """Claim the next available queued job with an ownership token.
+async def claim_ingestion_job(database: Database) -> IngestionJob | None:
+    """Claim the next available queued job from any collection.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
 
     Returns:
-        Claimed job with ownership token, or ``None`` if no job is pending.
+        Claimed job with its ownership token and source collection, or ``None``
+        if no job is pending.
     """
 
     async with database.connection() as connection:
         cursor = await connection.execute(
             """
             WITH candidate AS (
-                SELECT jobs.id FROM ingestion_jobs AS jobs
+                SELECT jobs.id, sources.collection_id FROM ingestion_jobs AS jobs
                 JOIN sources ON sources.id = jobs.source_id
-                WHERE sources.tenant_id = %s AND jobs.status = 'pending'
+                WHERE jobs.status = 'pending'
                 ORDER BY jobs.created_at, jobs.id
                 FOR UPDATE OF jobs SKIP LOCKED
                 LIMIT 1
@@ -228,9 +226,9 @@ async def claim_ingestion_job(
             SET status = 'running', stage = 'extracting', attempts = attempts + 1,
                 started_at = now(), heartbeat_at = now(), claim_token = %s
             FROM candidate WHERE jobs.id = candidate.id
-            RETURNING jobs.*
+            RETURNING jobs.*, candidate.collection_id
             """,
-            (tenant_id, uuid4()),
+            (uuid4(),),
         )
 
         row = await cursor.fetchone()
@@ -239,13 +237,12 @@ async def claim_ingestion_job(
 
 
 async def list_finished_ingestion_inputs(
-    database: Database, tenant_id: str
+    database: Database,
 ) -> list[IngestionJobInput]:
-    """Find staged files left behind by terminal ingestion jobs.
+    """Find staged files left behind by terminal ingestion jobs in any collection.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
 
     Returns:
         Staged inputs belonging to completed or failed jobs.
@@ -256,12 +253,10 @@ async def list_finished_ingestion_inputs(
             """
             SELECT inputs.* FROM ingestion_job_inputs AS inputs
             JOIN ingestion_jobs AS jobs ON jobs.id = inputs.job_id
-            JOIN sources ON sources.id = jobs.source_id
-            WHERE sources.tenant_id = %s AND jobs.status IN ('completed', 'failed')
+            WHERE jobs.status IN ('completed', 'failed')
               AND inputs.input_path IS NOT NULL
             ORDER BY jobs.finished_at, jobs.id LIMIT 100
-            """,
-            (tenant_id,),
+            """
         )
 
         rows = await cursor.fetchall()
@@ -270,13 +265,12 @@ async def list_finished_ingestion_inputs(
 
 
 async def clear_ingestion_input_path(
-    database: Database, tenant_id: str, job_id: UUID, input_path: str
+    database: Database, job_id: UUID, input_path: str
 ) -> None:
-    """Clear a job's staged file reference after cleanup.
+    """Clear a finished job's staged file reference after cleanup.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
         job_id: UUID identifying the job; generated when omitted.
         input_path: Path to the temporarily staged source file.
     """
@@ -285,23 +279,22 @@ async def clear_ingestion_input_path(
         await connection.execute(
             """
             UPDATE ingestion_job_inputs AS inputs SET input_path = NULL
-            FROM ingestion_jobs AS jobs, sources
-            WHERE inputs.job_id = jobs.id AND sources.id = jobs.source_id
-              AND sources.tenant_id = %s AND jobs.id = %s
+            FROM ingestion_jobs AS jobs
+            WHERE inputs.job_id = jobs.id AND jobs.id = %s
               AND jobs.status IN ('completed', 'failed') AND inputs.input_path = %s
             """,
-            (tenant_id, job_id, input_path),
+            (job_id, input_path),
         )
 
 
 async def heartbeat_ingestion_job(
-    database: Database, tenant_id: str, job_id: UUID, claim_token: UUID
+    database: Database, collection_id: str, job_id: UUID, claim_token: UUID
 ) -> bool:
     """Renew the heartbeat only for the current job claim.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         job_id: UUID identifying the job; generated when omitted.
         claim_token: Ownership token assigned when the worker claimed the job.
 
@@ -313,10 +306,10 @@ async def heartbeat_ingestion_job(
         cursor = await connection.execute(
             """
             UPDATE ingestion_jobs AS jobs SET heartbeat_at = now()
-            FROM sources WHERE sources.id = jobs.source_id AND sources.tenant_id = %s
+            FROM sources WHERE sources.id = jobs.source_id AND sources.collection_id = %s
               AND jobs.id = %s AND jobs.status = 'running' AND jobs.claim_token = %s
             """,
-            (tenant_id, job_id, claim_token),
+            (collection_id, job_id, claim_token),
         )
 
     return cursor.rowcount == 1
@@ -324,7 +317,7 @@ async def heartbeat_ingestion_job(
 
 async def update_ingestion_job_progress(
     database: Database,
-    tenant_id: str,
+    collection_id: str,
     job_id: UUID,
     claim_token: UUID,
     *,
@@ -336,7 +329,7 @@ async def update_ingestion_job_progress(
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         job_id: UUID identifying the job; generated when omitted.
         claim_token: Ownership token assigned when the worker claimed the job.
         stage: Current stage of ingestion.
@@ -352,10 +345,10 @@ async def update_ingestion_job_progress(
             """
             UPDATE ingestion_jobs AS jobs
             SET stage = %s, processed = %s, total = %s
-            FROM sources WHERE sources.id = jobs.source_id AND sources.tenant_id = %s
+            FROM sources WHERE sources.id = jobs.source_id AND sources.collection_id = %s
               AND jobs.id = %s AND jobs.status = 'running' AND jobs.claim_token = %s
             """,
-            (stage, processed, total, tenant_id, job_id, claim_token),
+            (stage, processed, total, collection_id, job_id, claim_token),
         )
 
     return cursor.rowcount == 1
@@ -363,7 +356,7 @@ async def update_ingestion_job_progress(
 
 async def fail_ingestion_job(
     database: Database,
-    tenant_id: str,
+    collection_id: str,
     job_id: UUID,
     claim_token: UUID,
     *,
@@ -373,7 +366,7 @@ async def fail_ingestion_job(
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         job_id: UUID identifying the job; generated when omitted.
         claim_token: Ownership token assigned when the worker claimed the job.
         error: User-readable failure reason.
@@ -387,23 +380,22 @@ async def fail_ingestion_job(
             """
             UPDATE ingestion_jobs AS jobs
             SET status = 'failed', error = %s, finished_at = now(), claim_token = NULL
-            FROM sources WHERE sources.id = jobs.source_id AND sources.tenant_id = %s
+            FROM sources WHERE sources.id = jobs.source_id AND sources.collection_id = %s
               AND jobs.id = %s AND jobs.status = 'running' AND jobs.claim_token = %s
             """,
-            (error, tenant_id, job_id, claim_token),
+            (error, collection_id, job_id, claim_token),
         )
 
     return cursor.rowcount == 1
 
 
 async def fail_interrupted_ingestion_jobs(
-    database: Database, tenant_id: str, *, stale_seconds: int
+    database: Database, *, stale_seconds: int
 ) -> int:
-    """Mark stale in-progress jobs failed after worker interruption.
+    """Mark stale in-progress jobs in any collection failed after worker interruption.
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
         stale_seconds: Maximum heartbeat age before an active job is considered stale.
 
     Returns:
@@ -419,11 +411,10 @@ async def fail_interrupted_ingestion_jobs(
             UPDATE ingestion_jobs AS jobs
             SET status = 'failed', error = 'Worker interrupted; resubmit explicitly.',
                 finished_at = now(), claim_token = NULL
-            FROM sources WHERE sources.id = jobs.source_id AND sources.tenant_id = %s
-              AND jobs.status = 'running'
+            WHERE jobs.status = 'running'
               AND jobs.heartbeat_at < now() - (%s * interval '1 second')
             """,
-            (tenant_id, stale_seconds),
+            (stale_seconds,),
         )
 
     return cursor.rowcount
@@ -431,7 +422,7 @@ async def fail_interrupted_ingestion_jobs(
 
 async def complete_ingestion_job(
     database: Database,
-    tenant_id: str,
+    collection_id: str,
     job: IngestionJob,
     *,
     reference: str,
@@ -441,7 +432,7 @@ async def complete_ingestion_job(
 
     Args:
         database: Database handle for the storage operation.
-        tenant_id: Tenant scope restricting the query or write.
+        collection_id: Collection scope restricting the query or write.
         job: Claimed ingestion job carrying its ownership token.
         reference: Descriptive source origin; not necessarily unique or accessible.
         chunks: Prepared chunks and vectors to persist.
@@ -452,8 +443,8 @@ async def complete_ingestion_job(
 
     async with database.connection() as connection:
         cursor = await connection.execute(
-            "SELECT id FROM sources WHERE tenant_id = %s AND id = %s FOR UPDATE",
-            (tenant_id, job.source_id),
+            "SELECT id FROM sources WHERE collection_id = %s AND id = %s FOR UPDATE",
+            (collection_id, job.source_id),
         )
 
         if await cursor.fetchone() is None:
@@ -475,7 +466,7 @@ async def complete_ingestion_job(
             "DELETE FROM chunks WHERE source_id = %s", (job.source_id,)
         )
 
-        await documents._insert_chunks(connection, tenant_id, job.source_id, chunks)
+        await documents._insert_chunks(connection, collection_id, job.source_id, chunks)
 
         await connection.execute(
             "UPDATE sources SET reference = %s, updated_at = now() WHERE id = %s",

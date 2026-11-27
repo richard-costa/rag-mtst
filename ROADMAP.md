@@ -1,6 +1,6 @@
 # Roadmap
 
-Future work and open questions for the pre-release, trusted single-tenant backend. Current capabilities: [README](README.md) and [docs](docs/index.md). No committed release dates.
+Future work and open questions for the pre-release, trusted backend with collection-scoped data and one shared API key. Current capabilities: [README](README.md) and [docs](docs/index.md). No committed release dates.
 
 ## Next priorities
 
@@ -10,7 +10,7 @@ Future work and open questions for the pre-release, trusted single-tenant backen
   and consented evaluation data; distinguish extraction, retrieval, and
   generation errors.
 - Simplify code where demonstrated complexity or duplication obstructs
-  maintenance, while retaining worker fencing, atomic reindexing, tenant
+  maintenance, while retaining worker fencing, atomic reindexing, collection
   isolation, and citation safeguards.
 
 ## Quality and retrieval research
@@ -28,7 +28,9 @@ Future work and open questions for the pre-release, trusted single-tenant backen
   the query used to retrieve new passages.
 - Evaluate URL acquisition and safe source identity.
 - Consider streaming and improved conversation lifecycle controls.
-- Design per-user authorization and isolation before untrusted multi-user use.
+- Design per-user authorization and isolation before untrusted multi-user use;
+  collections are not an access-control boundary.
+- Add collection listing or management only if a concrete integration needs it.
 
 ## Operations and model lifecycle
 

@@ -12,6 +12,7 @@ from uuid import UUID
 import psycopg
 
 from app import local
+from app.collection import DEFAULT_COLLECTION, validate_collection_id
 from app.config import get_settings
 from app.embeddings import EmbeddingError
 from app.generation import GenerationError, answer
@@ -97,9 +98,14 @@ async def _run(arguments: list[str] | None = None) -> int:
         if namespace.data_dir is not None:
             settings = replace(settings, data_dir=namespace.data_dir)
 
+        collection_id = validate_collection_id(
+            getattr(namespace, "collection", DEFAULT_COLLECTION)
+        )
+
         if namespace.command == "add":
             result = await enqueue_file(
                 namespace.source,
+                collection_id=collection_id,
                 settings=settings,
                 reindex=namespace.reindex,
                 extraction_method=namespace.extraction_method,
@@ -119,7 +125,7 @@ async def _run(arguments: list[str] | None = None) -> int:
 
             while True:
                 job = await jobs.get_ingestion_job(
-                    storage, settings.tenant_id, result.job.id
+                    storage, collection_id, result.job.id
                 )
 
                 if job is None:
@@ -152,7 +158,7 @@ async def _run(arguments: list[str] | None = None) -> int:
 
         if namespace.command == "job":
             job = await jobs.get_ingestion_job(
-                Database(settings.database_url), settings.tenant_id, namespace.job_id
+                Database(settings.database_url), collection_id, namespace.job_id
             )
 
             if job is None:
@@ -169,6 +175,7 @@ async def _run(arguments: list[str] | None = None) -> int:
             _print_matches(
                 await search(
                     namespace.query,
+                    collection_id=collection_id,
                     limit=namespace.limit,
                     method=namespace.method,
                     window=namespace.window,
@@ -182,6 +189,7 @@ async def _run(arguments: list[str] | None = None) -> int:
         if namespace.command == "ask":
             result = await answer(
                 namespace.question,
+                collection_id=collection_id,
                 limit=namespace.limit,
                 method=namespace.method,
                 window=namespace.window,
@@ -288,6 +296,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     ask_parser.add_argument("question")
+
+    for command_parser in (add_parser, job_parser, search_parser, ask_parser):
+        command_parser.add_argument(
+            "--collection",
+            default=DEFAULT_COLLECTION,
+            help=(
+                f"Collection to read or write (default: {DEFAULT_COLLECTION}). "
+                "A local convenience; it does not restrict the API or worker."
+            ),
+        )
 
     for command_parser in (search_parser, ask_parser):
         command_parser.add_argument(

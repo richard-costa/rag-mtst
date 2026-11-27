@@ -73,7 +73,9 @@ RAG-MTST is not a general-purpose document manager or multi-user chat service.
 The following are not implemented:
 
 - Source acquisition by URL, automatic OCR, and visual or provider fallback.
-- Per-user identity, roles, rate limits, or caller-selected tenants.
+- Per-user identity, roles, rate limits, or per-collection authorization.
+- Collection listing/management APIs and cross-collection search; each
+  conversation is bound to one collection.
 - Automatic retention, undo for deletions, or a general orphan-file sweep.
 - Streaming responses, turn queues, idempotency keys, and automatic retries.
 - History-aware query rewriting, history summaries, reranking, and an excerpt-only

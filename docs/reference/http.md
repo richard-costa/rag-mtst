@@ -1,8 +1,8 @@
 # HTTP API
 
 Base URL in local examples: `http://127.0.0.1:8000`. All application operations
-require `Authorization: Bearer <RAG_API_KEY>`. There is no tenant header,
-streaming response, or per-user identity.
+require `Authorization: Bearer <RAG_API_KEY>`. There is no streaming response
+or per-user identity.
 
 The running application serves exact schemas at `/openapi.json`, Swagger UI at
 `/docs`, and ReDoc at `/redoc`. These schema routes are public; restrict them
@@ -11,23 +11,42 @@ at the proxy if necessary. See [running the API](../how-to/develop.md#run-the-ap
 
 OpenAPI schemas define exact types and validation constraints; endpoint docstrings supply descriptions.
 
+## Collections
+
+Every application route is under `/collections/{collection_id}`. A collection is
+an opaque, case-sensitive label that partitions sources, chunks, jobs, and
+conversations; it is created implicitly on first use. There is no collection
+table, listing or management endpoint, or cross-collection search.
+
+The ID must be nonempty, at most 255 characters, printable, without `/`, and
+without leading/trailing whitespace; spaces, colons, and Unicode are allowed.
+URL-encode the path segment (for example `Team A:1` becomes `Team%20A%3A1`). An
+encoded slash (`%2F`) is decoded before routing and is not supported.
+Authentication is checked first (401), then an unusable collection ID returns
+422. IDs belonging to another collection return 404, like missing IDs.
+
+The shared bearer token grants access to **every** collection. A collection is
+not an authorization boundary: a gateway in front of the API must decide which
+collection paths each caller may use. See
+[trust boundary](../explanation/security.md#trust-boundary).
+
 ## Endpoints
 
 | Method | Path | Success response |
 | --- | --- | --- |
-| POST | `/sources/file` | 202 `SourceResponse`, or 200 if unchanged |
-| GET | `/sources` | 200 array of `SourceDetailsResponse` |
-| GET | `/sources/{source_id}` | 200 `SourceDetailsResponse` |
-| DELETE | `/sources/{source_id}` | 204, no body |
-| GET | `/jobs/{job_id}` | 200 `JobResponse` |
-| POST | `/search` | 200 array of `SearchMatchResponse` |
-| POST | `/ask` | 200 `AskResponse` |
-| POST | `/conversations` | 201 `ConversationResponse` |
-| GET | `/conversations` | 200 array of `ConversationResponse` |
-| GET | `/conversations/{conversation_id}` | 200 `ConversationResponse` |
-| DELETE | `/conversations/{conversation_id}` | 204, no body |
-| GET | `/conversations/{conversation_id}/messages` | 200 array of `MessageResponse` |
-| POST | `/conversations/{conversation_id}/messages` | 200 `AskResponse` |
+| POST | `/collections/{collection_id}/sources/file` | 202 `SourceResponse`, or 200 if unchanged |
+| GET | `/collections/{collection_id}/sources` | 200 array of `SourceDetailsResponse` |
+| GET | `/collections/{collection_id}/sources/{source_id}` | 200 `SourceDetailsResponse` |
+| DELETE | `/collections/{collection_id}/sources/{source_id}` | 204, no body |
+| GET | `/collections/{collection_id}/jobs/{job_id}` | 200 `JobResponse` |
+| POST | `/collections/{collection_id}/search` | 200 array of `SearchMatchResponse` |
+| POST | `/collections/{collection_id}/ask` | 200 `AskResponse` |
+| POST | `/collections/{collection_id}/conversations` | 201 `ConversationResponse` |
+| GET | `/collections/{collection_id}/conversations` | 200 array of `ConversationResponse` |
+| GET | `/collections/{collection_id}/conversations/{conversation_id}` | 200 `ConversationResponse` |
+| DELETE | `/collections/{collection_id}/conversations/{conversation_id}` | 204, no body |
+| GET | `/collections/{collection_id}/conversations/{conversation_id}/messages` | 200 array of `MessageResponse` |
+| POST | `/collections/{collection_id}/conversations/{conversation_id}/messages` | 200 `AskResponse` |
 
 List endpoints share the same paging parameters:
 
@@ -38,8 +57,8 @@ List endpoints share the same paging parameters:
 
 ## File upload
 
-`POST /sources/file` accepts `multipart/form-data` with a required `file` part
-and a filename. Its query parameters are:
+`POST /collections/{collection_id}/sources/file` accepts `multipart/form-data`
+with a required `file` part and a filename. Its query parameters are:
 
 | Parameter | Default | Values |
 | --- | --- | --- |
@@ -59,10 +78,10 @@ See [HTTP upload example](../how-to/ingest.md#submit-through-http).
 | `id` | Source ID |
 | `status` | `pending`, `running`, or `unchanged` |
 | `job_id` | Job UUID string, or null for unchanged content |
-| `status_url` | Relative polling URL, or null for unchanged content |
+| `status_url` | Relative polling URL `/collections/{encoded collection}/jobs/{job_id}`, or null for unchanged content |
 
 202 means accepted or a matching active job reused, not completed indexing.
-200 means identical tenant-scoped bytes with a matching extraction profile;
+200 means identical bytes in the same collection with a matching extraction profile;
 no extraction or embedding call is made. OpenAPI declares the default 202;
 the unchanged 200 is an additional runtime response.
 
@@ -74,8 +93,9 @@ chunks survive a failed reindex.
 
 ## Source management
 
-`GET /sources` lists tenant sources newest first, using the shared paging
-parameters. `GET /sources/{source_id}` returns one source or 404.
+`GET /collections/{collection_id}/sources` lists the collection's sources newest
+first, using the shared paging parameters.
+`GET /collections/{collection_id}/sources/{source_id}` returns one source or 404.
 `SourceDetailsResponse` fields:
 
 | Field | Meaning |
@@ -88,16 +108,17 @@ parameters. `GET /sources/{source_id}` returns one source or 404.
 | `chunk_count` | Currently indexed chunks; zero before the first index completes |
 | `created_at`, `updated_at` | Timestamps |
 
-Content hashes and tenant IDs are not returned.
+Content hashes and collection IDs are not returned.
 
-`DELETE /sources/{source_id}` returns 204 after removing the source, its chunks,
-and its job history. It returns 404 for missing or other-tenant sources and 409
-while a job for the source is pending or running. Saved conversation citations
-are snapshots and are not changed.
+`DELETE /collections/{collection_id}/sources/{source_id}` returns 204 after
+removing the source, its chunks, and its job history. It returns 404 for missing
+or other-collection sources and 409 while a job for the source is pending or
+running. Saved conversation citations are snapshots and are not changed.
 
 ## Job status
 
-`GET /jobs/{job_id}` returns the tenant-scoped job or 404. IDs must be UUIDs.
+`GET /collections/{collection_id}/jobs/{job_id}` returns the collection's job or
+404. IDs must be UUIDs.
 
 `JobResponse` contains `id`, `source_id`, `status`, `stage`, `progress`,
 `processed`, `total`, `attempts`, `error`, `created_at`, `started_at`,
@@ -110,8 +131,9 @@ Poll with the same token; only the worker executes jobs. See [recovery](../how-t
 
 ## Search and answer requests
 
-`POST /search` accepts `SearchRequest`. `/ask` accepts `AskRequest`, adding
-answer provider/model options and caller-supplied history:
+`POST /collections/{collection_id}/search` accepts `SearchRequest`. `/ask`
+accepts `AskRequest`, adding answer provider/model options and caller-supplied
+history:
 
 | Field | Default | Validation |
 | --- | --- | --- |
@@ -179,23 +201,29 @@ arrays, without a generation call, after generation configuration is validated.
 
 ## Conversations
 
-`POST /conversations` takes no body. `ConversationResponse` contains `id`,
-`created_at`, and `updated_at`. The configured tenant owns the conversation.
+`POST /collections/{collection_id}/conversations` takes no body.
+`ConversationResponse` contains `id`, `created_at`, and `updated_at`. The
+collection in the path owns the conversation; every turn retrieves only from
+that collection.
 
-`GET /conversations` lists conversations most recently updated first, using the
-shared paging parameters. `GET /conversations/{conversation_id}` returns one
-conversation or 404. `DELETE /conversations/{conversation_id}` returns 204 after
-removing the conversation and all its messages, 404 if missing, or 409 while a
-turn is running.
+`GET /collections/{collection_id}/conversations` lists the collection's
+conversations most recently updated first, using the shared paging parameters.
+`GET /collections/{collection_id}/conversations/{conversation_id}` returns one
+conversation or 404.
+`DELETE /collections/{collection_id}/conversations/{conversation_id}` returns
+204 after removing the conversation and all its messages, 404 if missing, or 409
+while a turn is running.
 
-`POST /conversations/{conversation_id}/messages` accepts
-`ConversationTurnRequest`: the same options as `/ask` except `history`, with extra
-fields forbidden. The server owns turn history: clients cannot submit `history`,
-`role`, system messages, or assistant messages. The response is `AskResponse`.
+`POST /collections/{collection_id}/conversations/{conversation_id}/messages`
+accepts `ConversationTurnRequest`: the same options as `/ask` except `history`,
+with extra fields forbidden. The server owns turn history: clients cannot submit
+`history`, `role`, system messages, or assistant messages. The response is
+`AskResponse`.
 
 One turn per conversation; overlap returns 409 even across API processes. Success (including no-sources answers) commits both messages atomically; failure/cancellation leaves history unchanged. Other conversations are independent. See [history semantics](../explanation/retrieval.md#conversations-share-the-same-budget).
 
-`GET /conversations/{conversation_id}/messages` parameters:
+`GET /collections/{collection_id}/conversations/{conversation_id}/messages`
+parameters:
 
 | Parameter | Default | Contract |
 | --- | --- | --- |
@@ -206,7 +234,7 @@ The newest page is returned in ascending sequence order. `MessageResponse`
 contains `id`, `sequence`, `role` (`user` or `assistant`), `content`, `citations`,
 and `created_at`. User citations are empty; assistant citations are stored
 snapshots, unaffected by later reindexing. A new conversation has empty history.
-Missing and other-tenant conversation IDs both return 404.
+Missing and other-collection conversation IDs both return 404.
 
 There is no streaming, turn queue, or idempotency key.
 Read history before retrying an uncertain request: a timeout does not prove that
@@ -217,9 +245,9 @@ the turn failed. See the [conversation guide](../how-to/conversations.md).
 | Status | Contract |
 | --- | --- |
 | 401 | Missing, malformed, or invalid bearer credentials; `WWW-Authenticate: Bearer` |
-| 404 | Source, job, or conversation not found in the configured tenant |
+| 404 | Source, job, or conversation not found in the requested collection |
 | 409 | Source has ingestion work in progress, or a conversation turn is running |
-| 422 | Request validation or handled input/configuration errors |
+| 422 | Request validation (including an unusable collection ID) or handled input/configuration errors |
 | 502 | Handled embedding/generation failures, including invalid generated output |
 | 500 | Unhandled failures, including database/infrastructure errors |
 

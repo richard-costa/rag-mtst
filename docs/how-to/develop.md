@@ -37,16 +37,17 @@ Code ownership map:
 Each feature module under `app/api/routers/` declares a module-level `APIRouter`:
 `sources.py`, `jobs.py`, `search.py`, `answers.py`, and `conversations.py`.
 Search and answer generation are separate API concerns; `/ask` is not a retrieval
-endpoint. `router.py` registers these routers centrally; `main.py` includes
-that router and applies shared bearer authentication. The ASGI entry point remains `app.api.main:app`.
+endpoint. `router.py` registers these routers centrally under the
+`/collections/{collection_id}` prefix with the `get_collection_id` validation
+dependency; `main.py` includes that router and applies shared bearer authentication. The ASGI entry point remains `app.api.main:app`.
 
 `create_app(settings)` stores that application's settings and `Database` handle
 on `application.state`. Routes receive them through the `SettingsDependency` and
 `StorageDependency` aliases in `dependencies.py`, using FastAPI's `Depends` and
 `Annotated`. Tests can replace `get_api_settings` and `get_storage` through
 `application.dependency_overrides`; separate application instances do not share
-configuration or database handles. The HTTP tenant still comes from server
-settings, not request headers.
+configuration or database handles. Routes receive the validated collection
+through `CollectionDependency`; there is no server-wide collection setting.
 
 Routers translate application errors to HTTP responses and do not import other
 routers. Both `/ask` and conversation turns call `services.generate_answer` with
@@ -79,7 +80,7 @@ process, see [demo instructions](https://github.com/richard-costa/rag-mtst/blob/
 Do not start two servers on port 8000 simultaneously. Stop the server with
 Ctrl+C; stop the worker/database separately with `uv run rag stop`.
 
-**Important:** the API uses one shared token for a configured tenant. It is not
+**Important:** the API uses one shared token for all collections. It is not
 a public multi-user application; bind a development server to loopback. See the
 [trust boundary](../explanation/security.md#trust-boundary).
 
@@ -113,7 +114,7 @@ billable tests to default CI.
 
 Maintain the guarantees described in
 [architecture and transactions](../explanation/architecture.md):
-worker ownership fencing, atomic reindexing, explicit tenant scope, and
+worker ownership fencing, atomic reindexing, explicit collection scope, and
 conversation transaction boundaries. See
 [indexing internals](../explanation/indexing.md) and
 [retrieval internals](../explanation/retrieval.md) before changing those workflows.
@@ -165,7 +166,7 @@ Strict builds check navigation and links, not Mermaid execution; preview diagram
 Use concise Google-style docstrings for application functions, classes, and
 helpers, including demo and migration code. Document parameters with `Args:`,
 results with `Returns:` or `Yields:`, and important failure contracts with
-`Raises:` where relevant. Describe actual values, defaults, tenant scope, and
+`Raises:` where relevant. Describe actual values, defaults, collection scope, and
 side effects rather than repeating type annotations. A single summary line is
 enough for a simple no-argument function with no additional contract.
 

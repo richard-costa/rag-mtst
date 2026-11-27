@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, HTTPException
 
-from app.api.dependencies import SettingsDependency, StorageDependency
+from app.api.dependencies import (
+    CollectionDependency,
+    SettingsDependency,
+    StorageDependency,
+)
 from app.api.schemas.search import SearchMatchResponse, SearchRequest
 from app.api.services import search_match_response
 from app.embeddings import EmbeddingError
@@ -17,9 +21,12 @@ router = APIRouter(tags=["search"])
     summary="Search source passages",
 )
 async def search_sources(
-    request: SearchRequest, settings: SettingsDependency, storage: StorageDependency
+    request: SearchRequest,
+    collection_id: CollectionDependency,
+    settings: SettingsDependency,
+    storage: StorageDependency,
 ) -> list[SearchMatchResponse]:
-    """Retrieve indexed source passages without generating an answer.
+    """Retrieve the collection's source passages without generating an answer.
 
     ### Request body
     - `query`: Search text.
@@ -44,6 +51,7 @@ async def search_sources(
     try:
         matches = await search(
             request.query,
+            collection_id=collection_id,
             limit=request.limit,
             method=request.method,
             window=request.window,
